@@ -1,0 +1,26 @@
+# Ignore source files
+src/
+*.ts
+*.tsx
+!*.d.ts
+
+# Ignore development files
+tsconfig.json
+*.md
+!README.md
+
+# Ignore test files
+**/*.test.*
+**/*.spec.*
+
+# Ignore build tools
+node_modules/
+.git/
+.gitignore
+
+# Ignore React if accidentally installed
+node_modules/react/
+node_modules/@types/react/
+
+# Ignore packed tarball files
+*.tgz

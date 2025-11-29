@@ -1,0 +1,592 @@
+# Simula Ad SDK for React Native
+
+**React Native SDK for AI-Powered Contextual Ads**
+
+Simula delivers **contextually relevant ads** for conversational AI apps and LLM-based interfaces on iOS and Android. It's lightweight, easy to integrate, and compliant with App Store and Play Store policies.
+
+> 🌐 **Based on**: [Simula Ad SDK for React Web](https://github.com/Simula-AI-SDK/simula-ad-sdk)
+
+---
+
+## 🚀 Installation
+
+```bash
+npm install @simula/ads-react-native react-native-webview
+```
+
+### Additional Setup
+
+#### iOS
+```bash
+cd ios && pod install
+```
+
+#### Android
+No additional setup required. The package is auto-linked.
+
+### Permissions
+
+Add to your `Info.plist` (iOS) or `AndroidManifest.xml` (Android) if required by your app:
+
+**iOS** - No special permissions needed for basic ad display.
+
+**Android** - Internet permission (usually already present):
+```xml
+<uses-permission android:name="android.permission.INTERNET" />
+```
+
+---
+
+## ⚡ Quick Start
+
+Integrate in **two steps**:
+
+1. **Wrap your chat/conversation component** with `SimulaProvider`
+2. **Insert** `<InChatAdSlot />` where you want ads
+
+```typescript
+import React, { useState } from "react";
+import { View, Text, ScrollView } from "react-native";
+import { SimulaProvider, InChatAdSlot } from "@simula/ads-react-native";
+
+function App() {
+  return (
+    <View>
+      <Header />
+      <ChatInterface />  {/* SimulaProvider wraps individual conversations */}
+    </View>
+  );
+}
+
+function ChatInterface() {
+  const [messages, setMessages] = useState([]);
+
+  return (
+    <SimulaProvider apiKey="SIMULA_xxx">
+      <ScrollView>
+        {messages.map((msg, i) => (
+          <View key={i}>
+            <Text>
+              <Text style={{ fontWeight: "bold" }}>{msg.role}:</Text> {msg.content}
+            </Text>
+            {msg.role === "assistant" && (
+              <InChatAdSlot
+                messages={messages.slice(0, i + 1)}
+                theme={{ mode: "light", accent: "blue" }}
+              />
+            )}
+          </View>
+        ))}
+      </ScrollView>
+    </SimulaProvider>
+  );
+}
+```
+
+---
+
+## 🧩 Components
+
+### `SimulaProvider`
+
+Initializes the SDK and manages session state.
+
+| Prop              | Type                | Required | Default | Description                                                      |
+| ----------------- | ------------------- | -------- | ------- | ---------------------------------------------------------------- |
+| apiKey            | string              | ✅       | —       | Your Simula API key from the [dashboard](https://simula.ad)     |
+| children          | ReactNode           | ✅       | —       | Your app components                                              |
+| hasUserConsent    | boolean             | ❌       | false   | Initial consent state (GDPR/CCPA)                                |
+| onConsentRequired | () => void          | ❌       | —       | Callback when user consent is needed                             |
+
+#### Example
+
+```typescript
+<SimulaProvider 
+  apiKey="SIMULA_xxx"
+  hasUserConsent={true}
+  onConsentRequired={() => {
+    // Show your consent dialog
+    showConsentDialog();
+  }}
+>
+  <YourApp />
+</SimulaProvider>
+```
+
+---
+
+### `InChatAdSlot`
+
+Renders a single ad slot within a conversation.
+
+| Prop         | Type                     | Required | Default | Description                                                      |
+| ------------ | ------------------------ | -------- | ------- | ---------------------------------------------------------------- |
+| messages     | Message[]                | ✅       | —       | Conversation messages for contextual targeting                   |
+| theme        | SimulaTheme              | ❌       | auto    | Theme configuration (mode, accent, font, width, cornerRadius)    |
+| trigger      | Promise\<any\>           | ❌       | —       | Wait for this promise before fetching (e.g., LLM response)       |
+| debounceMs   | number                   | ❌       | 0       | Debounce delay for message updates                               |
+| onImpression | (ad: AdData) => void     | ❌       | —       | Callback when ad impression is recorded (50% visible for ≥1s)    |
+| onClick      | (ad: AdData) => void     | ❌       | —       | Callback when user clicks the ad                                 |
+| onError      | (error: Error) => void   | ❌       | —       | Callback when ad fetch fails                                     |
+
+#### Message Format
+
+```typescript
+interface Message {
+  role: "user" | "assistant" | "system";
+  content: string;
+  llmPromise?: Promise<any>; // Optional: for trigger timing
+}
+```
+
+---
+
+## 🎨 Theme Configuration
+
+```typescript
+interface SimulaTheme {
+  mode?: "light" | "dark" | "auto";
+  accent?: AccentColor | AccentColor[];     // A/B testing supported
+  font?: FontOption | FontOption[];         // A/B testing supported
+  width?: number | string;                  // min 320px
+  cornerRadius?: number;                    // default: 8
+}
+```
+
+**Modes:** `light` | `dark` | `auto` (follows system)  
+**Accents:** `blue`, `red`, `green`, `yellow`, `purple`, `pink`, `orange`, `neutral`, `gray`, `tan`, `transparent`, `image`  
+**Fonts:** `sans-serif`, `serif`, `monospace`
+
+> **Height:** Fixed at **265px**  
+> **Width:** Min **320px**, accepts pixels or `"auto"`
+
+> **A/B Testing:** Pass an **array** (e.g., `accent: ['blue', 'green', 'image']`) to automatically test variants. **💡 Strongly recommend including `"image"` for best CPM.**
+
+#### Examples
+
+```typescript
+// Default (auto mode)
+<InChatAdSlot messages={messages} />
+
+// Light mode with custom accent
+<InChatAdSlot 
+  messages={messages} 
+  theme={{ mode: "light", accent: "blue" }} 
+/>
+
+// Dark mode with custom width
+<InChatAdSlot
+  messages={messages}
+  theme={{ 
+    mode: "dark", 
+    accent: "purple", 
+    width: 600, 
+    cornerRadius: 12 
+  }}
+/>
+
+// A/B testing (recommended)
+<InChatAdSlot
+  messages={messages}
+  theme={{
+    accent: ["blue", "green", "image"],    // Include "image" for best CPM
+    font: ["sans-serif", "serif"],
+    width: "100%"
+  }}
+/>
+```
+
+---
+
+## 💬 Integration Example
+
+### Chat App with OpenAI
+
+```typescript
+import React, { useState } from "react";
+import { View, Text, TextInput, Button, ScrollView, StyleSheet } from "react-native";
+import { SimulaProvider, InChatAdSlot } from "@simula/ads-react-native";
+import OpenAI from "openai";
+
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+export default function App() {
+  return (
+    <View style={styles.app}>
+      <Text style={styles.header}>AI Chat</Text>
+      <ChatApp />
+    </View>
+  );
+}
+
+function ChatApp() {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function sendMessage() {
+    if (!input.trim()) return;
+
+    const userMessage = { role: "user", content: input.trim() };
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
+    setInput("");
+    setLoading(true);
+
+    try {
+      const llmPromise = client.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: newMessages,
+      });
+
+      const res = await llmPromise;
+      const reply = res.choices[0].message;
+
+      setMessages((prev) => [...prev, { ...reply, llmPromise }]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <SimulaProvider apiKey="SIMULA_xxx">
+      <View style={styles.chat}>
+        <ScrollView style={styles.messageList}>
+          {messages.map((msg, i) => (
+            <View key={i} style={styles.message}>
+              <Text>
+                <Text style={styles.role}>{msg.role}:</Text> {msg.content}
+              </Text>
+
+              {msg.role === "assistant" && (
+                <InChatAdSlot
+                  key={`adslot-${i}`}              // ✅ Required when in a list
+                  trigger={msg.llmPromise}         // Wait for LLM response
+                  messages={messages.slice(0, i + 1)}
+                  theme={{ mode: "light", accent: ["blue", "image"], width: "100%" }}
+                />
+              )}
+            </View>
+          ))}
+        </ScrollView>
+
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            value={input}
+            onChangeText={setInput}
+            onSubmitEditing={sendMessage}
+            placeholder="Type a message..."
+          />
+          <Button title="Send" onPress={sendMessage} disabled={loading} />
+        </View>
+      </View>
+    </SimulaProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  app: { flex: 1, padding: 20 },
+  header: { fontSize: 24, fontWeight: "bold", marginBottom: 20 },
+  chat: { flex: 1 },
+  messageList: { flex: 1 },
+  message: { marginBottom: 16 },
+  role: { fontWeight: "bold" },
+  inputContainer: { flexDirection: "row", gap: 8, marginTop: 16 },
+  input: { flex: 1, borderWidth: 1, borderColor: "#ccc", padding: 8, borderRadius: 4 },
+});
+```
+
+> **Tips:**
+> 
+> - **Wrap `SimulaProvider` around the chat component** – Each conversation is a separate session for better targeting.
+> - Use `key` prop when `<InChatAdSlot />` is in a list or dynamic loop.
+> - The `trigger` prop waits for LLM responses. If omitted, ads fetch immediately when viewable.
+
+---
+
+## 🔑 Features
+
+- **Contextual Targeting** – AI-powered ad matching to conversation content
+- **Dynamic Width Detection** – Automatically detects device/container width and optimizes ad sizing
+- **MRC-Compliant Viewability** – 50% visible for ≥1s before impression tracking
+- **App Store Compliant** – No device fingerprinting or tracking without consent
+- **Responsive** – Adapts to device dimensions, orientation changes, and theme settings
+- **Static Fetch** – Each slot fetches once and stays fixed (no re-fetching)
+- **Session Management** – Automatic session handling per conversation
+- **Robust Error Handling** – Graceful degradation with callbacks
+- **TypeScript Support** – Built-in type definitions
+- **Built-in A/B Testing** – Test colors/fonts by passing arrays
+- **Iframe Support** – Handles iframe-based ad content from API seamlessly
+
+---
+
+## 🔐 Privacy & Consent Management
+
+### App Store / Play Store Compliance
+
+Simula SDK is designed for **App Store and Play Store compliance**:
+
+- ✅ No device fingerprinting (IDFA/AAID)
+- ✅ No location tracking
+- ✅ No personal information collection
+- ✅ Bot detection handled server-side only
+- ✅ Consent management hooks provided
+
+### What Data is Collected?
+
+The SDK collects only:
+- Conversation context (messages) for ad targeting
+- Session IDs (temporary, per-conversation)
+- Ad interaction events (impressions, clicks)
+- Platform info (iOS/Android)
+- Screen dimensions
+
+### Setting Up Consent
+
+```typescript
+import { SimulaProvider, consentManager, getConsentMessage } from "@simula/ads-react-native";
+
+function App() {
+  const [hasConsent, setHasConsent] = useState(false);
+
+  const showConsentDialog = () => {
+    Alert.alert(
+      "Privacy Notice",
+      getConsentMessage(),
+      [
+        { text: "Decline", onPress: () => setHasConsent(false) },
+        { text: "Accept", onPress: () => {
+          setHasConsent(true);
+          consentManager.setConsent(true);
+        }},
+      ]
+    );
+  };
+
+  return (
+    <SimulaProvider
+      apiKey="SIMULA_xxx"
+      hasUserConsent={hasConsent}
+      onConsentRequired={showConsentDialog}
+    >
+      <YourApp />
+    </SimulaProvider>
+  );
+}
+```
+
+### Privacy Policy Requirements
+
+Your app's privacy policy **must** disclose:
+
+1. **Data Collection**: Conversation context used for contextual ads
+2. **Third Parties**: Simula Ad Network
+3. **User Rights**: How to opt-out or request data deletion
+4. **Contact**: Support email for privacy inquiries
+
+Use the exported `PRIVACY_DISCLOSURE` constant for reference:
+
+```typescript
+import { PRIVACY_DISCLOSURE } from "@simula/ads-react-native";
+
+console.log(PRIVACY_DISCLOSURE.dataCollected);
+// ["Conversation context (messages)", "Session identifiers (temporary)", ...]
+```
+
+---
+
+## 📐 How Width Detection Works
+
+The SDK automatically detects and optimizes ad sizing:
+
+1. **Detects Device Dimensions** – Uses React Native's `Dimensions` API
+2. **Respects Theme Width** – Applies your custom width settings (with 320px minimum)
+3. **Sends to API** – Passes viewport dimensions so API returns optimally-sized ads
+4. **Responsive Updates** – Tracks orientation changes and layout updates
+5. **Container-Aware** – Uses actual container width via `onLayout` event
+
+### Example Width Behavior
+
+```typescript
+// Full width (adapts to device)
+<InChatAdSlot messages={messages} theme={{ width: "100%" }} />
+
+// Fixed width (enforces minimum 320px)
+<InChatAdSlot messages={messages} theme={{ width: 600 }} />
+
+// Auto width (uses container dimensions)
+<InChatAdSlot messages={messages} theme={{ width: "auto" }} />
+```
+
+The SDK sends these dimensions to the API, which returns iframe HTML pre-sized for optimal display on your device.
+
+---
+
+## ⚙️ Advanced Usage
+
+### Event Handlers
+
+```typescript
+<InChatAdSlot
+  messages={messages}
+  onImpression={(ad) => {
+    console.log("Impression recorded:", ad.id);
+    // Track with your analytics
+  }}
+  onClick={(ad) => {
+    console.log("Ad clicked:", ad.id);
+    // Track with your analytics
+  }}
+  onError={(err) => {
+    console.error("Ad error:", err.message);
+    // Handle error gracefully
+  }}
+/>
+```
+
+### Debounce Fetching
+
+Prevent excessive API calls during rapid message updates:
+
+```typescript
+<InChatAdSlot
+  messages={messages}
+  debounceMs={500}   // Wait 500ms after last message change
+/>
+```
+
+### Manual Consent Control
+
+```typescript
+import { consentManager } from "@simula/ads-react-native";
+
+// Set consent programmatically
+consentManager.setConsent(true);
+
+// Subscribe to consent changes
+const unsubscribe = consentManager.subscribe((hasConsent) => {
+  console.log("Consent changed:", hasConsent);
+});
+
+// Cleanup
+unsubscribe();
+```
+
+---
+
+## 📦 TypeScript Types
+
+```typescript
+import type {
+  SimulaTheme,
+  Message,
+  AdData,
+  InChatAdSlotProps,
+  SimulaProviderProps,
+  SimulaContextValue,
+  AccentColor,
+  FontOption,
+  ThemeMode,
+} from "@simula/ads-react-native";
+```
+
+---
+
+## 🛠️ Troubleshooting
+
+### Invalid Hook Call / Multiple React Versions
+
+If you see errors like "Invalid hook call" or "Cannot read property 'useState' of null", you likely have multiple React instances:
+
+**Solution:**
+1. Add to your `package.json`:
+```json
+{
+  "overrides": {
+    "react": "^18.2.0",
+    "@simula/ads-react-native": {
+      "react": "^18.2.0"
+    }
+  }
+}
+```
+
+2. Clean install:
+```bash
+rm -rf node_modules package-lock.json
+npm install
+npm start -- --clear
+```
+
+3. Verify single React instance:
+```bash
+npm list react
+# Should show only ONE react installation
+```
+
+**Note:** This SDK uses React as a peer dependency, so it will use your app's React version. The conflict usually comes from other packages installing different React versions.
+
+### Ads Not Showing
+
+1. **Check API Key**: Must start with `SIMULA_`
+2. **Check Consent**: User must consent via `hasUserConsent` prop
+3. **Check Messages**: At least one message required
+4. **Check Network**: Ensure internet connectivity
+5. **Check Logs**: Look for errors in console
+
+### WebView Issues
+
+**iOS**: Ensure you've run `pod install` after installation.
+
+**Android**: WebView is included by default. No additional setup needed.
+
+### TypeScript Errors
+
+Make sure you have the required peer dependencies:
+```bash
+npm install --save-dev @types/react @types/react-native
+```
+
+---
+
+## 📚 Resources
+
+- [Website](https://simula.ad)
+- [Original React SDK](https://github.com/Simula-AI-SDK/simula-ad-sdk)
+- [GitHub Issues](https://github.com/Simula-AI-SDK/simula-ad-sdk-react-native/issues)
+- **Support**: admin@simula.ad
+
+---
+
+## 📄 License
+
+MIT
+
+---
+
+## 🔗 Related Links
+
+- **Web SDK**: [github.com/Simula-AI-SDK/simula-ad-sdk](https://github.com/Simula-AI-SDK/simula-ad-sdk)
+- **Dashboard**: [simula.ad](https://simula.ad)
+
+---
+
+## 📑 Appendix: Ad Formats
+
+Simula automatically selects the best-performing format based on context. All formats are optimized for mobile and comply with App Store policies.
+
+Available formats:
+- **tips** - Educational tips relevant to conversation
+- **interactive** - Engaging interactive elements
+- **suggestions** - Action-oriented suggestions
+- **text** - Clean text-based ads
+- **highlight** - Highlighted content blocks
+- **visual_banner** - Visual banner with imagery
+
+> **Recommendation**: Allow all formats for optimal CPM. Contact us if you need specific formats excluded.
+
+---
+
+Made with ❤️ by [Simula AI](https://simula.ad)
+
