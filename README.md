@@ -396,6 +396,79 @@ console.log(PRIVACY_DISCLOSURE.dataCollected);
 
 ---
 
+## 🛡️ Security & AdTech Sandboxing
+
+### WebView Security (App Store / Play Store Compliance)
+
+The SDK implements comprehensive WebView sandboxing to comply with App Store and Google Play policies:
+
+#### Origin Restrictions
+
+- **HTTPS Only**: All ad content must be served over HTTPS
+- **Origin Validation**: Only trusted Simula ad server origins are allowed
+- **No Mixed Content**: HTTP content within HTTPS context is blocked
+
+#### Security Features
+
+```typescript
+// The SDK automatically applies these security settings:
+{
+  mixedContentMode: "never",              // Block HTTP in HTTPS
+  mediaPlaybackRequiresUserAction: true,  // User must initiate media
+  javaScriptCanOpenWindowsAutomatically: false,
+  allowFileAccess: false,
+  allowFileAccessFromFileURLs: false,
+  allowUniversalAccessFromFileURLs: false,
+}
+```
+
+#### Ad Disclosure
+
+All ads display:
+- A visible "Ad" label in the top-left corner
+- An info button with details about the advertisement
+- Clear identification as sponsored content
+
+### For App Publishers: app-ads.txt
+
+To maximize ad revenue and prevent fraud, implement app-ads.txt:
+
+1. Add your app store URL to your website
+2. Create `/app-ads.txt` on your domain
+3. Include Simula as an authorized seller
+
+Example `app-ads.txt`:
+```
+# Simula Ad Network
+simula.ad, PUBLISHER_ID, DIRECT
+```
+
+Contact support@simula.ad for your publisher ID.
+
+### Security Utilities
+
+For advanced use cases, the SDK exports security utilities:
+
+```typescript
+import { 
+  validateAdUrl, 
+  isOriginAllowed, 
+  DEFAULT_ALLOWED_ORIGINS,
+  getWebViewSecuritySettings 
+} from "@simula/ads-react-native";
+
+// Validate an ad URL before loading
+const result = validateAdUrl("https://ads.simula.ad/ad/123");
+if (!result.isValid) {
+  console.error("Invalid ad URL:", result.error);
+}
+
+// Check if an origin is allowed
+const allowed = isOriginAllowed("https://ads.simula.ad", DEFAULT_ALLOWED_ORIGINS);
+```
+
+---
+
 ## 📐 How Width Detection Works
 
 The SDK automatically detects and optimizes ad sizing:
@@ -479,6 +552,7 @@ unsubscribe();
 
 ```typescript
 import type {
+  // Core types
   SimulaTheme,
   Message,
   AdData,
@@ -488,6 +562,11 @@ import type {
   AccentColor,
   FontOption,
   ThemeMode,
+  // Security types
+  WebViewSecurityConfig,
+  AdUrlValidationResult,
+  SecurityEventType,
+  SecurityEvent,
 } from "@simula/ads-react-native";
 ```
 

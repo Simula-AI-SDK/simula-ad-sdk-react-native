@@ -21,6 +21,11 @@ export type {
   AccentColor,
   FontOption,
   NormalizedTheme,
+  // Security types
+  WebViewSecurityConfig,
+  AdUrlValidationResult,
+  SecurityEventType,
+  SecurityEvent,
 } from "./types";
 
 // Utilities
@@ -35,6 +40,17 @@ export {
   getConsentMessage,
   PRIVACY_DISCLOSURE,
 } from "./utils/consent";
+
+// Security utilities for AdTech sandboxing compliance
+export {
+  validateAdUrl,
+  isOriginAllowed,
+  extractOrigin,
+  buildOriginWhitelist,
+  getWebViewSecuritySettings,
+  DEFAULT_ALLOWED_ORIGINS,
+  ALLOWED_SPECIAL_SCHEMES,
+} from "./utils/webview-security";
 
 // Constants
 export { AD_DIMENSIONS, DEFAULT_THEME } from "./types/theme";

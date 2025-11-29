@@ -3,7 +3,7 @@
  * Based on https://github.com/Simula-AI-SDK/simula-ad-sdk
  */
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { View, Text, StyleSheet, ActivityIndicator, Platform, Dimensions, DimensionValue, TouchableOpacity, Modal, Linking } from "react-native";
 import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { InChatAdSlotProps, AdData } from "../types";
@@ -11,6 +11,14 @@ import { useSimulaContext } from "../context/SimulaProvider";
 import { fetchAd, trackImpression } from "../api/client";
 import { useViewability, useDebounce } from "../utils/viewability";
 import { AD_DIMENSIONS } from "../types/theme";
+import { 
+  validateAdUrl, 
+  buildOriginWhitelist, 
+  isOriginAllowed, 
+  logSecurityEvent,
+  DEFAULT_ALLOWED_ORIGINS,
+  ALLOWED_SPECIAL_SCHEMES 
+} from "../utils/webview-security";
 
 /**
  * InChatAdSlot component
@@ -38,8 +46,17 @@ export function InChatAdSlot({
   const [containerWidth, setContainerWidth] = useState<number>(Dimensions.get("window").width);
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [securityError, setSecurityError] = useState<string | null>(null);
   const hasFetched = useRef(false);
   const hasTrackedImpression = useRef(false);
+
+  /**
+   * Compute allowed origins for WebView
+   * Memoized to avoid recalculation on every render
+   */
+  const originWhitelist = useMemo(() => {
+    return buildOriginWhitelist(ad?.iframeUrl);
+  }, [ad?.iframeUrl]);
 
   // Debounce messages if specified
   const debouncedMessages = useDebounce(messages, debounceMs);
@@ -121,6 +138,26 @@ export function InChatAdSlot({
           onError(new Error(result.error));
         }
       } else if (result.ad) {
+        // Validate ad URL for security compliance before rendering
+        const validation = validateAdUrl(result.ad.iframeUrl);
+        if (!validation.isValid) {
+          console.warn("🚫 Ad blocked for security:", validation.error);
+          logSecurityEvent("origin_blocked", {
+            iframeUrl: result.ad.iframeUrl,
+            reason: validation.error,
+          });
+          setSecurityError(validation.error || "Ad URL failed security validation");
+          setError(new Error("Ad blocked for security reasons"));
+          if (onError) {
+            onError(new Error("Ad blocked for security reasons"));
+          }
+          return;
+        }
+        
+        logSecurityEvent("url_validated", {
+          iframeUrl: result.ad.iframeUrl,
+        });
+        setSecurityError(null);
         setAd(result.ad);
         setIframeLoaded(false); // Reset when new ad is set
       } else {
@@ -212,42 +249,65 @@ export function InChatAdSlot({
 
   /**
    * Check if URL is a special/internal URL that should be allowed in WebView
+   * Uses security utilities for consistent validation
    */
   const isSpecialUrl = useCallback((url: string): boolean => {
     if (!url) return true;
     
-    // Allow special browser URLs
-    if (url === 'about:blank' || 
-        url === 'about:srcdoc' ||
-        url.startsWith('data:') ||
-        url.startsWith('javascript:') ||
-        url.startsWith('blob:') ||
-        url.startsWith('file:')) {
-      return true;
+    // Allow special browser URLs (about:blank, about:srcdoc, data:, blob:)
+    for (const scheme of ALLOWED_SPECIAL_SCHEMES) {
+      if (url.startsWith(scheme)) {
+        return true;
+      }
     }
     
+    // Note: javascript: and file: URLs are intentionally NOT allowed for security
     return false;
   }, []);
 
   /**
-   * Handle navigation - open URLs externally instead of in WebView
+   * Handle navigation - validate origins and open external URLs in browser
+   * Implements AdTech sandboxing by restricting allowed origins
    */
   const handleShouldStartLoadWithRequest = useCallback(
     (request: { url: string; navigationType: string }) => {
       const url = request.url;
       
-      // Allow initial load of iframe URL
+      // Allow initial load of iframe URL (already validated)
       if (ad?.iframeUrl && url === ad.iframeUrl) {
         return true;
       }
 
-      // Allow special/internal URLs (about:blank, about:srcdoc, data:, etc.)
+      // Allow special/internal URLs (about:blank, about:srcdoc, data:, blob:)
       if (isSpecialUrl(url)) {
         return true;
       }
 
-      // For any other navigation (clicks, redirects, etc.), open externally
+      // Block javascript: URLs for security (XSS prevention)
+      if (url.startsWith("javascript:")) {
+        logSecurityEvent("navigation_blocked", {
+          url,
+          reason: "javascript: URLs are blocked for security",
+        });
+        return false;
+      }
+
+      // Check if origin is allowed for in-WebView navigation
+      if (isOriginAllowed(url, DEFAULT_ALLOWED_ORIGINS)) {
+        // Allowed origin - but still open externally for user experience
+        // (ads should not navigate away from the app within WebView)
+        Linking.openURL(url).catch((err) => {
+          console.error("Failed to open URL:", err);
+        });
+        return false;
+      }
+
+      // For any other navigation, log and open externally
       if (url && url !== ad?.iframeUrl) {
+        logSecurityEvent("navigation_blocked", {
+          url,
+          reason: "Opening external URL in system browser",
+        });
         Linking.openURL(url).catch((err) => {
           console.error("Failed to open URL:", err);
         });
@@ -268,9 +328,11 @@ export function InChatAdSlot({
 
   /**
    * Render error state (silently fail)
+   * Includes both API errors and security validation errors
    */
-  if (error) {
+  if (error || securityError) {
     // Silently fail - don't show error to end users
+    // Security errors are logged for debugging
     return null;
   }
 
@@ -343,17 +405,46 @@ export function InChatAdSlot({
               if (navState.url && 
                   navState.url !== ad.iframeUrl && 
                   !isSpecialUrl(navState.url)) {
+                logSecurityEvent("navigation_blocked", {
+                  url: navState.url,
+                  reason: "Navigation state change intercepted",
+                });
                 Linking.openURL(navState.url).catch((err) => {
                   console.error("Failed to open URL:", err);
                 });
               }
             }}
+            onError={(syntheticEvent) => {
+              const { nativeEvent } = syntheticEvent;
+              logSecurityEvent("security_error", {
+                description: nativeEvent.description,
+                code: nativeEvent.code,
+              });
+            }}
+            // Core functionality
             javaScriptEnabled={true}
             domStorageEnabled={true}
-            originWhitelist={["*"]}
-            mixedContentMode="always"
+            
+            // SECURITY: Origin whitelist - restrict to HTTPS and special schemes
+            // Actual origin validation happens in onShouldStartLoadWithRequest
+            originWhitelist={originWhitelist}
+            
+            // SECURITY: Never allow mixed content (HTTP in HTTPS context)
+            // Required for App Store and Google Play compliance
+            mixedContentMode="never"
+            
+            // Media playback settings
             allowsInlineMediaPlayback={true}
-            mediaPlaybackRequiresUserAction={false}
+            // SECURITY: Require user interaction for media playback
+            // Required for App Store and Google Play compliance
+            mediaPlaybackRequiresUserAction={true}
+            
+            // SECURITY: Disable potentially dangerous features
+            javaScriptCanOpenWindowsAutomatically={false}
+            allowFileAccess={false}
+            allowFileAccessFromFileURLs={false}
+            allowUniversalAccessFromFileURLs={false}
+            
             // Inject JavaScript to intercept link clicks and open them externally
             injectedJavaScript={`
               (function() {
@@ -394,15 +485,34 @@ export function InChatAdSlot({
             contentInsetAdjustmentBehavior="never"
             // Android specific
             overScrollMode="never"
+            // Android: Enable safe browsing
+            {...Platform.select({
+              android: {
+                setSafeBrowsingEnabled: true,
+              },
+              ios: {},
+            })}
           />
+          {/* Ad disclosure label - required for App Store/Play Store compliance */}
+          <View style={styles.adLabelContainer}>
+            <Text 
+              style={styles.adLabel}
+              accessibilityLabel="This is an advertisement"
+              accessibilityRole="text"
+            >
+              Ad
+            </Text>
+          </View>
+          
           <TouchableOpacity
             style={styles.infoButton}
             onPress={(e) => {
               e.stopPropagation();
               setShowInfoModal(true);
             }}
-            accessibilityLabel="Content information"
+            accessibilityLabel="Advertisement information. Tap for details about this ad."
             accessibilityRole="button"
+            accessibilityHint="Opens dialog with advertisement details"
           >
             <View style={styles.infoIcon}>
               <Text style={styles.infoIconText}>i</Text>
@@ -414,24 +524,34 @@ export function InChatAdSlot({
             transparent={true}
             animationType="fade"
             onRequestClose={() => setShowInfoModal(false)}
+            accessibilityViewIsModal={true}
           >
             <TouchableOpacity
               style={styles.modalOverlay}
               activeOpacity={1}
               onPress={() => setShowInfoModal(false)}
+              accessibilityLabel="Close advertisement information dialog"
             >
               <TouchableOpacity
                 style={styles.modalContent}
                 activeOpacity={1}
                 onPress={(e) => e.stopPropagation()}
+                accessibilityRole="alert"
+                accessibilityLabel="Advertisement information"
               >
                 <TouchableOpacity
                   style={styles.modalClose}
                   onPress={() => setShowInfoModal(false)}
-                  accessibilityLabel="Close"
+                  accessibilityLabel="Close dialog"
+                  accessibilityRole="button"
                 >
                   <Text style={styles.modalCloseText}>×</Text>
                 </TouchableOpacity>
+                <Text style={styles.modalTitle}>Advertisement</Text>
+                <Text style={styles.modalText}>
+                  This is a contextual advertisement based on the conversation content.
+                  No personal data is collected.
+                </Text>
                 <Text style={styles.modalText}>
                   Powered by{' '}
                   <Text
@@ -441,6 +561,8 @@ export function InChatAdSlot({
                         console.error("Failed to open URL:", err);
                       });
                     }}
+                    accessibilityRole="link"
+                    accessibilityLabel="Visit Simula website"
                   >
                     Simula
                   </Text>
@@ -491,6 +613,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "transparent",
   },
+  // Ad disclosure label - required for App Store/Play Store compliance
+  adLabelContainer: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    zIndex: 10,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  adLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#fff",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
   infoButton: {
     position: "absolute",
     top: 8,
@@ -498,20 +638,21 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   infoIcon: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     borderWidth: 1,
-    borderColor: "currentColor",
+    borderColor: "rgba(0, 0, 0, 0.4)",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "transparent",
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
   },
   infoIconText: {
-    fontSize: 10,
+    fontSize: 11,
     fontFamily: "serif",
+    fontWeight: "600",
     color: "rgba(0, 0, 0, 0.6)",
-    lineHeight: 14,
+    lineHeight: 16,
     textAlign: "center",
   },
   modalOverlay: {
@@ -522,18 +663,18 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: "#fff",
-    borderRadius: 8,
-    padding: 20,
-    minWidth: 200,
-    maxWidth: "80%",
+    borderRadius: 12,
+    padding: 24,
+    minWidth: 280,
+    maxWidth: "85%",
     alignItems: "center",
   },
   modalClose: {
     position: "absolute",
-    top: 8,
-    right: 8,
-    width: 24,
-    height: 24,
+    top: 12,
+    right: 12,
+    width: 28,
+    height: 28,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -542,10 +683,18 @@ const styles = StyleSheet.create({
     color: "#666",
     lineHeight: 24,
   },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 12,
+  },
   modalText: {
     fontSize: 14,
-    color: "#333",
+    color: "#555",
     textAlign: "center",
+    marginBottom: 8,
+    lineHeight: 20,
   },
   modalLink: {
     color: "#007AFF",

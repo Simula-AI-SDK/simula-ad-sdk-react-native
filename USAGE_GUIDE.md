@@ -311,6 +311,60 @@ Internet permission is usually already present:
 | `onClick` | `(ad: AdData) => void` | ❌ | Click callback |
 | `onError` | `(error: Error) => void` | ❌ | Error callback |
 
+## Security & Compliance
+
+### WebView Sandboxing
+
+The SDK implements strict WebView sandboxing for App Store and Google Play compliance:
+
+- **HTTPS Only**: All ad content is served over secure HTTPS
+- **Origin Validation**: Only trusted Simula ad server origins are allowed
+- **No Mixed Content**: HTTP content within HTTPS context is blocked
+- **User-Initiated Media**: Media playback requires user interaction
+- **File Access Disabled**: Local file access is blocked for security
+
+### Ad Disclosure
+
+All ads automatically display:
+- A visible "Ad" label (top-left corner)
+- An info button with advertisement details
+- Clear identification as sponsored content
+
+This ensures compliance with App Store and Google Play advertising policies.
+
+### Security Utilities
+
+For advanced use cases, you can use the exported security utilities:
+
+```typescript
+import { 
+  validateAdUrl, 
+  isOriginAllowed, 
+  DEFAULT_ALLOWED_ORIGINS 
+} from '@simula/ads-react-native';
+
+// Validate an ad URL
+const result = validateAdUrl('https://ads.simula.ad/ad/123');
+console.log(result.isValid); // true
+
+// Check if an origin is in the allowed list
+const allowed = isOriginAllowed(
+  'https://ads.simula.ad',
+  DEFAULT_ALLOWED_ORIGINS
+);
+```
+
+### App Store / Play Store Submission
+
+When submitting your app, ensure you:
+
+1. **Declare Ad Network**: List "Simula Ad Network" in your app's privacy nutrition labels
+2. **Privacy Policy**: Include data collection disclosures (use `PRIVACY_DISCLOSURE` constant)
+3. **Consent Flow**: Implement proper user consent before showing ads
+4. **app-ads.txt**: Consider implementing app-ads.txt for ad fraud prevention
+
+---
+
 ## Troubleshooting
 
 ### Build Errors

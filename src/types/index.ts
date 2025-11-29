@@ -105,6 +105,67 @@ export interface SimulaContextValue {
   onConsentRequired?: () => void;
 }
 
+/**
+ * WebView security configuration for AdTech sandboxing compliance
+ * Used to configure security settings for ad WebView components
+ */
+export interface WebViewSecurityConfig {
+  /** 
+   * Additional origins to allow beyond the default Simula domains
+   * Use with caution - adding untrusted origins may violate store policies
+   */
+  additionalAllowedOrigins?: string[];
+  
+  /** 
+   * Whether to allow insecure HTTP content (NOT recommended)
+   * Default: false - only HTTPS content is allowed
+   */
+  allowInsecureContent?: boolean;
+  
+  /** 
+   * Enable verbose security logging for debugging
+   * Default: false - only errors are logged
+   */
+  debugMode?: boolean;
+}
+
+/**
+ * Security validation result for ad URLs
+ */
+export interface AdUrlValidationResult {
+  /** Whether the URL passed security validation */
+  isValid: boolean;
+  
+  /** Error message if validation failed */
+  error?: string;
+  
+  /** The validated origin (if successful) */
+  origin?: string;
+}
+
+/**
+ * Security event types for logging and monitoring
+ */
+export type SecurityEventType = 
+  | "origin_blocked"
+  | "url_validated"
+  | "navigation_blocked"
+  | "security_error";
+
+/**
+ * Security event payload for logging
+ */
+export interface SecurityEvent {
+  /** Timestamp of the event */
+  timestamp: string;
+  
+  /** Type of security event */
+  event: SecurityEventType;
+  
+  /** Additional event details */
+  details: Record<string, any>;
+}
+
 // Re-export theme types
 export * from "./theme";
 
