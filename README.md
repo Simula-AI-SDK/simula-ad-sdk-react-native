@@ -394,6 +394,27 @@ console.log(PRIVACY_DISCLOSURE.dataCollected);
 // ["Conversation context (messages)", "Session identifiers (temporary)", ...]
 ```
 
+### App Store Submission (iOS)
+
+For iOS App Store submission, you need:
+
+1. **Privacy Manifest (iOS 17+)** - Copy `ios/PrivacyInfo.xcprivacy` to your Xcode project
+2. **SKAdNetwork** - Add identifiers from `ios/SKAdNetworkItems.plist` to your `Info.plist`
+3. **App Privacy Labels** - See [docs/IOS_APP_PRIVACY.md](docs/IOS_APP_PRIVACY.md) for complete guide
+
+```bash
+# Copy privacy manifest to your iOS project
+cp node_modules/@simula/ads-react-native/ios/PrivacyInfo.xcprivacy ios/YourApp/
+```
+
+### Play Store Submission (Android)
+
+For Google Play submission, complete the Data Safety form. See [docs/GOOGLE_PLAY_DATA_SAFETY.md](docs/GOOGLE_PLAY_DATA_SAFETY.md) for:
+
+- Which data types to declare
+- Sample responses for each question
+- Copy-paste text for your listing
+
 ---
 
 ## 🛡️ Security & AdTech Sandboxing
