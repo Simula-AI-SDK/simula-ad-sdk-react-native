@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity, ActivityIndicator, Dimensions, Pressable } from 'react-native';
+import { View, Text, Modal, StyleSheet, ActivityIndicator, Dimensions, Pressable } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Message } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
@@ -300,18 +300,29 @@ export const GameIframe: React.FC<GameIframeProps> = ({
             )}
           </View>
 
+          {/* Touch blocker area - prevents WebView from capturing touches in close button area */}
+          <View
+            style={styles.touchBlocker}
+            pointerEvents="auto"
+            onStartShouldSetResponder={() => true}
+            onResponderTerminationRequest={() => false}
+          />
+          
           {/* Close button - positioned absolutely above everything with proper touch handling */}
-          <TouchableOpacity
+          <Pressable
             onPress={onClose}
             style={styles.closeButtonWrapper}
             accessibilityLabel="Close game"
             accessibilityRole="button"
-            activeOpacity={0.8}
+            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+            onStartShouldSetResponder={() => true}
+            onResponderTerminationRequest={() => false}
+            pointerEvents="auto"
           >
             <View style={styles.closeButton}>
               <Text style={styles.closeButtonText}>×</Text>
             </View>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </Pressable>
     </Modal>
@@ -335,18 +346,27 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  touchBlocker: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 100,
+    height: 100,
+    zIndex: 9999,
+    elevation: 9,
+  },
   closeButtonWrapper: {
     position: 'absolute',
     top: 8,
     right: 8,
-    width: 64,
-    height: 64,
+    width: 80,
+    height: 80,
     zIndex: 10000,
     elevation: 10,
     justifyContent: 'flex-start',
     alignItems: 'flex-end',
-    paddingTop: 8,
-    paddingRight: 8,
+    paddingTop: 0,
+    paddingRight: 0,
   },
   closeButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.9)',

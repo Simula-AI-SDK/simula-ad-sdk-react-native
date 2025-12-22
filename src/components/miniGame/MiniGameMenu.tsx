@@ -186,17 +186,28 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
               style={styles.adContainer}
               onStartShouldSetResponder={() => true}
             >
-              <TouchableOpacity
+              {/* Touch blocker area - prevents WebView from capturing touches in close button area */}
+              <View
+                style={styles.adTouchBlocker}
+                pointerEvents="auto"
+                onStartShouldSetResponder={() => true}
+                onResponderTerminationRequest={() => false}
+              />
+              
+              <Pressable
                 onPress={handleAdIframeClose}
                 style={styles.adCloseButtonWrapper}
                 accessibilityLabel="Close ad"
                 accessibilityRole="button"
-                activeOpacity={0.8}
+                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                onStartShouldSetResponder={() => true}
+                onResponderTerminationRequest={() => false}
+                pointerEvents="auto"
               >
                 <View style={styles.adCloseButton}>
                   <Text style={styles.adCloseButtonText}>×</Text>
                 </View>
-              </TouchableOpacity>
+              </Pressable>
               <WebView
                 source={{ uri: adIframeUrl }}
                 style={styles.adWebView}
@@ -508,18 +519,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  adTouchBlocker: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 100,
+    height: 100,
+    zIndex: 9999,
+    elevation: 9,
+  },
   adCloseButtonWrapper: {
     position: 'absolute',
     top: 8,
     right: 8,
-    width: 64,
-    height: 64,
+    width: 80,
+    height: 80,
     zIndex: 10000,
     elevation: 10,
     justifyContent: 'flex-start',
     alignItems: 'flex-end',
-    paddingTop: 8,
-    paddingRight: 8,
+    paddingTop: 0,
+    paddingRight: 0,
   },
   adCloseButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
