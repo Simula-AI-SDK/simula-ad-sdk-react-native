@@ -3,14 +3,14 @@
  * Based on https://github.com/Simula-AI-SDK/simula-ad-sdk
  */
 
-import { Message, AdData, SimulaTheme } from "../types";
+import { Message, AdData, SimulaTheme, GameData } from "../types";
 import { NormalizedTheme, DEFAULT_THEME } from "../types/theme";
 
 // Production API URL (from original SDK)
 // const API_BASE_URL = "https://simula-api-701226639755.us-central1.run.app";
 // const API_BASE_URL = "https://62d01abed0fd.ngrok-free.app";
 // const API_BASE_URL = "https://splittable-unpatient-maxine.ngrok-free.dev";
-const API_BASE_URL = "https://motherboard-pros-orleans-outsourcing.trycloudflare.com";
+const API_BASE_URL = "https://murray-rats-prominent-tackle.trycloudflare.com";
 const REQUEST_TIMEOUT = 5000; // 5 seconds
 
 /**
@@ -291,6 +291,139 @@ export async function trackImpression(adId: string, apiKey: string): Promise<voi
     });
   } catch (error) {
     console.error("Failed to track impression:", error);
+  }
+}
+
+/**
+ * Fetch game catalog (matches original SDK)
+ */
+export async function fetchCatalog(): Promise<GameData[]> {
+  try {
+    const response: Response = await fetch(`${API_BASE_URL}/minigames/catalog`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "1",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const responseData: { data: any[] } = await response.json();
+    
+    // Map API response to GameData format (icon -> iconUrl)
+    const games: GameData[] = responseData.data.map((game: any) => ({
+      id: game.id,
+      name: game.name,
+      iconUrl: game.icon, // API returns 'icon', we use 'iconUrl'
+      description: game.description,
+      iconFallback: game.iconFallback,
+    }));
+    
+    return games;
+  } catch (error) {
+    console.error("Failed to fetch catalog:", error);
+    throw error;
+  }
+}
+
+/**
+ * Request interface for initializing minigame
+ */
+export interface InitMinigameRequest {
+  gameType: string;
+  sessionId: string;
+  convId?: string | null;
+  currencyMode?: boolean;
+  w: number;
+  h: number;
+  char_id?: string;
+  char_name?: string;
+  char_image?: string;
+  char_desc?: string;
+  messages?: Message[];
+  delegate_char?: boolean;
+}
+
+/**
+ * Response interface for minigame initialization
+ */
+export interface MinigameResponse {
+  adType: "minigame";
+  adInserted: boolean;
+  adResponse: {
+    ad_id: string;
+    iframe_url: string;
+  };
+}
+
+/**
+ * Initialize minigame and get iframe URL (matches original SDK)
+ */
+export async function getMinigame(params: InitMinigameRequest): Promise<MinigameResponse> {
+  try {
+    const response: Response = await fetch(`${API_BASE_URL}/minigames/init`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "1",
+      },
+      body: JSON.stringify({
+        game_type: params.gameType,
+        session_id: params.sessionId,
+        conv_id: params.convId ?? null,
+        currency_mode: params.currencyMode ?? false,
+        w: params.w,
+        h: params.h,
+        char_id: params.char_id,
+        char_name: params.char_name,
+        char_image: params.char_image,
+        char_desc: params.char_desc,
+        messages: params.messages,
+        delegate_char: params.delegate_char ?? true,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data: MinigameResponse = await response.json();
+    return data;
+  } catch (error) {
+    console.error("Failed to initialize minigame:", error);
+    throw error;
+  }
+}
+
+/**
+ * Fetch fallback ad after minigame closes (matches original SDK)
+ */
+export async function fetchAdForMinigame(aid: string): Promise<string | null> {
+  try {
+    const response: Response = await fetch(`${API_BASE_URL}/minigames/fallback_ad/${aid}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data: MinigameResponse = await response.json();
+    
+    if (data.adResponse && data.adResponse.iframe_url) {
+      return data.adResponse.iframe_url;
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Failed to fetch ad for minigame:", error);
+    return null;
   }
 }
 

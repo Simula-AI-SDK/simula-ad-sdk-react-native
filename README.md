@@ -14,6 +14,16 @@ Simula delivers **contextually relevant ads** for conversational AI apps and LLM
 npm install @simula/ads-react-native react-native-webview
 ```
 
+### Optional: Safe Area Context
+
+To suppress deprecation warnings related to `SafeAreaView`, install `react-native-safe-area-context`:
+
+```bash
+npm install react-native-safe-area-context
+```
+
+Then follow the [setup instructions](https://github.com/th3rdwave/react-native-safe-area-context#getting-started) for your platform.
+
 ### Additional Setup
 
 #### iOS

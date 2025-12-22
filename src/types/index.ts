@@ -166,6 +166,39 @@ export interface SecurityEvent {
   details: Record<string, any>;
 }
 
+// MiniGameMenu types
+export interface MiniGameTheme {
+  backgroundColor?: string;
+  headerColor?: string;
+  borderColor?: string;
+  titleFont?: string;
+  secondaryFont?: string;
+  titleFontColor?: string;
+  secondaryFontColor?: string;
+  iconCornerRadius?: number;
+}
+
+export interface GameData {
+  id: string;
+  name: string;
+  iconUrl: string;
+  description: string;
+  iconFallback?: string; // Optional fallback emoji (defaults to 🎮)
+}
+
+export interface MiniGameMenuProps {
+  isOpen: boolean;
+  onClose: () => void;
+  charName: string;
+  charID: string;
+  charImage: string;
+  messages?: Message[];
+  charDesc?: string;
+  maxGamesToShow?: 3 | 6 | 9;
+  theme?: MiniGameTheme;
+  delegateChar?: boolean; // Whether Simula should display the AI character within the iframe (default: true)
+}
+
 // Re-export theme types
 export * from "./theme";
 

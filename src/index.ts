@@ -8,6 +8,7 @@
 // Components
 export { SimulaProvider, useSimulaContext } from "./context/SimulaProvider";
 export { InChatAdSlot } from "./components/InChatAdSlot";
+export { MiniGameMenu } from "./components/miniGame/MiniGameMenu";
 
 // Types
 export type {
@@ -21,6 +22,10 @@ export type {
   AccentColor,
   FontOption,
   NormalizedTheme,
+  // MiniGameMenu types
+  MiniGameTheme,
+  GameData,
+  MiniGameMenuProps,
   // Security types
   WebViewSecurityConfig,
   AdUrlValidationResult,
@@ -56,5 +61,6 @@ export {
 export { AD_DIMENSIONS, DEFAULT_THEME } from "./types/theme";
 
 // API client (for advanced use cases)
-export { fetchAd, trackImpression, createSession } from "./api/client";
+export { fetchAd, trackImpression, createSession, fetchCatalog, getMinigame, fetchAdForMinigame } from "./api/client";
+export type { InitMinigameRequest, MinigameResponse } from "./api/client";
 
