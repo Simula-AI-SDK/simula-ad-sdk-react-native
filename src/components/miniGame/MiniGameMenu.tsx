@@ -192,6 +192,8 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
               <View
                 style={styles.adContentContainer}
                 onStartShouldSetResponder={() => true}
+                onMoveShouldSetResponder={() => false}
+                onResponderTerminationRequest={() => true}
               >
                 {adWebViewSource && (
                   <WebView

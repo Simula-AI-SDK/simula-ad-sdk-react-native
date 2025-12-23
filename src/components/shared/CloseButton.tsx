@@ -31,6 +31,8 @@ export const CloseButton: React.FC<CloseButtonProps> = ({
       accessibilityRole="button"
       accessibilityHint={accessibilityHint}
       hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+      onStartShouldSetResponder={() => true}
+      onResponderTerminationRequest={() => false}
     >
       <View style={styles.button}>
         <Text style={styles.text}>×</Text>
