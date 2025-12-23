@@ -621,3 +621,5 @@ The catalog updates automatically, so new games will appear without app updates.
 **Need help?** Contact [support@simula.ad](mailto:support@simula.ad) or visit [simula.ad](https://simula.ad)
 
 
+
+

@@ -9,8 +9,8 @@ import { NormalizedTheme, DEFAULT_THEME } from "../types/theme";
 // Production API URL (from original SDK)
 // const API_BASE_URL = "https://simula-api-701226639755.us-central1.run.app";
 // const API_BASE_URL = "https://62d01abed0fd.ngrok-free.app";
-// const API_BASE_URL = "https://splittable-unpatient-maxine.ngrok-free.dev";
-const API_BASE_URL = "https://murray-rats-prominent-tackle.trycloudflare.com";
+const API_BASE_URL = "https://splittable-unpatient-maxine.ngrok-free.dev";
+// const API_BASE_URL = "https://murray-rats-prominent-tackle.trycloudflare.com";
 const REQUEST_TIMEOUT = 5000; // 5 seconds
 
 /**
@@ -172,13 +172,6 @@ export async function fetchAd(
       char_desc: charDesc,
     };
 
-    // Log request payload for debugging
-    console.log("📤 API Request:", {
-      url: `${API_BASE_URL}/render_ad/ssp`,
-      method: "POST",
-      body: JSON.stringify(requestBody, null, 2),
-    });
-
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${apiKey}`,
@@ -197,25 +190,18 @@ export async function fetchAd(
 
     clearTimeout(timeoutId);
 
-    // Log response status
-    console.log("📥 Response Status:", response.status, response.statusText);
-
     // Read response body (even on errors to see what server returned)
     let data: AdResponse;
     try {
       const responseText = await response.text();
-      console.log("📥 Raw API Response (text):", responseText);
       
       // Try to parse as JSON
       try {
         data = JSON.parse(responseText);
-        console.log("📥 Raw API Response (parsed):", JSON.stringify(data, null, 2));
       } catch (parseError) {
-        console.log("⚠️ Response is not valid JSON");
         data = { error: `Invalid JSON response: ${responseText.substring(0, 200)}` };
       }
     } catch (readError) {
-      console.error("❌ Failed to read response:", readError);
       data = { error: `Failed to read response: ${readError instanceof Error ? readError.message : 'Unknown error'}` };
     }
 
@@ -262,8 +248,6 @@ export async function fetchAd(
 
     return { error: "Unexpected response from ad server" };
   } catch (error) {
-    console.error("❌ API Request failed:", error);
-    
     if (error instanceof Error && error.name === "AbortError") {
       return { error: "Ad request timed out" };
     }
@@ -290,7 +274,7 @@ export async function trackImpression(adId: string, apiKey: string): Promise<voi
       body: JSON.stringify({}),
     });
   } catch (error) {
-    console.error("Failed to track impression:", error);
+    // Silently fail
   }
 }
 
@@ -324,7 +308,6 @@ export async function fetchCatalog(): Promise<GameData[]> {
     
     return games;
   } catch (error) {
-    console.error("Failed to fetch catalog:", error);
     throw error;
   }
 }
@@ -345,6 +328,7 @@ export interface InitMinigameRequest {
   char_desc?: string;
   messages?: Message[];
   delegate_char?: boolean;
+  is_mobile?: boolean | null;
 }
 
 /**
@@ -383,6 +367,7 @@ export async function getMinigame(params: InitMinigameRequest): Promise<Minigame
         char_desc: params.char_desc,
         messages: params.messages,
         delegate_char: params.delegate_char ?? true,
+        is_mobile: false,
       }),
     });
 
@@ -393,7 +378,6 @@ export async function getMinigame(params: InitMinigameRequest): Promise<Minigame
     const data: MinigameResponse = await response.json();
     return data;
   } catch (error) {
-    console.error("Failed to initialize minigame:", error);
     throw error;
   }
 }
@@ -422,7 +406,6 @@ export async function fetchAdForMinigame(aid: string): Promise<string | null> {
 
     return null;
   } catch (error) {
-    console.error("Failed to fetch ad for minigame:", error);
     return null;
   }
 }

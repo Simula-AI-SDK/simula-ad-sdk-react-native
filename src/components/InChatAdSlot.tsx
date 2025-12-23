@@ -11,14 +11,16 @@ import { useSimulaContext } from "../context/SimulaProvider";
 import { fetchAd, trackImpression } from "../api/client";
 import { useViewability, useDebounce } from "../utils/viewability";
 import { AD_DIMENSIONS } from "../types/theme";
-import { 
-  validateAdUrl, 
-  buildOriginWhitelist, 
-  isOriginAllowed, 
+import {
+  validateAdUrl,
+  buildOriginWhitelist,
+  isOriginAllowed,
   logSecurityEvent,
   DEFAULT_ALLOWED_ORIGINS,
-  ALLOWED_SPECIAL_SCHEMES 
+  ALLOWED_SPECIAL_SCHEMES,
+  computeWebViewSource
 } from "../utils/webview-security";
+import { CloseButton } from "./shared/CloseButton";
 
 /**
  * InChatAdSlot component
@@ -57,6 +59,11 @@ export function InChatAdSlot({
   const originWhitelist = useMemo(() => {
     return buildOriginWhitelist(ad?.iframeUrl);
   }, [ad?.iframeUrl]);
+
+  /**
+   * Compute WebView source using shared utility
+   */
+  const webViewSource = useMemo(() => computeWebViewSource(ad?.iframeUrl), [ad?.iframeUrl]);
 
   // Debounce messages if specified
   const debouncedMessages = useDebounce(messages, debounceMs);
@@ -226,8 +233,14 @@ export function InChatAdSlot({
           }
         } else if (data.type === "linkClick" || data.type === "windowOpen") {
           // Handle link clicks from injected JavaScript - open externally
-          if (data.url) {
-            Linking.openURL(data.url).catch((err) => {
+          // Don't try to open data:, blob:, or about: URLs - they can't be opened externally
+          const url = data.url;
+          if (url && 
+              !url.startsWith("data:") && 
+              !url.startsWith("blob:") && 
+              !url.startsWith("about:") &&
+              !url.startsWith("javascript:")) {
+            Linking.openURL(url).catch((err) => {
               console.error("Failed to open URL:", err);
             });
           }
@@ -274,11 +287,13 @@ export function InChatAdSlot({
       const url = request.url;
       
       // Allow initial load of iframe URL (already validated)
+      // For data URLs loaded via source.html, the initial URL will be about:blank or about:srcdoc
       if (ad?.iframeUrl && url === ad.iframeUrl) {
         return true;
       }
 
       // Allow special/internal URLs (about:blank, about:srcdoc, data:, blob:)
+      // This is critical for data URLs loaded via source.html
       if (isSpecialUrl(url)) {
         return true;
       }
@@ -390,10 +405,10 @@ export function InChatAdSlot({
         </View>
       )}
       
-      {ad && ad.iframeUrl && (
+      {ad && ad.iframeUrl && webViewSource && (
         <>
           <WebView
-            source={{ uri: ad.iframeUrl }}
+            source={webViewSource}
             style={styles.webview}
             scrollEnabled={false}
             bounces={false}
@@ -402,14 +417,14 @@ export function InChatAdSlot({
             onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
             onNavigationStateChange={(navState) => {
               // Intercept navigation changes - open externally if not the initial iframe URL or special URL
-              if (navState.url && 
-                  navState.url !== ad.iframeUrl && 
-                  !isSpecialUrl(navState.url)) {
+              // isSpecialUrl covers data:, blob:, about: schemes which can't be opened externally
+              const url = navState.url;
+              if (url && url !== ad.iframeUrl && !isSpecialUrl(url)) {
                 logSecurityEvent("navigation_blocked", {
-                  url: navState.url,
+                  url: url,
                   reason: "Navigation state change intercepted",
                 });
-                Linking.openURL(navState.url).catch((err) => {
+                Linking.openURL(url).catch((err) => {
                   console.error("Failed to open URL:", err);
                 });
               }
@@ -539,14 +554,11 @@ export function InChatAdSlot({
                 accessibilityRole="alert"
                 accessibilityLabel="Advertisement information"
               >
-                <TouchableOpacity
-                  style={styles.modalClose}
+                <CloseButton
                   onPress={() => setShowInfoModal(false)}
                   accessibilityLabel="Close dialog"
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.modalCloseText}>×</Text>
-                </TouchableOpacity>
+                  accessibilityHint="Double tap to close the advertisement information"
+                />
                 <Text style={styles.modalTitle}>Advertisement</Text>
                 <Text style={styles.modalText}>
                   This is a contextual advertisement based on the conversation content.
@@ -668,20 +680,6 @@ const styles = StyleSheet.create({
     minWidth: 280,
     maxWidth: "85%",
     alignItems: "center",
-  },
-  modalClose: {
-    position: "absolute",
-    top: 12,
-    right: 12,
-    width: 28,
-    height: 28,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modalCloseText: {
-    fontSize: 24,
-    color: "#666",
-    lineHeight: 24,
   },
   modalTitle: {
     fontSize: 18,

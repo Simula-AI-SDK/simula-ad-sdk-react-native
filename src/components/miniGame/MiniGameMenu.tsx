@@ -3,7 +3,7 @@
  * Based on https://github.com/Simula-AI-SDK/simula-ad-sdk
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, Pressable } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MiniGameMenuProps, MiniGameTheme, GameData } from '../../types';
@@ -11,6 +11,8 @@ import { GameGrid } from './GameGrid';
 import { GameIframe } from './GameIframe';
 import { fetchCatalog, fetchAdForMinigame } from '../../api/client';
 import { GAMES_UNAVAILABLE_IMAGE_BASE64 } from './assets';
+import { computeWebViewSource, buildOriginWhitelist } from '../../utils/webview-security';
+import { CloseButton } from '../shared/CloseButton';
 
 const defaultTheme: Omit<Required<MiniGameTheme>, 'backgroundColor' | 'headerColor' | 'borderColor'> & { backgroundColor?: string; headerColor?: string; borderColor?: string } = {
   titleFont: 'Inter, system-ui, sans-serif',
@@ -83,7 +85,6 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
         const catalogData = await fetchCatalog();
         setGames(catalogData);
       } catch (error) {
-        console.error('Failed to load game catalog:', error);
         setCatalogError(true);
         setGames([]);
       } finally {
@@ -127,7 +128,6 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
             setAdFetched(true);
           }
         } catch (error) {
-          console.error('Error fetching ad:', error);
           // If ad fetch fails, just close without showing ad
         }
       }
@@ -147,6 +147,11 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
     // Close when clicking the overlay (backdrop)
     handleAdIframeClose();
   };
+
+  /**
+   * Compute WebView source for ad iframe using shared utility
+   */
+  const adWebViewSource = useMemo(() => computeWebViewSource(adIframeUrl), [adIframeUrl]);
 
   if (!isOpen && !selectedGameId && !adIframeUrl) {
     return null;
@@ -193,30 +198,24 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
                 onStartShouldSetResponder={() => true}
                 onResponderTerminationRequest={() => false}
               />
-              
-              <Pressable
+
+              <CloseButton
                 onPress={handleAdIframeClose}
-                style={styles.adCloseButtonWrapper}
                 accessibilityLabel="Close ad"
-                accessibilityRole="button"
-                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                onStartShouldSetResponder={() => true}
-                onResponderTerminationRequest={() => false}
-                pointerEvents="auto"
-              >
-                <View style={styles.adCloseButton}>
-                  <Text style={styles.adCloseButtonText}>×</Text>
-                </View>
-              </Pressable>
-              <WebView
-                source={{ uri: adIframeUrl }}
-                style={styles.adWebView}
-                scrollEnabled={false}
-                bounces={false}
-                allowsFullscreen={true}
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
+                accessibilityHint="Double tap to close the ad"
               />
+              {adWebViewSource && (
+                <WebView
+                  source={adWebViewSource}
+                  originWhitelist={buildOriginWhitelist()}
+                  style={styles.adWebView}
+                  scrollEnabled={false}
+                  bounces={false}
+                  allowsFullscreen={true}
+                  javaScriptEnabled={true}
+                  domStorageEnabled={true}
+                />
+              )}
             </View>
           </Pressable>
         </Modal>
@@ -523,36 +522,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     right: 8,
-    width: 100,
-    height: 100,
-    zIndex: 9999,
-    elevation: 9,
-  },
-  adCloseButtonWrapper: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
     width: 80,
     height: 80,
-    zIndex: 10000,
-    elevation: 10,
-    justifyContent: 'flex-start',
-    alignItems: 'flex-end',
-    paddingTop: 0,
-    paddingRight: 0,
-  },
-  adCloseButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 22,
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  adCloseButtonText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1F2937',
+    zIndex: 9999,
+    elevation: 9,
   },
   adWebView: {
     width: '100%',
