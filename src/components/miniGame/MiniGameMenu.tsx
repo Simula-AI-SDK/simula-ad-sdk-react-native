@@ -187,10 +187,26 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
             onPress={handleAdOverlayPress}
             style={styles.adOverlay}
           >
-            <View
-              style={styles.adContainer}
-              onStartShouldSetResponder={() => true}
-            >
+            <View style={styles.adContainer}>
+              {/* WebView content */}
+              <View
+                style={styles.adContentContainer}
+                onStartShouldSetResponder={() => true}
+              >
+                {adWebViewSource && (
+                  <WebView
+                    source={adWebViewSource}
+                    originWhitelist={buildOriginWhitelist()}
+                    style={styles.adWebView}
+                    scrollEnabled={false}
+                    bounces={false}
+                    allowsFullscreen={true}
+                    javaScriptEnabled={true}
+                    domStorageEnabled={true}
+                  />
+                )}
+              </View>
+
               {/* Touch blocker area - prevents WebView from capturing touches in close button area */}
               <View
                 style={styles.adTouchBlocker}
@@ -204,18 +220,6 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
                 accessibilityLabel="Close ad"
                 accessibilityHint="Double tap to close the ad"
               />
-              {adWebViewSource && (
-                <WebView
-                  source={adWebViewSource}
-                  originWhitelist={buildOriginWhitelist()}
-                  style={styles.adWebView}
-                  scrollEnabled={false}
-                  bounces={false}
-                  allowsFullscreen={true}
-                  javaScriptEnabled={true}
-                  domStorageEnabled={true}
-                />
-              )}
             </View>
           </Pressable>
         </Modal>
@@ -512,11 +516,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   adContainer: {
-    position: 'relative',
+    flex: 1,
     width: '100%',
     height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
+  },
+  adContentContainer: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
   },
   adTouchBlocker: {
     position: 'absolute',
