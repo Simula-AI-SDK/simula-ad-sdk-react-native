@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, Pressable } from 'react-native';
+import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, Pressable, StatusBar } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MiniGameMenuProps, MiniGameTheme, GameData } from '../../types';
 import { GameGrid } from './GameGrid';
@@ -144,7 +144,6 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   };
 
   const handleAdOverlayPress = () => {
-    // Close when clicking the overlay (backdrop)
     handleAdIframeClose();
   };
 
@@ -183,6 +182,7 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
           onRequestClose={handleAdIframeClose}
           accessibilityViewIsModal={true}
         >
+          <StatusBar hidden={true} />
           <Pressable
             onPress={handleAdOverlayPress}
             style={styles.adOverlay}
