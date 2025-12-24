@@ -36,7 +36,7 @@ export function InChatAdSlot({
   onClick,
   onError,
 }: InChatAdSlotProps): React.JSX.Element | null {
-  const { apiKey, sessionId, hasUserConsent } = useSimulaContext();
+  const { apiKey, sessionId, hasPrivacyConsent } = useSimulaContext();
   
   // Generate stable slot ID (matches original SDK)
   const slotId = useRef(`slot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`).current;
@@ -89,7 +89,7 @@ export function InChatAdSlot({
     }
 
     // Check consent
-    if (!hasUserConsent) {
+    if (!hasPrivacyConsent) {
       return;
     }
 
@@ -184,7 +184,7 @@ export function InChatAdSlot({
     } finally {
       setLoading(false);
     }
-  }, [apiKey, sessionId, debouncedMessages, theme, trigger, hasUserConsent, onError]);
+  }, [apiKey, sessionId, debouncedMessages, theme, trigger, hasPrivacyConsent, onError]);
 
   /**
    * Handle viewability callback
@@ -337,7 +337,7 @@ export function InChatAdSlot({
   /**
    * Don't render if no consent
    */
-  if (!hasUserConsent) {
+  if (!hasPrivacyConsent) {
     return null;
   }
 
@@ -699,4 +699,5 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline",
   },
 });
+
 

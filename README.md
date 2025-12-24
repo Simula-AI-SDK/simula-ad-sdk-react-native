@@ -101,21 +101,23 @@ function ChatInterface() {
 
 Initializes the SDK and manages session state.
 
-| Prop              | Type                | Required | Default | Description                                                      |
-| ----------------- | ------------------- | -------- | ------- | ---------------------------------------------------------------- |
-| apiKey            | string              | ✅       | —       | Your Simula API key from the [dashboard](https://simula.ad)     |
-| children          | ReactNode           | ✅       | —       | Your app components                                              |
-| hasUserConsent    | boolean             | ❌       | false   | Initial consent state (GDPR/CCPA)                                |
-| onConsentRequired | () => void          | ❌       | —       | Callback when user consent is needed                             |
+| Prop                     | Type                | Required | Default | Description                                                      |
+| ------------------------ | ------------------- | -------- | ------- | ---------------------------------------------------------------- |
+| apiKey                   | string              | ✅       | —       | Your Simula API key from the [dashboard](https://simula.ad)     |
+| children                 | ReactNode           | ✅       | —       | Your app components                                              |
+| hasPrivacyConsent        | boolean             | ❌       | false   | Privacy consent for processing conversation data (GDPR/TCF 2.0) |
+| onPrivacyConsentRequired | () => void          | ❌       | —       | Callback when privacy consent is needed                          |
+
+> **Note:** `hasAdTrackingConsent` is auto-detected from the OS (iOS ATT / Android GAID) and exposed as a read-only value in the context.
 
 #### Example
 
 ```typescript
-<SimulaProvider 
+<SimulaProvider
   apiKey="SIMULA_xxx"
-  hasUserConsent={true}
-  onConsentRequired={() => {
-    // Show your consent dialog
+  hasPrivacyConsent={true}
+  onPrivacyConsentRequired={() => {
+    // Show your consent dialog or CMP
     showConsentDialog();
   }}
 >
@@ -147,6 +149,44 @@ interface Message {
   content: string;
   llmPromise?: Promise<any>; // Optional: for trigger timing
 }
+```
+
+---
+
+### `MiniGameMenu`
+
+Displays a menu of sponsored mini-games that users can play with AI characters.
+
+| Prop                   | Type                | Required | Default | Description                                                      |
+| ---------------------- | ------------------- | -------- | ------- | ---------------------------------------------------------------- |
+| isOpen                 | boolean             | ✅       | —       | Whether the menu is visible                                      |
+| onClose                | () => void          | ✅       | —       | Callback when menu is closed                                     |
+| charName               | string              | ✅       | —       | AI character name                                                |
+| charID                 | string              | ✅       | —       | AI character ID                                                  |
+| charImage              | string              | ✅       | —       | AI character avatar URL                                          |
+| messages               | Message[]           | ❌       | []      | Conversation context for game personalization                    |
+| charDesc               | string              | ❌       | —       | Character description                                            |
+| maxGamesToShow         | 3 \| 6 \| 9         | ❌       | 6       | Maximum games to display                                         |
+| theme                  | MiniGameTheme       | ❌       | —       | Theme customization                                              |
+| delegateChar           | boolean             | ❌       | true    | Whether Simula displays the AI character in the game             |
+| consentRequiredMessage | string              | ❌       | —       | Custom message when privacy consent is not granted               |
+
+> **Note:** Mini games require privacy consent. If `hasPrivacyConsent` is `false`, the menu displays a consent required message instead of games.
+
+#### Example
+
+```typescript
+import { MiniGameMenu } from "@simula/ads-react-native";
+
+<MiniGameMenu
+  isOpen={showGames}
+  onClose={() => setShowGames(false)}
+  charName="Luna"
+  charID="char_123"
+  charImage="https://example.com/luna.png"
+  messages={messages}
+  consentRequiredMessage="Please accept privacy settings to play games with Luna."
+/>
 ```
 
 ---
@@ -333,15 +373,25 @@ const styles = StyleSheet.create({
 
 ## 🔐 Privacy & Consent Management
 
+### Two Types of Consent
+
+The SDK handles two types of consent:
+
+| Consent Type | Source | Purpose |
+|--------------|--------|---------|
+| **Privacy Consent** | Parent app prop | GDPR/TCF 2.0 - consent to process conversation data |
+| **Ad Tracking Consent** | Auto-detected from OS | iOS ATT / Android GAID - device ID access |
+
 ### App Store / Play Store Compliance
 
 Simula SDK is designed for **App Store and Play Store compliance**:
 
-- ✅ No device fingerprinting (IDFA/AAID)
+- ✅ No device fingerprinting (IDFA/AAID) - SDK doesn't collect device IDs
 - ✅ No location tracking
 - ✅ No personal information collection
 - ✅ Bot detection handled server-side only
-- ✅ Consent management hooks provided
+- ✅ Privacy consent hooks provided
+- ✅ Ad tracking consent auto-detected from OS
 
 ### What Data is Collected?
 
@@ -352,10 +402,10 @@ The SDK collects only:
 - Platform info (iOS/Android)
 - Screen dimensions
 
-### Setting Up Consent
+### Setting Up Privacy Consent
 
 ```typescript
-import { SimulaProvider, consentManager, getConsentMessage } from "@simula/ads-react-native";
+import { SimulaProvider, privacyConsentManager, getPrivacyConsentMessage } from "@simula/ads-react-native";
 
 function App() {
   const [hasConsent, setHasConsent] = useState(false);
@@ -363,12 +413,12 @@ function App() {
   const showConsentDialog = () => {
     Alert.alert(
       "Privacy Notice",
-      getConsentMessage(),
+      getPrivacyConsentMessage(),
       [
         { text: "Decline", onPress: () => setHasConsent(false) },
         { text: "Accept", onPress: () => {
           setHasConsent(true);
-          consentManager.setConsent(true);
+          privacyConsentManager.setConsent(true);
         }},
       ]
     );
@@ -377,8 +427,8 @@ function App() {
   return (
     <SimulaProvider
       apiKey="SIMULA_xxx"
-      hasUserConsent={hasConsent}
-      onConsentRequired={showConsentDialog}
+      hasPrivacyConsent={hasConsent}
+      onPrivacyConsentRequired={showConsentDialog}
     >
       <YourApp />
     </SimulaProvider>
@@ -563,18 +613,38 @@ Prevent excessive API calls during rapid message updates:
 ### Manual Consent Control
 
 ```typescript
-import { consentManager } from "@simula/ads-react-native";
+import { privacyConsentManager } from "@simula/ads-react-native";
 
-// Set consent programmatically
-consentManager.setConsent(true);
+// Set privacy consent programmatically
+privacyConsentManager.setConsent(true);
+
+// Get current consent status
+const hasConsent = privacyConsentManager.getConsent();
 
 // Subscribe to consent changes
-const unsubscribe = consentManager.subscribe((hasConsent) => {
-  console.log("Consent changed:", hasConsent);
+const unsubscribe = privacyConsentManager.subscribe((hasConsent) => {
+  console.log("Privacy consent changed:", hasConsent);
 });
 
 // Cleanup
 unsubscribe();
+```
+
+### Accessing Ad Tracking Consent
+
+Ad tracking consent is auto-detected from the OS and available as a read-only value:
+
+```typescript
+import { useSimulaContext } from "@simula/ads-react-native";
+
+function MyComponent() {
+  const { hasPrivacyConsent, hasAdTrackingConsent } = useSimulaContext();
+
+  console.log("Privacy consent:", hasPrivacyConsent);       // From parent app
+  console.log("Ad tracking consent:", hasAdTrackingConsent); // Auto-detected from OS
+
+  return <YourContent />;
+}
 ```
 
 ---
@@ -593,11 +663,18 @@ import type {
   AccentColor,
   FontOption,
   ThemeMode,
+  // MiniGame types
+  MiniGameMenuProps,
+  MiniGameTheme,
+  GameData,
   // Security types
   WebViewSecurityConfig,
   AdUrlValidationResult,
   SecurityEventType,
   SecurityEvent,
+  // Ad tracking types
+  AdTrackingStatus,
+  AdTrackingResult,
 } from "@simula/ads-react-native";
 ```
 
@@ -640,7 +717,7 @@ npm list react
 ### Ads Not Showing
 
 1. **Check API Key**: Must start with `SIMULA_`
-2. **Check Consent**: User must consent via `hasUserConsent` prop
+2. **Check Consent**: User must grant privacy consent via `hasPrivacyConsent` prop
 3. **Check Messages**: At least one message required
 4. **Check Network**: Ensure internet connectivity
 5. **Check Logs**: Look for errors in console

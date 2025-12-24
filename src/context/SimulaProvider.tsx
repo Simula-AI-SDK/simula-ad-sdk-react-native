@@ -6,7 +6,8 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from "react";
 import { SimulaProviderProps, SimulaContextValue } from "../types";
 import { createSession } from "../api/client";
-import { consentManager, isConsentRequired } from "../utils/consent";
+import { privacyConsentManager, isPrivacyConsentRequired } from "../utils/consent";
+import { detectAdTrackingConsent } from "../utils/adTracking";
 
 /**
  * Simula context
@@ -35,15 +36,18 @@ export function SimulaProvider({
   children,
   devMode = false,
   primaryUserID,
-  onConsentRequired,
-  hasUserConsent = false,
+  hasPrivacyConsent = false,
+  onPrivacyConsentRequired,
 }: SimulaProviderProps): React.JSX.Element {
   // Create session ID from API on mount (matches original SDK)
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [sessionError, setSessionError] = useState<Error | null>(null);
-  
-  // Consent state
-  const [hasConsent, setHasConsent] = useState(hasUserConsent);
+
+  // Privacy consent state (controlled by parent app)
+  const [privacyConsent, setPrivacyConsentState] = useState(hasPrivacyConsent);
+
+  // Ad tracking consent state (auto-detected from OS)
+  const [adTrackingConsent, setAdTrackingConsentState] = useState(false);
 
   // Create session on mount
   useEffect(() => {
@@ -71,25 +75,38 @@ export function SimulaProvider({
     };
   }, [apiKey, devMode, primaryUserID]);
 
-  // Initialize consent manager
+  // Sync privacy consent with manager
   useEffect(() => {
-    consentManager.setConsent(hasUserConsent);
-  }, [hasUserConsent]);
+    privacyConsentManager.setConsent(hasPrivacyConsent);
+  }, [hasPrivacyConsent]);
 
-  // Check if consent is required
+  // Auto-detect ad tracking consent from OS
   useEffect(() => {
-    if (!hasConsent && isConsentRequired() && onConsentRequired) {
-      // Notify parent app that consent is needed
-      onConsentRequired();
-    }
-  }, [hasConsent, onConsentRequired]);
+    let mounted = true;
 
-  // Subscribe to consent changes
-  useEffect(() => {
-    const unsubscribe = consentManager.subscribe((consent) => {
-      setHasConsent(consent);
+    detectAdTrackingConsent().then((result) => {
+      if (mounted) {
+        setAdTrackingConsentState(result.isAuthorized);
+      }
     });
 
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Check if privacy consent is required
+  useEffect(() => {
+    if (!privacyConsent && isPrivacyConsentRequired() && onPrivacyConsentRequired) {
+      onPrivacyConsentRequired();
+    }
+  }, [privacyConsent, onPrivacyConsentRequired]);
+
+  // Subscribe to privacy consent changes
+  useEffect(() => {
+    const unsubscribe = privacyConsentManager.subscribe((consent) => {
+      setPrivacyConsentState(consent);
+    });
     return unsubscribe;
   }, []);
 
@@ -100,9 +117,9 @@ export function SimulaProvider({
     }
   }, [sessionError]);
 
-  // Set user consent
-  const setUserConsent = (consent: boolean): void => {
-    consentManager.setConsent(consent);
+  // Set privacy consent
+  const setPrivacyConsent = (consent: boolean): void => {
+    privacyConsentManager.setConsent(consent);
   };
 
   // Context value
@@ -111,11 +128,12 @@ export function SimulaProvider({
       apiKey,
       sessionId,
       devMode,
-      hasUserConsent: hasConsent,
-      setUserConsent,
-      onConsentRequired,
+      hasPrivacyConsent: privacyConsent,
+      hasAdTrackingConsent: adTrackingConsent,
+      setPrivacyConsent,
+      onPrivacyConsentRequired,
     }),
-    [apiKey, sessionId, devMode, hasConsent, onConsentRequired]
+    [apiKey, sessionId, devMode, privacyConsent, adTrackingConsent, onPrivacyConsentRequired]
   );
 
   return (

@@ -3,13 +3,13 @@
  * Based on https://github.com/Simula-AI-SDK/simula-ad-sdk
  */
 
-import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, Modal, StyleSheet, ActivityIndicator, Dimensions, Pressable, StatusBar } from 'react-native';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { View, Text, Modal, StyleSheet, ActivityIndicator, Dimensions, Pressable, StatusBar, Linking } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Message } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
 import { getMinigame, InitMinigameRequest } from '../../api/client';
-import { buildOriginWhitelist, computeWebViewSource } from '../../utils/webview-security';
+import { buildOriginWhitelist, computeWebViewSource, isOriginAllowed, DEFAULT_ALLOWED_ORIGINS, ALLOWED_SPECIAL_SCHEMES } from '../../utils/webview-security';
 import { CloseButton } from '../shared/CloseButton';
 
 interface GameIframeProps {
@@ -115,6 +115,62 @@ export const GameIframe: React.FC<GameIframeProps> = ({
     onClose();
   };
 
+  /**
+   * Check if URL is a special/internal URL that should be allowed in WebView
+   */
+  const isSpecialUrl = useCallback((url: string): boolean => {
+    if (!url) return true;
+    for (const scheme of ALLOWED_SPECIAL_SCHEMES) {
+      if (url.startsWith(scheme)) {
+        return true;
+      }
+    }
+    return false;
+  }, []);
+
+  /**
+   * Handle navigation - open external URLs in system browser
+   */
+  const handleShouldStartLoadWithRequest = useCallback(
+    (request: { url: string }) => {
+      const url = request.url;
+
+      // Allow initial load of iframe URL
+      if (iframeUrl && url === iframeUrl) {
+        return true;
+      }
+
+      // Allow special/internal URLs (about:blank, about:srcdoc, data:, blob:)
+      if (isSpecialUrl(url)) {
+        return true;
+      }
+
+      // Block javascript: URLs for security
+      if (url.startsWith("javascript:")) {
+        return false;
+      }
+
+      // Check if origin is allowed - still open externally for better UX
+      if (isOriginAllowed(url, DEFAULT_ALLOWED_ORIGINS)) {
+        Linking.openURL(url).catch((err) => {
+          console.error("Failed to open URL:", err);
+        });
+        return false;
+      }
+
+      // For any other navigation, open externally
+      if (url && url !== iframeUrl) {
+        Linking.openURL(url).catch((err) => {
+          console.error("Failed to open URL:", err);
+        });
+        return false;
+      }
+
+      return true;
+    },
+    [iframeUrl, isSpecialUrl]
+  );
+
   return (
     <Modal
       visible={true}
@@ -168,9 +224,7 @@ export const GameIframe: React.FC<GameIframeProps> = ({
                   const { nativeEvent } = syntheticEvent;
                   setError(`Failed to load game content: ${nativeEvent.description || 'Unknown error'}`);
                 }}
-                onShouldStartLoadWithRequest={() => {
-                  return true;
-                }}
+                onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
               />
             )}
             

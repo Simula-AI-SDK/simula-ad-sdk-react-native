@@ -4,15 +4,18 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, Pressable, StatusBar } from 'react-native';
+import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, Pressable, StatusBar, Linking } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MiniGameMenuProps, MiniGameTheme, GameData } from '../../types';
 import { GameGrid } from './GameGrid';
 import { GameIframe } from './GameIframe';
 import { fetchCatalog, fetchAdForMinigame } from '../../api/client';
-import { GAMES_UNAVAILABLE_IMAGE_BASE64 } from './assets';
-import { computeWebViewSource, buildOriginWhitelist } from '../../utils/webview-security';
+import { GAMES_UNAVAILABLE_IMAGE_BASE64, PRIVACY_CONSENT_REQUIRED_IMAGE_BASE64 } from './assets';
+import { computeWebViewSource, buildOriginWhitelist, isOriginAllowed, DEFAULT_ALLOWED_ORIGINS, ALLOWED_SPECIAL_SCHEMES } from '../../utils/webview-security';
 import { CloseButton } from '../shared/CloseButton';
+import { useSimulaContext } from '../../context/SimulaProvider';
+
+const DEFAULT_CONSENT_MESSAGE = 'Mini games are unavailable. Please enable privacy consent to play sponsored games.';
 
 const defaultTheme: Omit<Required<MiniGameTheme>, 'backgroundColor' | 'headerColor' | 'borderColor'> & { backgroundColor?: string; headerColor?: string; borderColor?: string } = {
   titleFont: 'Inter, system-ui, sans-serif',
@@ -34,7 +37,9 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   maxGamesToShow = 6,
   theme = {},
   delegateChar = true,
+  consentRequiredMessage,
 }) => {
+  const { hasPrivacyConsent } = useSimulaContext();
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [imageError, setImageError] = useState(false);
   const [games, setGames] = useState<GameData[]>([]);
@@ -148,6 +153,62 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   };
 
   /**
+   * Check if URL is a special/internal URL that should be allowed in WebView
+   */
+  const isSpecialUrl = useCallback((url: string): boolean => {
+    if (!url) return true;
+    for (const scheme of ALLOWED_SPECIAL_SCHEMES) {
+      if (url.startsWith(scheme)) {
+        return true;
+      }
+    }
+    return false;
+  }, []);
+
+  /**
+   * Handle ad iframe navigation - open external URLs in system browser
+   */
+  const handleAdShouldStartLoadWithRequest = useCallback(
+    (request: { url: string }) => {
+      const url = request.url;
+
+      // Allow initial load of iframe URL
+      if (adIframeUrl && url === adIframeUrl) {
+        return true;
+      }
+
+      // Allow special/internal URLs (about:blank, about:srcdoc, data:, blob:)
+      if (isSpecialUrl(url)) {
+        return true;
+      }
+
+      // Block javascript: URLs for security
+      if (url.startsWith("javascript:")) {
+        return false;
+      }
+
+      // Check if origin is allowed - still open externally for better UX
+      if (isOriginAllowed(url, DEFAULT_ALLOWED_ORIGINS)) {
+        Linking.openURL(url).catch((err) => {
+          console.error("Failed to open URL:", err);
+        });
+        return false;
+      }
+
+      // For any other navigation, open externally
+      if (url && url !== adIframeUrl) {
+        Linking.openURL(url).catch((err) => {
+          console.error("Failed to open URL:", err);
+        });
+        return false;
+      }
+
+      return true;
+    },
+    [adIframeUrl, isSpecialUrl]
+  );
+
+  /**
    * Compute WebView source for ad iframe using shared utility
    */
   const adWebViewSource = useMemo(() => computeWebViewSource(adIframeUrl), [adIframeUrl]);
@@ -205,6 +266,9 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
                     allowsFullscreen={true}
                     javaScriptEnabled={true}
                     domStorageEnabled={true}
+                    mediaPlaybackRequiresUserAction={true}
+                    mixedContentMode="never"
+                    onShouldStartLoadWithRequest={handleAdShouldStartLoadWithRequest}
                   />
                 )}
               </View>
@@ -336,9 +400,37 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
                 {/* Game Grid Content */}
                 <View style={[
                   styles.content,
-                  (catalogError || catalogLoading) && styles.contentCentered,
+                  (catalogError || catalogLoading || !hasPrivacyConsent) && styles.contentCentered,
                 ]}>
-                  {catalogLoading ? (
+                  {!hasPrivacyConsent ? (
+                    <View style={styles.errorContainer}>
+                      <View
+                        style={[
+                          styles.errorImageContainer,
+                          {
+                            backgroundColor: appliedTheme.backgroundColor || '#F3F4F6',
+                          },
+                        ]}
+                      >
+                        <Image
+                          source={{ uri: PRIVACY_CONSENT_REQUIRED_IMAGE_BASE64 }}
+                          style={styles.errorImage}
+                          resizeMode="cover"
+                        />
+                      </View>
+                      <Text
+                        style={[
+                          styles.errorText,
+                          {
+                            color: appliedTheme.secondaryFontColor,
+                            fontFamily: appliedTheme.secondaryFont,
+                          },
+                        ]}
+                      >
+                        {consentRequiredMessage || DEFAULT_CONSENT_MESSAGE}
+                      </Text>
+                    </View>
+                  ) : catalogLoading ? (
                     <View style={styles.loadingContainer}>
                       <ActivityIndicator
                         size="large"

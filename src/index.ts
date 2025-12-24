@@ -40,11 +40,21 @@ export {
 } from "./utils/session";
 
 export {
-  consentManager,
-  isConsentRequired,
-  getConsentMessage,
+  privacyConsentManager,
+  isPrivacyConsentRequired,
+  getPrivacyConsentMessage,
   PRIVACY_DISCLOSURE,
 } from "./utils/consent";
+
+export {
+  detectAdTrackingConsent,
+  isAdTrackingDetectionAvailable,
+} from "./utils/adTracking";
+
+export type {
+  AdTrackingStatus,
+  AdTrackingResult,
+} from "./utils/adTracking";
 
 // Security utilities for AdTech sandboxing compliance
 export {
