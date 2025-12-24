@@ -328,7 +328,6 @@ export interface InitMinigameRequest {
   char_desc?: string;
   messages?: Message[];
   delegate_char?: boolean;
-  is_mobile?: boolean | null;
 }
 
 /**
@@ -367,7 +366,6 @@ export async function getMinigame(params: InitMinigameRequest): Promise<Minigame
         char_desc: params.char_desc,
         messages: params.messages,
         delegate_char: params.delegate_char ?? true,
-        is_mobile: false,
       }),
     });
 
