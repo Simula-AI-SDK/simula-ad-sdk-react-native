@@ -283,6 +283,7 @@ const styles = StyleSheet.create({
     elevation: 9,
   },
   loadingContainer: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -293,6 +294,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   errorContainer: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
