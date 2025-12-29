@@ -17,7 +17,7 @@ import { useSimulaContext } from '../../context/SimulaProvider';
 
 const DEFAULT_CONSENT_MESSAGE = 'Mini games are unavailable. Please enable privacy consent to play sponsored games.';
 
-const defaultTheme: Omit<Required<MiniGameTheme>, 'backgroundColor' | 'headerColor' | 'borderColor'> & { backgroundColor?: string; headerColor?: string; borderColor?: string } = {
+const defaultTheme: Omit<Required<MiniGameTheme>, 'backgroundColor' | 'headerColor' | 'borderColor' | 'playableHeight' | 'playableBorderColor'> & { backgroundColor?: string; headerColor?: string; borderColor?: string; playableHeight?: number | string; playableBorderColor?: string } = {
   titleFont: 'Inter, system-ui, sans-serif',
   secondaryFont: 'Inter, system-ui, sans-serif',
   titleFontColor: '#1F2937',
@@ -51,7 +51,7 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   const [fadeAnim] = useState(new Animated.Value(0));
 
   // Merge theme with defaults
-  const appliedTheme: Omit<Required<MiniGameTheme>, 'backgroundColor' | 'headerColor' | 'borderColor'> & { backgroundColor?: string; headerColor?: string; borderColor?: string } = {
+  const appliedTheme: Omit<Required<MiniGameTheme>, 'backgroundColor' | 'headerColor' | 'borderColor' | 'playableHeight' | 'playableBorderColor'> & { backgroundColor?: string; headerColor?: string; borderColor?: string; playableHeight?: number | string; playableBorderColor?: string } = {
     ...defaultTheme,
     ...theme,
   };
@@ -221,8 +221,8 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
     <>
       {/* Game Iframe */}
       {selectedGameId && (
-        <GameIframe 
-          gameId={selectedGameId} 
+        <GameIframe
+          gameId={selectedGameId}
           charID={charID}
           charName={charName}
           charImage={charImage}
@@ -231,6 +231,8 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
           delegateChar={delegateChar}
           onClose={handleIframeClose}
           onAdIdReceived={handleAdIdReceived}
+          playableHeight={appliedTheme.playableHeight}
+          playableBorderColor={appliedTheme.playableBorderColor}
         />
       )}
 

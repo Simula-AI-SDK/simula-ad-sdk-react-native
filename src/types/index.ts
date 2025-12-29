@@ -203,6 +203,22 @@ export interface MiniGameTheme {
   titleFontColor?: string;
   secondaryFontColor?: string;
   iconCornerRadius?: number;
+  /**
+   * Controls the height of the Mini Game iframe (not the ad).
+   * Displayed as a bottom sheet with rounded corners at the top.
+   * - Number: pixel value (e.g., 500 = 500px)
+   * - String with %: percentage of screen height (e.g., "80%")
+   * - "auto": full screen (default behavior)
+   * Minimum height is 500px.
+   */
+  playableHeight?: number | string;
+  /**
+   * Controls the background color of the curved border area above the playable
+   * when playableHeight is not 100% (bottom sheet mode).
+   * This is the color of the rounded top corners and drag handle area.
+   * Default: '#262626' (Instagram comments dark gray)
+   */
+  playableBorderColor?: string;
 }
 
 export interface GameData {
