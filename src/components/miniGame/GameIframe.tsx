@@ -8,7 +8,7 @@ import { View, Text, Modal, StyleSheet, ActivityIndicator, Dimensions, StatusBar
 import { WebView } from 'react-native-webview';
 import { Message } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
-import { getMinigame, InitMinigameRequest } from '../../api/client';
+import { getMinigame, InitMinigameRequest, fetchAdForMinigame } from '../../api/client';
 import { buildOriginWhitelist, computeWebViewSource, isOriginAllowed, DEFAULT_ALLOWED_ORIGINS, ALLOWED_SPECIAL_SCHEMES } from '../../utils/webview-security';
 import { CloseButton } from '../shared/CloseButton';
 
@@ -336,7 +336,7 @@ export const GameIframe: React.FC<GameIframeProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
