@@ -204,6 +204,12 @@ export interface MiniGameTheme {
   secondaryFontColor?: string;
   iconCornerRadius?: number;
   /**
+   * Unified accent color for interactive elements.
+   * Used for search bar focus border and pagination dots.
+   * Default: '#3B82F6' (blue-500)
+   */
+  accentColor?: string;
+  /**
    * Controls the height of the Mini Game iframe (not the ad).
    * Displayed as a bottom sheet with rounded corners at the top.
    * - Number: pixel value (e.g., 500 = 500px)

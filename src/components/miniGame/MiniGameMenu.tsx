@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, Pressable, StatusBar, Linking } from 'react-native';
+import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, Pressable, StatusBar, Linking, TextInput } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MiniGameMenuProps, MiniGameTheme, GameData } from '../../types';
 import { GameGrid } from './GameGrid';
@@ -24,6 +24,7 @@ const defaultTheme: Omit<Required<MiniGameTheme>, 'backgroundColor' | 'headerCol
   secondaryFontColor: '#6B7280',
   iconCornerRadius: 8,
   borderColor: 'rgba(0, 0, 0, 0.08)',
+  accentColor: '#3B82F6',
 };
 
 export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
@@ -50,12 +51,31 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   const [currentAdId, setCurrentAdId] = useState<string | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [fadeAnim] = useState(new Animated.Value(0));
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   // Merge theme with defaults
   const appliedTheme: Omit<Required<MiniGameTheme>, 'backgroundColor' | 'headerColor' | 'borderColor' | 'playableHeight' | 'playableBorderColor'> & { backgroundColor?: string; headerColor?: string; borderColor?: string; playableHeight?: number | string; playableBorderColor?: string } = {
     ...defaultTheme,
     ...theme,
   };
+
+  // Filter games based on search query
+  const filteredGames = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return games;
+    }
+    const query = searchQuery.toLowerCase().trim();
+    return games.filter((game) => game.name.toLowerCase().includes(query));
+  }, [games, searchQuery]);
+
+  // Reset search when menu closes
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchQuery('');
+      setIsSearchFocused(false);
+    }
+  }, [isOpen]);
 
   // Get character initials for fallback
   const getInitials = (name: string): string => {
@@ -410,11 +430,63 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
                   </TouchableOpacity>
                 </View>
 
+                {/* Search Bar */}
+                {hasPrivacyConsent && !catalogLoading && !catalogError && games.length > 0 && (
+                  <View style={styles.searchContainer}>
+                    <View
+                      style={[
+                        styles.searchInputContainer,
+                        {
+                          borderColor: isSearchFocused
+                            ? appliedTheme.accentColor
+                            : appliedTheme.borderColor,
+                          backgroundColor: appliedTheme.backgroundColor || '#FFFFFF',
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.searchIcon, { color: appliedTheme.secondaryFontColor }]}>
+                        🔍
+                      </Text>
+                      <TextInput
+                        style={[
+                          styles.searchInput,
+                          {
+                            color: appliedTheme.titleFontColor,
+                            fontFamily: appliedTheme.secondaryFont,
+                          },
+                        ]}
+                        placeholder="Search games..."
+                        placeholderTextColor={appliedTheme.secondaryFontColor}
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        onFocus={() => setIsSearchFocused(true)}
+                        onBlur={() => setIsSearchFocused(false)}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        returnKeyType="search"
+                      />
+                      {searchQuery.length > 0 && (
+                        <TouchableOpacity
+                          onPress={() => setSearchQuery('')}
+                          style={styles.clearButton}
+                          accessibilityLabel="Clear search"
+                        >
+                          <Text style={[styles.clearButtonText, { color: appliedTheme.secondaryFontColor }]}>
+                            ✕
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                )}
+
                 {/* Game Grid Content */}
-                <View style={[
-                  styles.content,
-                  (catalogError || catalogLoading || !hasPrivacyConsent) && styles.contentCentered,
-                ]}>
+                <View
+                  style={[
+                    styles.content,
+                    (catalogError || catalogLoading || !hasPrivacyConsent || filteredGames.length === 0) && styles.contentCentered,
+                  ]}
+                >
                   {!hasPrivacyConsent ? (
                     <View style={styles.errorContainer}>
                       <View
@@ -489,9 +561,23 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
                         No games are available to play right now. Please check back later!
                       </Text>
                     </View>
+                  ) : filteredGames.length === 0 ? (
+                    <View style={styles.noResultsContainer}>
+                      <Text
+                        style={[
+                          styles.noResultsText,
+                          {
+                            color: appliedTheme.secondaryFontColor,
+                            fontFamily: appliedTheme.secondaryFont,
+                          },
+                        ]}
+                      >
+                        No games found for "{searchQuery}"
+                      </Text>
+                    </View>
                   ) : (
                     <GameGrid
-                      games={games}
+                      games={filteredGames}
                       maxGamesToShow={maxGamesToShow}
                       theme={appliedTheme}
                       onGameSelect={handleGameSelect}
@@ -522,30 +608,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    borderRadius: 16,
+    borderRadius: 14,
     width: '100%',
     maxWidth: 600,
-    minWidth: 320,
-    minHeight: 400,
+    minWidth: 300,
     maxHeight: '90%',
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.1,
-    shadowRadius: 20,
+    shadowRadius: 16,
     elevation: 10,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    padding: 20,
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     borderBottomWidth: 1,
   },
   avatarContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
@@ -555,33 +641,71 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   avatarInitials: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '600',
   },
   headerText: {
     flex: 1,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '600',
-    lineHeight: 21.6,
+    lineHeight: 20,
   },
   closeButton: {
-    width: 44,
-    height: 44,
+    width: 32,
+    height: 32,
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 4,
   },
   closeButtonText: {
-    fontSize: 24,
-    lineHeight: 24,
+    fontSize: 20,
+    lineHeight: 20,
+  },
+  searchContainer: {
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 0,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    height: 32,
+  },
+  searchIcon: {
+    fontSize: 13,
+    marginRight: 6,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    paddingVertical: 0,
+  },
+  clearButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  clearButtonText: {
+    fontSize: 14,
+  },
+  noResultsContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 24,
+  },
+  noResultsText: {
+    fontSize: 13,
+    textAlign: 'center',
   },
   content: {
-    padding: 20,
-    flex: 1,
+    padding: 14,
   },
   contentCentered: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
