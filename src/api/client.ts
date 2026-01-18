@@ -6,6 +6,14 @@
 import { Message, AdData, SimulaTheme, GameData } from "../types";
 import { NormalizedTheme, DEFAULT_THEME } from "../types/theme";
 
+/**
+ * Catalog response containing menu ID and games
+ */
+export interface CatalogResponse {
+  menuId: string;
+  games: GameData[];
+}
+
 // Production API URL (from original SDK)
 // const API_BASE_URL = "https://simula-api-701226639755.us-central1.run.app";
 // const API_BASE_URL = "https://62d01abed0fd.ngrok-free.app";
@@ -279,9 +287,37 @@ export async function trackImpression(adId: string, apiKey: string): Promise<voi
 }
 
 /**
+ * Track minigame menu click (matches original SDK)
+ */
+export async function trackMenuGameClick(
+  menuId: string,
+  gameName: string,
+  apiKey: string
+): Promise<void> {
+  try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    };
+
+    await fetch(`${API_BASE_URL}/minigames/menu/track/click`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        menu_id: menuId,
+        game_name: gameName,
+      }),
+    });
+  } catch (error) {
+    // Silently fail - tracking is best effort
+    console.log("Failed to track menu game click:", error);
+  }
+}
+
+/**
  * Fetch game catalog (matches original SDK)
  */
-export async function fetchCatalog(): Promise<GameData[]> {
+export async function fetchCatalog(): Promise<CatalogResponse> {
   try {
     const response: Response = await fetch(`${API_BASE_URL}/minigames/catalog`, {
       method: "GET",
@@ -295,18 +331,43 @@ export async function fetchCatalog(): Promise<GameData[]> {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const responseData: { data: any[] } = await response.json();
+    const responseData: any = await response.json();
+    
+    // Extract menu_id from response
+    const menuId: string = responseData.menu_id ?? '';
+    
+    // Handle different response formats: catalog.data or direct data array
+    let gamesList: any[];
+    if (responseData.catalog != null) {
+      // New format: catalog is in the response
+      const catalog = responseData.catalog;
+      if (Array.isArray(catalog)) {
+        gamesList = catalog;
+      } else if (catalog && catalog.data != null) {
+        // Nested format: catalog.data
+        gamesList = catalog.data as any[];
+      } else {
+        // Fallback: try responseData.data for backwards compatibility
+        gamesList = responseData.data ?? [];
+      }
+    } else {
+      // Fallback: try responseData.data for backwards compatibility
+      gamesList = responseData.data ?? [];
+    }
     
     // Map API response to GameData format (icon -> iconUrl)
-    const games: GameData[] = responseData.data.map((game: any) => ({
+    const games: GameData[] = gamesList.map((game: any) => ({
       id: game.id,
       name: game.name,
       iconUrl: game.icon, // API returns 'icon', we use 'iconUrl'
-      description: game.description,
+      description: game.description ?? '',
       iconFallback: game.iconFallback,
     }));
     
-    return games;
+    return {
+      menuId,
+      games,
+    };
   } catch (error) {
     throw error;
   }
@@ -328,6 +389,7 @@ export interface InitMinigameRequest {
   char_desc?: string;
   messages?: Message[];
   delegate_char?: boolean;
+  menuId?: string;
 }
 
 /**
@@ -347,26 +409,33 @@ export interface MinigameResponse {
  */
 export async function getMinigame(params: InitMinigameRequest): Promise<MinigameResponse> {
   try {
+    const requestBody: Record<string, any> = {
+      game_type: params.gameType,
+      session_id: params.sessionId,
+      conv_id: params.convId ?? null,
+      currency_mode: params.currencyMode ?? false,
+      w: params.w,
+      h: params.h,
+      char_id: params.char_id,
+      char_name: params.char_name,
+      char_image: params.char_image,
+      char_desc: params.char_desc,
+      messages: params.messages,
+      delegate_char: params.delegate_char ?? true,
+    };
+    
+    // Include menu_id if provided
+    if (params.menuId) {
+      requestBody.menu_id = params.menuId;
+    }
+    
     const response: Response = await fetch(`${API_BASE_URL}/minigames/init`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "ngrok-skip-browser-warning": "1",
       },
-      body: JSON.stringify({
-        game_type: params.gameType,
-        session_id: params.sessionId,
-        conv_id: params.convId ?? null,
-        currency_mode: params.currencyMode ?? false,
-        w: params.w,
-        h: params.h,
-        char_id: params.char_id,
-        char_name: params.char_name,
-        char_image: params.char_image,
-        char_desc: params.char_desc,
-        messages: params.messages,
-        delegate_char: params.delegate_char ?? true,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {

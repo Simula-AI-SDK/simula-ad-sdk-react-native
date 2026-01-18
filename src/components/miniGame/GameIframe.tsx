@@ -8,7 +8,7 @@ import { View, Text, Modal, StyleSheet, ActivityIndicator, Dimensions, StatusBar
 import { WebView } from 'react-native-webview';
 import { Message } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
-import { getMinigame, InitMinigameRequest, fetchAdForMinigame } from '../../api/client';
+import { getMinigame, InitMinigameRequest } from '../../api/client';
 import { buildOriginWhitelist, computeWebViewSource, isOriginAllowed, DEFAULT_ALLOWED_ORIGINS, ALLOWED_SPECIAL_SCHEMES } from '../../utils/webview-security';
 import { CloseButton } from '../shared/CloseButton';
 
@@ -28,6 +28,10 @@ interface GameIframeProps {
   usePubCharApi?: string;
   charDesc?: string;
   exampleCharMsgs?: string;
+  /**
+   * Menu ID from catalog response for tracking
+   */
+  menuId?: string;
   /**
    * Controls the height of the Mini Game iframe.
    * - Number: pixel value (e.g., 500 = 500px)
@@ -56,6 +60,7 @@ export const GameIframe: React.FC<GameIframeProps> = ({
   onClose,
   onAdIdReceived,
   charDesc,
+  menuId,
   playableHeight,
   playableBorderColor = DEFAULT_PLAYABLE_BORDER_COLOR,
   // Optional props for API compatibility (not currently used in implementation)
@@ -82,7 +87,7 @@ export const GameIframe: React.FC<GameIframeProps> = ({
   /**
    * Calculate container height based on playableHeight prop
    * - Number: pixel value (min 500px)
-   * - String with %: percentage of screen height (min 500px)
+   * - String with %: percentage of screen height (min 500px), >= 95% treated as full screen
    * - "auto" or undefined: full screen
    */
   const { containerHeight, isBottomSheet } = useMemo(() => {
@@ -99,6 +104,12 @@ export const GameIframe: React.FC<GameIframeProps> = ({
     } else if (typeof playableHeight === 'string' && playableHeight.includes('%')) {
       // Percentage value
       const percentage = parseFloat(playableHeight) / 100;
+      
+      // Treat >= 95% as full screen (no bottom sheet UI)
+      if (percentage >= 0.95) {
+        return { containerHeight: dimensions.height, isBottomSheet: false };
+      }
+      
       calculatedHeight = Math.max(dimensions.height * percentage, MIN_PLAYABLE_HEIGHT);
     } else {
       // Invalid value, use full screen
@@ -140,6 +151,7 @@ export const GameIframe: React.FC<GameIframeProps> = ({
           char_desc: charDesc,
           messages: messages,
           delegate_char: delegateChar,
+          menuId: menuId,
         };
         
         const response = await getMinigame(params);
@@ -162,7 +174,7 @@ export const GameIframe: React.FC<GameIframeProps> = ({
     };
 
     initMinigame();
-  }, [gameId, charID, charName, charImage, charDesc, messages, delegateChar, sessionId, dimensions.width, dimensions.height]);
+  }, [gameId, charID, charName, charImage, charDesc, messages, delegateChar, sessionId, menuId, dimensions.width, dimensions.height]);
 
 
   /**
@@ -243,7 +255,7 @@ export const GameIframe: React.FC<GameIframeProps> = ({
             },
           ]}
         >
-          {/* Drag handle indicator - only shown for bottom sheet */}
+          {/* Drag handle for bottom sheet only - full screen has no top bar */}
           {isBottomSheet && (
             <View style={[styles.dragHandleContainer, { backgroundColor: playableBorderColor }]}>
               <View style={styles.dragHandle} />
@@ -281,13 +293,7 @@ export const GameIframe: React.FC<GameIframeProps> = ({
               <WebView
                 source={webViewSource}
                 originWhitelist={buildOriginWhitelist()}
-                style={[
-                  styles.webview,
-                  {
-                    width: dimensions.width,
-                    height: isBottomSheet ? containerHeight - 24 : dimensions.height, // Account for drag handle
-                  },
-                ]}
+                style={styles.webview}
                 scrollEnabled={false}
                 bounces={false}
                 allowsFullscreen={true}

@@ -9,7 +9,7 @@ import { WebView } from 'react-native-webview';
 import { MiniGameMenuProps, MiniGameTheme, GameData } from '../../types';
 import { GameGrid } from './GameGrid';
 import { GameIframe } from './GameIframe';
-import { fetchCatalog, fetchAdForMinigame } from '../../api/client';
+import { fetchCatalog, fetchAdForMinigame, trackMenuGameClick } from '../../api/client';
 import { GAMES_UNAVAILABLE_IMAGE_BASE64, PRIVACY_CONSENT_REQUIRED_IMAGE_BASE64 } from './assets';
 import { computeWebViewSource, buildOriginWhitelist, isOriginAllowed, DEFAULT_ALLOWED_ORIGINS, ALLOWED_SPECIAL_SCHEMES } from '../../utils/webview-security';
 import { CloseButton } from '../shared/CloseButton';
@@ -39,7 +39,7 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   delegateChar = true,
   consentRequiredMessage,
 }) => {
-  const { hasPrivacyConsent } = useSimulaContext();
+  const { hasPrivacyConsent, apiKey } = useSimulaContext();
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [imageError, setImageError] = useState(false);
   const [games, setGames] = useState<GameData[]>([]);
@@ -48,6 +48,7 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   const [adFetched, setAdFetched] = useState(false);
   const [adIframeUrl, setAdIframeUrl] = useState<string | null>(null);
   const [currentAdId, setCurrentAdId] = useState<string | null>(null);
+  const [menuId, setMenuId] = useState<string | null>(null);
   const [fadeAnim] = useState(new Animated.Value(0));
 
   // Merge theme with defaults
@@ -87,11 +88,13 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
       setCatalogLoading(true);
       setCatalogError(false);
       try {
-        const catalogData = await fetchCatalog();
-        setGames(catalogData);
+        const catalogResponse = await fetchCatalog();
+        setGames(catalogResponse.games);
+        setMenuId(catalogResponse.menuId);
       } catch (error) {
         setCatalogError(true);
         setGames([]);
+        setMenuId(null);
       } finally {
         setCatalogLoading(false);
       }
@@ -110,7 +113,14 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
     handleClose();
   };
 
-  const handleGameSelect = (gameId: string) => {
+  const handleGameSelect = (gameId: string, gameName: string) => {
+    // Track menu game click if menuId is available
+    if (menuId && gameName) {
+      trackMenuGameClick(menuId, gameName, apiKey).catch(() => {
+        // Silently fail - tracking is best effort
+      });
+    }
+    
     handleClose();
     setSelectedGameId(gameId);
     // Reset ad tracking when a new game is selected
@@ -231,6 +241,7 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
           delegateChar={delegateChar}
           onClose={handleIframeClose}
           onAdIdReceived={handleAdIdReceived}
+          menuId={menuId ?? undefined}
           playableHeight={appliedTheme.playableHeight}
           playableBorderColor={appliedTheme.playableBorderColor}
         />

@@ -12,7 +12,7 @@ interface GameGridProps {
   games: GameData[];
   maxGamesToShow: 3 | 6 | 9;
   theme: MiniGameTheme;
-  onGameSelect: (gameId: string) => void;
+  onGameSelect: (gameId: string, gameName: string) => void;
 }
 
 export const GameGrid: React.FC<GameGridProps> = ({
@@ -58,7 +58,7 @@ export const GameGrid: React.FC<GameGridProps> = ({
             key={game.id}
             game={game}
             theme={theme}
-            onGameSelect={onGameSelect}
+            onGameSelect={(gameId) => onGameSelect(gameId, game.name)}
           />
         ))}
       </View>
