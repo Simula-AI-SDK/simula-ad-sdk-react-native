@@ -319,7 +319,7 @@ export async function trackMenuGameClick(
  */
 export async function fetchCatalog(): Promise<CatalogResponse> {
   try {
-    const response: Response = await fetch(`${API_BASE_URL}/minigames/catalog`, {
+    const response: Response = await fetch(`${API_BASE_URL}/minigames/catalogv2`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
