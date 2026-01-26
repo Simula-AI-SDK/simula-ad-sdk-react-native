@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, StatusBar, Linking, TextInput } from 'react-native';
+import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, StatusBar, Linking, TextInput, Platform, Dimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MiniGameMenuProps, MiniGameTheme, GameData } from '../../types';
 import { GameGrid } from './GameGrid';
@@ -53,6 +53,10 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   const [fadeAnim] = useState(new Animated.Value(0));
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+  // Track game frame dimensions for ad frame sizing
+  const [lastGameFrameHeight, setLastGameFrameHeight] = useState<number | null>(null);
+  const [lastGameWasBottomSheet, setLastGameWasBottomSheet] = useState<boolean>(false);
 
   // Merge theme with defaults
   const appliedTheme: Omit<Required<MiniGameTheme>, 'backgroundColor' | 'headerColor' | 'borderColor' | 'playableHeight' | 'playableBorderColor'> & { backgroundColor?: string; headerColor?: string; borderColor?: string; playableHeight?: number | string; playableBorderColor?: string } = {
@@ -151,6 +155,34 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   const handleAdIdReceived = (adId: string) => {
     setCurrentAdId(adId);
   };
+
+  const handleGameDimensionsOnClose = useCallback((height: number, wasBottomSheet: boolean) => {
+    setLastGameFrameHeight(height);
+    setLastGameWasBottomSheet(wasBottomSheet);
+  }, []);
+
+  // Determine if ad should hide status bar
+  // Hide when: not bottom sheet mode OR height >= 95% of screen
+  const screenHeight = Dimensions.get('window').height;
+  const adShouldHideStatusBar = adIframeUrl && (
+    !lastGameWasBottomSheet ||
+    (lastGameFrameHeight !== null && lastGameFrameHeight >= screenHeight * 0.95)
+  );
+
+  // Hide status bar for full screen ad mode (imperative API works better on Android)
+  useEffect(() => {
+    if (adShouldHideStatusBar) {
+      StatusBar.setHidden(true, 'fade');
+    } else if (adIframeUrl) {
+      // Ad is showing but in bottom sheet mode - ensure status bar is visible
+      StatusBar.setHidden(false, 'fade');
+    }
+    return () => {
+      if (adIframeUrl) {
+        StatusBar.setHidden(false, 'fade');
+      }
+    };
+  }, [adShouldHideStatusBar, adIframeUrl]);
 
   const handleIframeClose = async () => {
     if (!adFetched) {
@@ -260,6 +292,7 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
           menuId={menuId ?? undefined}
           playableHeight={appliedTheme.playableHeight}
           playableBorderColor={appliedTheme.playableBorderColor}
+          onDimensionsOnClose={handleGameDimensionsOnClose}
         />
       )}
 
@@ -268,16 +301,48 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
         <Modal
           visible={true}
           transparent={true}
-          animationType="fade"
+          animationType={lastGameWasBottomSheet ? 'slide' : 'fade'}
           onRequestClose={handleAdIframeClose}
           accessibilityViewIsModal={true}
+          statusBarTranslucent={Platform.OS === 'android'}
         >
-          <StatusBar hidden={true} />
-          {/* Use View instead of Pressable - Pressable blocks WebView touches on Android */}
-          <View style={styles.adOverlay}>
-            <View style={styles.adContainer}>
-              {/* WebView content - removed responder handlers that block touches on Android */}
-              <View style={styles.adContentContainer}>
+          <StatusBar
+            hidden={!!adShouldHideStatusBar}
+            backgroundColor="transparent"
+            barStyle="light-content"
+            translucent={true}
+          />
+          <View
+            style={[
+              styles.adOverlay,
+              lastGameWasBottomSheet && styles.adBottomSheetOverlay,
+            ]}
+          >
+            <View
+              style={[
+                styles.adContainer,
+                !lastGameWasBottomSheet && styles.adFullScreenContainer,
+                lastGameWasBottomSheet && {
+                  ...styles.adBottomSheetContainer,
+                  height: lastGameFrameHeight ?? 500,
+                  backgroundColor: appliedTheme.playableBorderColor || '#262626',
+                },
+              ]}
+            >
+              {/* Drag handle for bottom sheet only (visual only, not functional for ad) */}
+              {lastGameWasBottomSheet && (
+                <View style={[styles.adDragHandleContainer, { backgroundColor: appliedTheme.playableBorderColor || '#262626' }]}>
+                  <View style={styles.adDragHandle} />
+                </View>
+              )}
+
+              {/* WebView content */}
+              <View
+                style={[
+                  styles.adContentContainer,
+                  lastGameWasBottomSheet && styles.adBottomSheetContentContainer,
+                ]}
+              >
                 {adWebViewSource && (
                   <WebView
                     source={adWebViewSource}
@@ -299,6 +364,7 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
                 onPress={handleAdIframeClose}
                 accessibilityLabel="Close ad"
                 accessibilityHint="Double tap to close the ad"
+                style={lastGameWasBottomSheet ? styles.adBottomSheetCloseButton : undefined}
               />
             </View>
           </View>
@@ -723,23 +789,54 @@ const styles = StyleSheet.create({
   },
   adOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'black',
+  },
+  adBottomSheetOverlay: {
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   adContainer: {
     flex: 1,
     width: '100%',
     height: '100%',
+    backgroundColor: 'black',
+  },
+  adFullScreenContainer: {
+    backgroundColor: 'black',
+  },
+  adBottomSheetContainer: {
+    flex: 0,
+    width: '100%',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    overflow: 'hidden',
+  },
+  adDragHandleContainer: {
+    width: '100%',
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  adDragHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
   },
   adContentContainer: {
     flex: 1,
     width: '100%',
     height: '100%',
+    backgroundColor: 'black',
+  },
+  adBottomSheetContentContainer: {
+    backgroundColor: '#FFFFFF',
   },
   adWebView: {
     width: '100%',
     height: '100%',
+  },
+  adBottomSheetCloseButton: {
+    top: 32,
   },
 });
 

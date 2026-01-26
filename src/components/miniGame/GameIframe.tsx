@@ -3,8 +3,8 @@
  * Based on https://github.com/Simula-AI-SDK/simula-ad-sdk
  */
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { View, Text, Modal, StyleSheet, ActivityIndicator, Dimensions, StatusBar, Linking, Platform } from 'react-native';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { View, Text, Modal, StyleSheet, ActivityIndicator, Dimensions, StatusBar, Linking, Platform, PanResponder, Animated, GestureResponderEvent, PanResponderGestureState } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Message } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
@@ -46,6 +46,11 @@ interface GameIframeProps {
    * Default: '#262626' (Instagram comments dark gray)
    */
   playableBorderColor?: string;
+  /**
+   * Callback when the game frame closes, provides final dimensions.
+   * Used to pass height to the ad frame.
+   */
+  onDimensionsOnClose?: (height: number, isBottomSheet: boolean) => void;
 }
 
 const MIN_PLAYABLE_HEIGHT = 500;
@@ -63,6 +68,7 @@ export const GameIframe: React.FC<GameIframeProps> = ({
   menuId,
   playableHeight,
   playableBorderColor = DEFAULT_PLAYABLE_BORDER_COLOR,
+  onDimensionsOnClose,
   // Optional props for API compatibility (not currently used in implementation)
   // turnsBtwnMsgs, usePubCharApi, exampleCharMsgs are defined in interface but not used
 }) => {
@@ -72,6 +78,11 @@ export const GameIframe: React.FC<GameIframeProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState(Dimensions.get('window'));
+
+  // State for drag-to-resize functionality
+  const [resizedHeight, setResizedHeight] = useState<number | null>(null);
+  const animatedHeight = useRef(new Animated.Value(0)).current;
+  const currentHeightRef = useRef<number>(0);
 
   // Track dimension changes
   useEffect(() => {
@@ -119,8 +130,122 @@ export const GameIframe: React.FC<GameIframeProps> = ({
     // Ensure we don't exceed screen height
     calculatedHeight = Math.min(calculatedHeight, dimensions.height);
 
+    // Also check if pixel value >= 95% of screen height
+    if (calculatedHeight >= dimensions.height * 0.95) {
+      return { containerHeight: dimensions.height, isBottomSheet: false };
+    }
+
     return { containerHeight: calculatedHeight, isBottomSheet: true };
   }, [playableHeight, dimensions.height]);
+
+  // Effective height (user-resized or calculated)
+  const effectiveHeight = resizedHeight ?? containerHeight;
+
+  // Determine if we should hide status bar based on effective height
+  // Hide when: not bottom sheet mode OR resized height >= 95% of screen
+  const shouldHideStatusBar = !isBottomSheet || (resizedHeight !== null && resizedHeight >= dimensions.height * 0.95);
+
+  // Hide status bar for full screen mode (imperative API works better on Android)
+  useEffect(() => {
+    if (shouldHideStatusBar) {
+      StatusBar.setHidden(true, 'fade');
+    } else {
+      StatusBar.setHidden(false, 'fade');
+    }
+    return () => {
+      // Restore status bar when component unmounts
+      StatusBar.setHidden(false, 'fade');
+    };
+  }, [shouldHideStatusBar]);
+
+  // Update animated value when containerHeight changes (initial load or reset)
+  useEffect(() => {
+    if (resizedHeight === null) {
+      animatedHeight.setValue(containerHeight);
+      currentHeightRef.current = containerHeight;
+    }
+  }, [containerHeight, resizedHeight, animatedHeight]);
+
+  // Re-clamp resizedHeight if screen rotates and height exceeds new screen height
+  useEffect(() => {
+    if (resizedHeight !== null && resizedHeight > dimensions.height) {
+      const clampedHeight = Math.min(resizedHeight, dimensions.height);
+      setResizedHeight(clampedHeight);
+      animatedHeight.setValue(clampedHeight);
+    }
+  }, [dimensions.height, resizedHeight, animatedHeight]);
+
+  // Track the height used at drag start (separate from animatedHeight to avoid accessing private _value)
+  const dragStartHeightRef = useRef<number>(0);
+
+  // PanResponder for drag-to-resize (only active in bottom sheet mode)
+  const resizePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (
+        _evt: GestureResponderEvent,
+        gestureState: PanResponderGestureState
+      ) => {
+        // Only respond to vertical gestures
+        return Math.abs(gestureState.dy) > Math.abs(gestureState.dx) && Math.abs(gestureState.dy) > 5;
+      },
+      onPanResponderGrant: () => {
+        // Store starting height when drag begins (use currentHeightRef which is kept in sync)
+        dragStartHeightRef.current = currentHeightRef.current;
+      },
+      onPanResponderMove: (
+        _evt: GestureResponderEvent,
+        gestureState: PanResponderGestureState
+      ) => {
+        // Dragging up (negative dy) increases height
+        // Dragging down (positive dy) decreases height
+        const screenHeight = Dimensions.get('window').height;
+        const newHeight = dragStartHeightRef.current - gestureState.dy;
+
+        // Clamp between MIN_PLAYABLE_HEIGHT and screen height
+        const clampedHeight = Math.max(
+          MIN_PLAYABLE_HEIGHT,
+          Math.min(newHeight, screenHeight)
+        );
+
+        animatedHeight.setValue(clampedHeight);
+        currentHeightRef.current = clampedHeight;
+      },
+      onPanResponderRelease: (
+        _evt: GestureResponderEvent,
+        gestureState: PanResponderGestureState
+      ) => {
+        const screenHeight = Dimensions.get('window').height;
+        const newHeight = dragStartHeightRef.current - gestureState.dy;
+        const clampedHeight = Math.max(
+          MIN_PLAYABLE_HEIGHT,
+          Math.min(newHeight, screenHeight)
+        );
+
+        // If dragged close to full screen (>= 95%), snap to full screen
+        if (clampedHeight >= screenHeight * 0.95) {
+          Animated.spring(animatedHeight, {
+            toValue: screenHeight,
+            useNativeDriver: false,
+            tension: 100,
+            friction: 10,
+          }).start(() => {
+            currentHeightRef.current = screenHeight;
+          });
+          setResizedHeight(screenHeight);
+        } else {
+          currentHeightRef.current = clampedHeight;
+          setResizedHeight(clampedHeight);
+        }
+      },
+    })
+  ).current;
+
+  // Handle close with dimension callback
+  const handleClose = useCallback(() => {
+    onDimensionsOnClose?.(effectiveHeight, isBottomSheet);
+    onClose();
+  }, [effectiveHeight, isBottomSheet, onDimensionsOnClose, onClose]);
 
   /**
    * Compute WebView source using shared utility
@@ -238,15 +363,15 @@ export const GameIframe: React.FC<GameIframeProps> = ({
       visible={true}
       transparent={true}
       animationType={isBottomSheet ? 'slide' : 'fade'}
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
       accessibilityViewIsModal={true}
       statusBarTranslucent={Platform.OS === 'android'}
     >
       <StatusBar
-        hidden={!isBottomSheet}
-        backgroundColor={!isBottomSheet ? 'black' : undefined}
+        hidden={shouldHideStatusBar}
+        backgroundColor="transparent"
         barStyle="light-content"
-        translucent={Platform.OS === 'android' && !isBottomSheet}
+        translucent={true}
       />
       <View
         style={[
@@ -254,85 +379,142 @@ export const GameIframe: React.FC<GameIframeProps> = ({
           isBottomSheet && styles.bottomSheetOverlay,
         ]}
       >
-        <View
-          style={[
-            styles.container,
-            !isBottomSheet && styles.fullScreenContainer,
-            isBottomSheet && {
-              ...styles.bottomSheetContainer,
-              height: containerHeight,
-              backgroundColor: playableBorderColor,
-            },
-          ]}
-        >
-          {/* Drag handle for bottom sheet only - full screen has no top bar */}
-          {isBottomSheet && (
-            <View style={[styles.dragHandleContainer, { backgroundColor: playableBorderColor }]}>
-              <View style={styles.dragHandle} />
-            </View>
-          )}
-
-          {/* Content area - removed responder handlers that block WebView touches on Android */}
-          <View
+        {/* Use Animated.View for bottom sheet to enable smooth resize animation */}
+        {isBottomSheet ? (
+          <Animated.View
             style={[
-              styles.contentContainer,
-              isBottomSheet && styles.bottomSheetContentContainer,
+              styles.container,
+              styles.bottomSheetContainer,
+              {
+                height: animatedHeight,
+                backgroundColor: playableBorderColor,
+              },
             ]}
           >
-            {loading && (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={isBottomSheet ? '#333333' : '#FFFFFF'} />
-                <Text style={[styles.loadingText, isBottomSheet && styles.bottomSheetLoadingText]}>
-                  Loading game...
-                </Text>
-              </View>
-            )}
+            {/* Drag handle for resize - attach PanResponder */}
+            <View
+              style={[styles.dragHandleContainer, { backgroundColor: playableBorderColor }]}
+              {...resizePanResponder.panHandlers}
+            >
+              <View style={styles.dragHandle} />
+            </View>
 
-            {error && (
-              <View style={styles.errorContainer}>
-                <Text style={[styles.errorText, isBottomSheet && styles.bottomSheetErrorText]}>
-                  {error}
-                </Text>
-              </View>
-            )}
+            {/* Content area */}
+            <View style={[styles.contentContainer, styles.bottomSheetContentContainer]}>
+              {loading && (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#333333" />
+                  <Text style={[styles.loadingText, styles.bottomSheetLoadingText]}>
+                    Loading game...
+                  </Text>
+                </View>
+              )}
 
-            {!loading && !error && iframeUrl && webViewSource && (
-              <WebView
-                source={webViewSource}
-                originWhitelist={buildOriginWhitelist()}
-                style={styles.webview}
-                scrollEnabled={false}
-                bounces={false}
-                allowsFullscreen={true}
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
-                allowsInlineMediaPlayback={true}
-                mediaPlaybackRequiresUserAction={true}
-                mixedContentMode="never"
-                onError={(syntheticEvent) => {
-                  const { nativeEvent } = syntheticEvent;
-                  setError(`Failed to load game content: ${nativeEvent.description || 'Unknown error'}`);
-                }}
-                onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
-              />
-            )}
+              {error && (
+                <View style={styles.errorContainer}>
+                  <Text style={[styles.errorText, styles.bottomSheetErrorText]}>
+                    {error}
+                  </Text>
+                </View>
+              )}
 
-            {!loading && !error && !iframeUrl && (
-              <View style={styles.errorContainer}>
-                <Text style={[styles.errorText, isBottomSheet && styles.bottomSheetErrorText]}>
-                  No URL available.
-                </Text>
-              </View>
-            )}
+              {!loading && !error && iframeUrl && webViewSource && (
+                <WebView
+                  source={webViewSource}
+                  originWhitelist={buildOriginWhitelist()}
+                  style={styles.webview}
+                  scrollEnabled={false}
+                  bounces={false}
+                  allowsFullscreen={true}
+                  javaScriptEnabled={true}
+                  domStorageEnabled={true}
+                  allowsInlineMediaPlayback={true}
+                  mediaPlaybackRequiresUserAction={true}
+                  mixedContentMode="never"
+                  onError={(syntheticEvent) => {
+                    const { nativeEvent } = syntheticEvent;
+                    setError(`Failed to load game content: ${nativeEvent.description || 'Unknown error'}`);
+                  }}
+                  onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
+                />
+              )}
+
+              {!loading && !error && !iframeUrl && (
+                <View style={styles.errorContainer}>
+                  <Text style={[styles.errorText, styles.bottomSheetErrorText]}>
+                    No URL available.
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <CloseButton
+              onPress={handleClose}
+              accessibilityLabel="Close game"
+              accessibilityHint="Double tap to close the game and return to chat"
+              style={styles.bottomSheetCloseButton}
+            />
+          </Animated.View>
+        ) : (
+          <View
+            style={[styles.container, styles.fullScreenContainer]}
+          >
+            {/* Full screen mode content */}
+            <View style={styles.contentContainer}>
+              {loading && (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#FFFFFF" />
+                  <Text style={styles.loadingText}>
+                    Loading game...
+                  </Text>
+                </View>
+              )}
+
+              {error && (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>
+                    {error}
+                  </Text>
+                </View>
+              )}
+
+              {!loading && !error && iframeUrl && webViewSource && (
+                <WebView
+                  source={webViewSource}
+                  originWhitelist={buildOriginWhitelist()}
+                  style={styles.webview}
+                  scrollEnabled={false}
+                  bounces={false}
+                  allowsFullscreen={true}
+                  javaScriptEnabled={true}
+                  domStorageEnabled={true}
+                  allowsInlineMediaPlayback={true}
+                  mediaPlaybackRequiresUserAction={true}
+                  mixedContentMode="never"
+                  onError={(syntheticEvent) => {
+                    const { nativeEvent } = syntheticEvent;
+                    setError(`Failed to load game content: ${nativeEvent.description || 'Unknown error'}`);
+                  }}
+                  onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
+                />
+              )}
+
+              {!loading && !error && !iframeUrl && (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>
+                    No URL available.
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <CloseButton
+              onPress={handleClose}
+              accessibilityLabel="Close game"
+              accessibilityHint="Double tap to close the game and return to chat"
+            />
           </View>
-
-          <CloseButton
-            onPress={onClose}
-            accessibilityLabel="Close game"
-            accessibilityHint="Double tap to close the game and return to chat"
-            style={isBottomSheet ? styles.bottomSheetCloseButton : undefined}
-          />
-        </View>
+        )}
       </View>
     </Modal>
   );
