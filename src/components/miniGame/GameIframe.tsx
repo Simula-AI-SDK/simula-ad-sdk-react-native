@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { View, Text, Modal, StyleSheet, ActivityIndicator, Dimensions, StatusBar, Linking } from 'react-native';
+import { View, Text, Modal, StyleSheet, ActivityIndicator, Dimensions, StatusBar, Linking, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Message } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
@@ -240,14 +240,24 @@ export const GameIframe: React.FC<GameIframeProps> = ({
       animationType={isBottomSheet ? 'slide' : 'fade'}
       onRequestClose={onClose}
       accessibilityViewIsModal={true}
+      statusBarTranslucent={Platform.OS === 'android'}
     >
-      <StatusBar hidden={!isBottomSheet} />
+      <StatusBar
+        hidden={!isBottomSheet}
+        backgroundColor={!isBottomSheet ? 'black' : undefined}
+        barStyle="light-content"
+        translucent={Platform.OS === 'android' && !isBottomSheet}
+      />
       <View
-        style={[styles.overlay, isBottomSheet && styles.bottomSheetOverlay]}
+        style={[
+          styles.overlay,
+          isBottomSheet && styles.bottomSheetOverlay,
+        ]}
       >
         <View
           style={[
             styles.container,
+            !isBottomSheet && styles.fullScreenContainer,
             isBottomSheet && {
               ...styles.bottomSheetContainer,
               height: containerHeight,
@@ -331,9 +341,7 @@ export const GameIframe: React.FC<GameIframeProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'black',
   },
   bottomSheetOverlay: {
     justifyContent: 'flex-end',
@@ -343,6 +351,10 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     height: '100%',
+    backgroundColor: 'black',
+  },
+  fullScreenContainer: {
+    backgroundColor: 'black',
   },
   bottomSheetContainer: {
     flex: 0,
@@ -368,6 +380,7 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     height: '100%',
+    backgroundColor: 'black',
   },
   bottomSheetContentContainer: {
     flex: 1,
