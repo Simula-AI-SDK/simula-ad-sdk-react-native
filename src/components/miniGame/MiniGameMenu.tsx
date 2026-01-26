@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, Pressable, StatusBar, Linking, TextInput } from 'react-native';
+import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, StatusBar, Linking, TextInput } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MiniGameMenuProps, MiniGameTheme, GameData } from '../../types';
 import { GameGrid } from './GameGrid';
@@ -178,10 +178,6 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
     // Keep adFetched as true so we don't show another ad
   };
 
-  const handleAdOverlayPress = () => {
-    handleAdIframeClose();
-  };
-
   /**
    * Check if URL is a special/internal URL that should be allowed in WebView
    */
@@ -277,18 +273,11 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
           accessibilityViewIsModal={true}
         >
           <StatusBar hidden={true} />
-          <Pressable
-            onPress={handleAdOverlayPress}
-            style={styles.adOverlay}
-          >
+          {/* Use View instead of Pressable - Pressable blocks WebView touches on Android */}
+          <View style={styles.adOverlay}>
             <View style={styles.adContainer}>
-              {/* WebView content */}
-              <View
-                style={styles.adContentContainer}
-                onStartShouldSetResponder={() => true}
-                onMoveShouldSetResponder={() => false}
-                onResponderTerminationRequest={() => true}
-              >
+              {/* WebView content - removed responder handlers that block touches on Android */}
+              <View style={styles.adContentContainer}>
                 {adWebViewSource && (
                   <WebView
                     source={adWebViewSource}
@@ -306,21 +295,13 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
                 )}
               </View>
 
-              {/* Touch blocker area - prevents WebView from capturing touches in close button area */}
-              <View
-                style={styles.adTouchBlocker}
-                pointerEvents="auto"
-                onStartShouldSetResponder={() => true}
-                onResponderTerminationRequest={() => false}
-              />
-
               <CloseButton
                 onPress={handleAdIframeClose}
                 accessibilityLabel="Close ad"
                 accessibilityHint="Double tap to close the ad"
               />
             </View>
-          </Pressable>
+          </View>
         </Modal>
       )}
 
@@ -755,15 +736,6 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     height: '100%',
-  },
-  adTouchBlocker: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 80,
-    height: 80,
-    zIndex: 9999,
-    elevation: 9,
   },
   adWebView: {
     width: '100%',

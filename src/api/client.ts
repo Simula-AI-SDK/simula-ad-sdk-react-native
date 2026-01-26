@@ -15,9 +15,9 @@ export interface CatalogResponse {
 }
 
 // Production API URL (from original SDK)
-// const API_BASE_URL = "https://simula-api-701226639755.us-central1.run.app";
+const API_BASE_URL = "https://simula-api-701226639755.us-central1.run.app";
 // const API_BASE_URL = "https://62d01abed0fd.ngrok-free.app";
-const API_BASE_URL = "https://splittable-unpatient-maxine.ngrok-free.dev";
+// const API_BASE_URL = "https://splittable-unpatient-maxine.ngrok-free.dev";
 // const API_BASE_URL = "https://murray-rats-prominent-tackle.trycloudflare.com";
 const REQUEST_TIMEOUT = 5000; // 5 seconds
 

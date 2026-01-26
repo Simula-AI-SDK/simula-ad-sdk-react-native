@@ -1,6 +1,6 @@
 {
   "name": "@simula/ads-react-native",
-  "version": "1.0.81",
+  "version": "1.0.84",
   "description": "React Native SDK for AI-Powered Contextual Ads",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

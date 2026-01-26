@@ -262,15 +262,12 @@ export const GameIframe: React.FC<GameIframeProps> = ({
             </View>
           )}
 
-          {/* Content area - captures touches to prevent backdrop from closing */}
+          {/* Content area - removed responder handlers that block WebView touches on Android */}
           <View
             style={[
               styles.contentContainer,
               isBottomSheet && styles.bottomSheetContentContainer,
             ]}
-            onStartShouldSetResponder={() => true}
-            onMoveShouldSetResponder={() => false}
-            onResponderTerminationRequest={() => true}
           >
             {loading && (
               <View style={styles.loadingContainer}>
@@ -318,14 +315,6 @@ export const GameIframe: React.FC<GameIframeProps> = ({
               </View>
             )}
           </View>
-
-          {/* Touch blocker area - prevents WebView from capturing touches in close button area */}
-          <View
-            style={[styles.touchBlocker, isBottomSheet && styles.bottomSheetTouchBlocker]}
-            pointerEvents="auto"
-            onStartShouldSetResponder={() => true}
-            onResponderTerminationRequest={() => false}
-          />
 
           <CloseButton
             onPress={onClose}
@@ -383,18 +372,6 @@ const styles = StyleSheet.create({
   bottomSheetContentContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-  },
-  touchBlocker: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 80,
-    height: 80,
-    zIndex: 9999,
-    elevation: 9,
-  },
-  bottomSheetTouchBlocker: {
-    top: 32, // Account for drag handle
   },
   bottomSheetCloseButton: {
     top: 32, // Account for drag handle
