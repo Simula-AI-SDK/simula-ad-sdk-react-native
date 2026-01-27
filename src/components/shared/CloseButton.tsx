@@ -44,8 +44,8 @@ export const CloseButton: React.FC<CloseButtonProps> = ({
 const styles = StyleSheet.create({
   wrapper: {
     position: 'absolute',
-    top: 12,
-    right: 12,
+    top: 60,
+    right: 16,
     width: 32,
     height: 32,
     zIndex: 10000,

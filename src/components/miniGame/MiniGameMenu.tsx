@@ -3,7 +3,7 @@
  * Based on https://github.com/Simula-AI-SDK/simula-ad-sdk
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, StatusBar, Linking, TextInput, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MiniGameMenuProps, MiniGameTheme, GameData } from '../../types';
@@ -161,17 +161,44 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
     setLastGameWasBottomSheet(wasBottomSheet);
   }, []);
 
-  // Always hide status bar when ad modal is open
+  // Track status bar stack entry for proper cleanup
+  const adStatusBarEntryRef = useRef<any>(null);
+
+  // Helper to push status bar entry
+  const pushAdStatusBarHidden = useCallback(() => {
+    // Pop any existing entry first to avoid stacking
+    if (adStatusBarEntryRef.current) {
+      StatusBar.popStackEntry(adStatusBarEntryRef.current);
+    }
+    // Push a new stack entry that hides the status bar
+    adStatusBarEntryRef.current = StatusBar.pushStackEntry({
+      hidden: true,
+      animated: true,
+      barStyle: 'light-content',
+      translucent: true,
+      backgroundColor: 'transparent',
+    });
+  }, []);
+
+  // Hide status bar when ad modal becomes visible
+  const handleAdModalShow = useCallback(() => {
+    pushAdStatusBarHidden();
+  }, [pushAdStatusBarHidden]);
+
+  // Also hide on adIframeUrl change as a fallback, and restore when ad modal closes
   useEffect(() => {
     if (adIframeUrl) {
-      StatusBar.setHidden(true, 'fade');
+      pushAdStatusBarHidden();
     }
+
     return () => {
-      if (adIframeUrl) {
-        StatusBar.setHidden(false, 'fade');
+      // Pop the status bar entry
+      if (adIframeUrl && adStatusBarEntryRef.current) {
+        StatusBar.popStackEntry(adStatusBarEntryRef.current);
+        adStatusBarEntryRef.current = null;
       }
     };
-  }, [adIframeUrl]);
+  }, [adIframeUrl, pushAdStatusBarHidden]);
 
   const handleIframeClose = async () => {
     if (!adFetched) {
@@ -292,15 +319,10 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
           transparent={true}
           animationType={lastGameWasBottomSheet ? 'slide' : 'fade'}
           onRequestClose={handleAdIframeClose}
+          onShow={handleAdModalShow}
           accessibilityViewIsModal={true}
           statusBarTranslucent={Platform.OS === 'android'}
         >
-          <StatusBar
-            hidden={true}
-            backgroundColor="transparent"
-            barStyle="light-content"
-            translucent={true}
-          />
           <View
             style={[
               styles.adOverlay,
@@ -744,6 +766,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    minHeight: 250,
   },
   loadingContainer: {
     alignItems: 'center',

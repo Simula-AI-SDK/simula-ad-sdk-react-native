@@ -141,14 +141,42 @@ export const GameIframe: React.FC<GameIframeProps> = ({
   // Effective height (user-resized or calculated)
   const effectiveHeight = resizedHeight ?? containerHeight;
 
-  // Always hide status bar when game modal is open
-  useEffect(() => {
-    StatusBar.setHidden(true, 'fade');
-    return () => {
-      // Restore status bar when component unmounts
-      StatusBar.setHidden(false, 'fade');
-    };
+  // Track status bar stack entry for proper cleanup
+  const statusBarEntryRef = useRef<any>(null);
+
+  // Helper to push status bar entry
+  const pushStatusBarHidden = useCallback(() => {
+    // Pop any existing entry first to avoid stacking
+    if (statusBarEntryRef.current) {
+      StatusBar.popStackEntry(statusBarEntryRef.current);
+    }
+    // Push a new stack entry that hides the status bar
+    statusBarEntryRef.current = StatusBar.pushStackEntry({
+      hidden: true,
+      animated: true,
+      barStyle: 'light-content',
+      translucent: true,
+      backgroundColor: 'transparent',
+    });
   }, []);
+
+  // Hide status bar when modal becomes visible
+  const handleModalShow = useCallback(() => {
+    pushStatusBarHidden();
+  }, [pushStatusBarHidden]);
+
+  // Also try hiding on mount as a fallback
+  useEffect(() => {
+    pushStatusBarHidden();
+
+    return () => {
+      // Pop the status bar entry
+      if (statusBarEntryRef.current) {
+        StatusBar.popStackEntry(statusBarEntryRef.current);
+        statusBarEntryRef.current = null;
+      }
+    };
+  }, [pushStatusBarHidden]);
 
   // Update animated value when containerHeight changes (initial load or reset)
   useEffect(() => {
@@ -356,15 +384,10 @@ export const GameIframe: React.FC<GameIframeProps> = ({
       transparent={true}
       animationType={isBottomSheet ? 'slide' : 'fade'}
       onRequestClose={handleClose}
+      onShow={handleModalShow}
       accessibilityViewIsModal={true}
       statusBarTranslucent={Platform.OS === 'android'}
     >
-      <StatusBar
-        hidden={true}
-        backgroundColor="transparent"
-        barStyle="light-content"
-        translucent={true}
-      />
       <View
         style={[
           styles.overlay,
@@ -444,7 +467,6 @@ export const GameIframe: React.FC<GameIframeProps> = ({
               onPress={handleClose}
               accessibilityLabel="Close game"
               accessibilityHint="Double tap to close the game and return to chat"
-              style={styles.bottomSheetCloseButton}
             />
           </Animated.View>
         ) : (
@@ -559,9 +581,6 @@ const styles = StyleSheet.create({
   bottomSheetContentContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-  },
-  bottomSheetCloseButton: {
-    top: 32, // Account for drag handle
   },
   loadingContainer: {
     flex: 1,
