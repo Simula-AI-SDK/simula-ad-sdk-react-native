@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, StatusBar, Linking, TextInput, Platform } from 'react-native';
+import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, StatusBar, Linking, TextInput, Platform, Pressable } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MiniGameMenuProps, MiniGameTheme, GameData } from '../../types';
 import { GameGrid } from './GameGrid';
@@ -399,12 +399,11 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
               },
             ]}
           >
-            <TouchableOpacity
-              activeOpacity={1}
-              onPress={handleBackdropPress}
+            <Pressable
               style={styles.backdrop}
+              onPress={handleBackdropPress}
             >
-              <View
+              <Pressable
                 style={[
                   styles.modalContent,
                   {
@@ -642,8 +641,8 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
                     />
                   )}
                 </View>
-              </View>
-            </TouchableOpacity>
+              </Pressable>
+            </Pressable>
           </Animated.View>
         </Modal>
       )}
