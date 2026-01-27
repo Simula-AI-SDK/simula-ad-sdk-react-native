@@ -24,10 +24,7 @@ interface GameIframeProps {
   delegateChar?: boolean;
   onClose: () => void;
   onAdIdReceived?: (adId: string) => void;
-  turnsBtwnMsgs?: number;
-  usePubCharApi?: string;
   charDesc?: string;
-  exampleCharMsgs?: string;
   /**
    * Menu ID from catalog response for tracking
    */
@@ -69,8 +66,6 @@ export const GameIframe: React.FC<GameIframeProps> = ({
   playableHeight,
   playableBorderColor = DEFAULT_PLAYABLE_BORDER_COLOR,
   onDimensionsOnClose,
-  // Optional props for API compatibility (not currently used in implementation)
-  // turnsBtwnMsgs, usePubCharApi, exampleCharMsgs are defined in interface but not used
 }) => {
   const { sessionId } = useSimulaContext();
   
@@ -78,6 +73,11 @@ export const GameIframe: React.FC<GameIframeProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState(Dimensions.get('window'));
+
+  // Capture initial values for API call (don't re-fetch on changes)
+  const initialDimensionsRef = useRef(Dimensions.get('window'));
+  const messagesRef = useRef(messages);
+  const onAdIdReceivedRef = useRef(onAdIdReceived);
 
   // State for drag-to-resize functionality
   const [resizedHeight, setResizedHeight] = useState<number | null>(null);
@@ -112,16 +112,26 @@ export const GameIframe: React.FC<GameIframeProps> = ({
     if (typeof playableHeight === 'number') {
       // Pixel value
       calculatedHeight = Math.max(playableHeight, MIN_PLAYABLE_HEIGHT);
-    } else if (typeof playableHeight === 'string' && playableHeight.includes('%')) {
-      // Percentage value
-      const percentage = parseFloat(playableHeight) / 100;
-      
-      // Treat >= 95% as full screen (no bottom sheet UI)
-      if (percentage >= 0.95) {
-        return { containerHeight: dimensions.height, isBottomSheet: false };
+    } else if (typeof playableHeight === 'string') {
+      if (playableHeight.includes('%')) {
+        // Percentage value (e.g., "80%")
+        const percentage = parseFloat(playableHeight) / 100;
+
+        // Treat >= 95% as full screen (no bottom sheet UI)
+        if (percentage >= 0.95) {
+          return { containerHeight: dimensions.height, isBottomSheet: false };
+        }
+
+        calculatedHeight = Math.max(dimensions.height * percentage, MIN_PLAYABLE_HEIGHT);
+      } else {
+        // Numeric string without % (e.g., "500", "700") - treat as pixels
+        const parsed = parseFloat(playableHeight);
+        if (isNaN(parsed)) {
+          // Invalid value, use full screen
+          return { containerHeight: dimensions.height, isBottomSheet: false };
+        }
+        calculatedHeight = Math.max(parsed, MIN_PLAYABLE_HEIGHT);
       }
-      
-      calculatedHeight = Math.max(dimensions.height * percentage, MIN_PLAYABLE_HEIGHT);
     } else {
       // Invalid value, use full screen
       return { containerHeight: dimensions.height, isBottomSheet: false };
@@ -284,32 +294,34 @@ export const GameIframe: React.FC<GameIframeProps> = ({
     const initMinigame = async () => {
       try {
         setLoading(true);
+        // Use refs for values that may change reference but not content (arrays, callbacks)
+        const { width, height } = initialDimensionsRef.current;
         const params: InitMinigameRequest = {
           gameType: gameId,
           sessionId: sessionId,
           currencyMode: false,
-          w: dimensions.width,
-          h: dimensions.height,
+          w: width,
+          h: height,
           char_id: charID,
           char_name: charName,
           char_image: charImage,
           char_desc: charDesc,
-          messages: messages,
+          messages: messagesRef.current,
           delegate_char: delegateChar,
           menuId: menuId,
         };
-        
+
         const response = await getMinigame(params);
-        
+
         if (response.adResponse?.iframe_url) {
           setIframeUrl(response.adResponse.iframe_url);
         } else {
           setError('No game URL received from server.');
         }
-        
+
         // Callback with the ad_id for tracking
-        if (onAdIdReceived && response.adResponse?.ad_id) {
-          onAdIdReceived(response.adResponse.ad_id);
+        if (onAdIdReceivedRef.current && response.adResponse?.ad_id) {
+          onAdIdReceivedRef.current(response.adResponse.ad_id);
         }
       } catch (err) {
         setError('Failed to load game. Please try again.');
@@ -319,7 +331,8 @@ export const GameIframe: React.FC<GameIframeProps> = ({
     };
 
     initMinigame();
-  }, [gameId, charID, charName, charImage, charDesc, messages, delegateChar, sessionId, menuId, dimensions.width, dimensions.height]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameId, charID, charName, charImage, charDesc, delegateChar, sessionId, menuId]);
 
 
   /**
@@ -614,7 +627,7 @@ const styles = StyleSheet.create({
   webview: {
     width: '100%',
     height: '100%',
-    backgroundColor: 'transparent',
+    backgroundColor: 'black',
   },
 });
 

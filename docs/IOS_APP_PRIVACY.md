@@ -264,7 +264,7 @@ To request data deletion, contact support@simula.ad.
 
 ## Questions?
 
-Contact support@simula.ad for App Store submission assistance.
+Contact admin@simula.ad for App Store submission assistance.
 
 
 

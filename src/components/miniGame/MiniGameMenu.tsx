@@ -845,6 +845,7 @@ const styles = StyleSheet.create({
   adWebView: {
     width: '100%',
     height: '100%',
+    backgroundColor: 'black',
   },
   adBottomSheetCloseButton: {
     top: 32,

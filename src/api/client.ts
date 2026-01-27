@@ -14,16 +14,11 @@ export interface CatalogResponse {
   games: GameData[];
 }
 
-// Production API URL (from original SDK)
 const API_BASE_URL = "https://simula-api-701226639755.us-central1.run.app";
-// const API_BASE_URL = "https://62d01abed0fd.ngrok-free.app";
-// const API_BASE_URL = "https://splittable-unpatient-maxine.ngrok-free.dev";
-// const API_BASE_URL = "https://murray-rats-prominent-tackle.trycloudflare.com";
-const REQUEST_TIMEOUT = 5000; // 5 seconds
+const REQUEST_TIMEOUT = 5000;
 
 /**
- * Request payload for ad fetch (matches original SDK)
- * Theme uses snake_case (corner_radius) for API
+ * Request payload for ad fetch
  */
 interface AdRequest {
   messages: Message[];
@@ -33,14 +28,14 @@ interface AdRequest {
     accent?: string | string[];
     font?: string | string[];
     width?: number | string;
-    corner_radius?: number; // snake_case for API
+    corner_radius?: number;
   };
   session_id?: string;
   char_desc?: string;
 }
 
 /**
- * API response format (matches original SDK)
+ * API response format
  */
 interface AdResponse {
   adInserted?: boolean;
@@ -52,7 +47,7 @@ interface AdResponse {
     iframeUrl?: string;
     format?: string;
   };
-  ad?: AdData; // Legacy format
+  ad?: AdData;
   error?: string;
 }
 
@@ -64,14 +59,13 @@ interface SessionResponse {
 }
 
 /**
- * Normalize theme configuration (matches original SDK)
+ * Normalize theme configuration
  */
 export function normalizeTheme(theme?: SimulaTheme): NormalizedTheme {
   if (!theme) return DEFAULT_THEME;
   
   return {
     mode: theme.mode ?? DEFAULT_THEME.mode,
-    // Convert accent and font to arrays for backend (A/B testing)
     accent: theme.accent 
       ? (Array.isArray(theme.accent) ? theme.accent : [theme.accent])
       : DEFAULT_THEME.accent,
@@ -84,7 +78,7 @@ export function normalizeTheme(theme?: SimulaTheme): NormalizedTheme {
 }
 
 /**
- * Create a server session and return its ID (matches original SDK)
+ * Create a server session and return its ID
  */
 export async function createSession(
   apiKey: string,
@@ -97,7 +91,6 @@ export async function createSession(
       "Authorization": `Bearer ${apiKey}`,
     };
 
-    // Build query parameters
     const params = new URLSearchParams();
     if (devMode !== undefined) {
       params.append("devMode", String(devMode));
@@ -134,7 +127,6 @@ export async function createSession(
     }
     return undefined;
   } catch (error) {
-    // Re-throw 401 errors with our custom message
     if (error instanceof Error && error.message.includes("Invalid API key")) {
       throw error;
     }
@@ -143,7 +135,7 @@ export async function createSession(
 }
 
 /**
- * Fetch ad from Simula API (matches original SDK)
+ * Fetch ad from Simula API
  */
 export async function fetchAd(
   apiKey: string,
@@ -154,24 +146,20 @@ export async function fetchAd(
   charDesc?: string
 ): Promise<{ ad?: AdData; error?: string }> {
   try {
-    // Validate messages
     if (!messages || messages.length === 0) {
       return { error: "At least one message is required for contextual targeting" };
     }
 
-    // Normalize theme
     const normalizedTheme = theme ? normalizeTheme(theme) : undefined;
 
-    // Convert theme to API format (snake_case for cornerRadius, ensure font and accent are always arrays)
     const themeForAPI = normalizedTheme ? {
       mode: normalizedTheme.mode,
       accent: Array.isArray(normalizedTheme.accent) ? normalizedTheme.accent : [normalizedTheme.accent],
       font: Array.isArray(normalizedTheme.font) ? normalizedTheme.font : [normalizedTheme.font],
       width: normalizedTheme.width,
-      corner_radius: normalizedTheme.cornerRadius, // Convert to snake_case
+      corner_radius: normalizedTheme.cornerRadius,
     } : undefined;
 
-    // Prepare request payload (matches original SDK)
     const requestBody: AdRequest = {
       messages,
       slot_id: slotId,
@@ -185,7 +173,6 @@ export async function fetchAd(
       "Authorization": `Bearer ${apiKey}`,
     };
 
-    // Create abort controller for timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
@@ -198,12 +185,9 @@ export async function fetchAd(
 
     clearTimeout(timeoutId);
 
-    // Read response body (even on errors to see what server returned)
     let data: AdResponse;
     try {
       const responseText = await response.text();
-      
-      // Try to parse as JSON
       try {
         data = JSON.parse(responseText);
       } catch (parseError) {
@@ -213,7 +197,6 @@ export async function fetchAd(
       data = { error: `Failed to read response: ${readError instanceof Error ? readError.message : 'Unknown error'}` };
     }
 
-    // Check if response is ok AFTER reading the body
     if (!response.ok) {
       const errorMessage = data?.error 
         ? `HTTP error! status: ${response.status} - ${data.error}` 
@@ -221,20 +204,18 @@ export async function fetchAd(
       throw new Error(errorMessage);
     }
 
-    // Handle new API shape (matches original SDK)
     if (data && typeof data === "object") {
       if (!data.adInserted) {
         return { error: "No fill" };
       }
 
-      // New shape: { adType, adInserted, adResponse: { ad_id, iframe_url, ... } }
       if (data.adResponse && typeof data.adResponse === "object") {
         const ar = data.adResponse;
         const ad: AdData = {
           id: ar.ad_id ?? ar.id ?? "",
           format: (data.adType ?? ar.format ?? "iframe") as any,
           iframeUrl: ar.iframe_url ?? ar.iframeUrl,
-          content: "", // Not used in React Native
+          content: "",
         };
 
         if (ad.id && ad.iframeUrl) {
@@ -244,7 +225,6 @@ export async function fetchAd(
         return { error: "Invalid ad response" };
       }
 
-      // Legacy shape: { ad: { ... } }
       if (data.ad) {
         return { ad: data.ad };
       }
@@ -267,7 +247,7 @@ export async function fetchAd(
 }
 
 /**
- * Track ad impression (matches original SDK)
+ * Track ad impression
  */
 export async function trackImpression(adId: string, apiKey: string): Promise<void> {
   try {
@@ -287,7 +267,7 @@ export async function trackImpression(adId: string, apiKey: string): Promise<voi
 }
 
 /**
- * Track minigame menu click (matches original SDK)
+ * Track minigame menu click
  */
 export async function trackMenuGameClick(
   menuId: string,
@@ -310,12 +290,11 @@ export async function trackMenuGameClick(
     });
   } catch (error) {
     // Silently fail - tracking is best effort
-    console.log("Failed to track menu game click:", error);
   }
 }
 
 /**
- * Fetch game catalog (matches original SDK)
+ * Fetch game catalog
  */
 export async function fetchCatalog(): Promise<CatalogResponse> {
   try {
@@ -332,34 +311,26 @@ export async function fetchCatalog(): Promise<CatalogResponse> {
     }
 
     const responseData: any = await response.json();
-    
-    // Extract menu_id from response
     const menuId: string = responseData.menu_id ?? '';
-    
-    // Handle different response formats: catalog.data or direct data array
+
     let gamesList: any[];
     if (responseData.catalog != null) {
-      // New format: catalog is in the response
       const catalog = responseData.catalog;
       if (Array.isArray(catalog)) {
         gamesList = catalog;
       } else if (catalog && catalog.data != null) {
-        // Nested format: catalog.data
         gamesList = catalog.data as any[];
       } else {
-        // Fallback: try responseData.data for backwards compatibility
         gamesList = responseData.data ?? [];
       }
     } else {
-      // Fallback: try responseData.data for backwards compatibility
       gamesList = responseData.data ?? [];
     }
-    
-    // Map API response to GameData format (icon -> iconUrl)
+
     const games: GameData[] = gamesList.map((game: any) => ({
       id: game.id,
       name: game.name,
-      iconUrl: game.icon, // API returns 'icon', we use 'iconUrl'
+      iconUrl: game.icon,
       description: game.description ?? '',
       iconFallback: game.iconFallback,
     }));
@@ -405,7 +376,7 @@ export interface MinigameResponse {
 }
 
 /**
- * Initialize minigame and get iframe URL (matches original SDK)
+ * Initialize minigame and get iframe URL
  */
 export async function getMinigame(params: InitMinigameRequest): Promise<MinigameResponse> {
   try {
@@ -423,8 +394,7 @@ export async function getMinigame(params: InitMinigameRequest): Promise<Minigame
       messages: params.messages,
       delegate_char: params.delegate_char ?? true,
     };
-    
-    // Include menu_id if provided
+
     if (params.menuId) {
       requestBody.menu_id = params.menuId;
     }
@@ -450,7 +420,7 @@ export async function getMinigame(params: InitMinigameRequest): Promise<Minigame
 }
 
 /**
- * Fetch fallback ad after minigame closes (matches original SDK)
+ * Fetch fallback ad after minigame closes
  */
 export async function fetchAdForMinigame(aid: string): Promise<string | null> {
   try {
@@ -476,4 +446,3 @@ export async function fetchAdForMinigame(aid: string): Promise<string | null> {
     return null;
   }
 }
-
