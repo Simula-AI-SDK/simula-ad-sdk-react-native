@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, StatusBar, Linking, TextInput, Platform, Dimensions } from 'react-native';
+import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, StatusBar, Linking, TextInput, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MiniGameMenuProps, MiniGameTheme, GameData } from '../../types';
 import { GameGrid } from './GameGrid';
@@ -161,28 +161,17 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
     setLastGameWasBottomSheet(wasBottomSheet);
   }, []);
 
-  // Determine if ad should hide status bar
-  // Hide when: not bottom sheet mode OR height >= 95% of screen
-  const screenHeight = Dimensions.get('window').height;
-  const adShouldHideStatusBar = adIframeUrl && (
-    !lastGameWasBottomSheet ||
-    (lastGameFrameHeight !== null && lastGameFrameHeight >= screenHeight * 0.95)
-  );
-
-  // Hide status bar for full screen ad mode (imperative API works better on Android)
+  // Always hide status bar when ad modal is open
   useEffect(() => {
-    if (adShouldHideStatusBar) {
+    if (adIframeUrl) {
       StatusBar.setHidden(true, 'fade');
-    } else if (adIframeUrl) {
-      // Ad is showing but in bottom sheet mode - ensure status bar is visible
-      StatusBar.setHidden(false, 'fade');
     }
     return () => {
       if (adIframeUrl) {
         StatusBar.setHidden(false, 'fade');
       }
     };
-  }, [adShouldHideStatusBar, adIframeUrl]);
+  }, [adIframeUrl]);
 
   const handleIframeClose = async () => {
     if (!adFetched) {
@@ -307,7 +296,7 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
           statusBarTranslucent={Platform.OS === 'android'}
         >
           <StatusBar
-            hidden={!!adShouldHideStatusBar}
+            hidden={true}
             backgroundColor="transparent"
             barStyle="light-content"
             translucent={true}

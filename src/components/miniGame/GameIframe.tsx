@@ -141,22 +141,14 @@ export const GameIframe: React.FC<GameIframeProps> = ({
   // Effective height (user-resized or calculated)
   const effectiveHeight = resizedHeight ?? containerHeight;
 
-  // Determine if we should hide status bar based on effective height
-  // Hide when: not bottom sheet mode OR resized height >= 95% of screen
-  const shouldHideStatusBar = !isBottomSheet || (resizedHeight !== null && resizedHeight >= dimensions.height * 0.95);
-
-  // Hide status bar for full screen mode (imperative API works better on Android)
+  // Always hide status bar when game modal is open
   useEffect(() => {
-    if (shouldHideStatusBar) {
-      StatusBar.setHidden(true, 'fade');
-    } else {
-      StatusBar.setHidden(false, 'fade');
-    }
+    StatusBar.setHidden(true, 'fade');
     return () => {
       // Restore status bar when component unmounts
       StatusBar.setHidden(false, 'fade');
     };
-  }, [shouldHideStatusBar]);
+  }, []);
 
   // Update animated value when containerHeight changes (initial load or reset)
   useEffect(() => {
@@ -368,7 +360,7 @@ export const GameIframe: React.FC<GameIframeProps> = ({
       statusBarTranslucent={Platform.OS === 'android'}
     >
       <StatusBar
-        hidden={shouldHideStatusBar}
+        hidden={true}
         backgroundColor="transparent"
         barStyle="light-content"
         translucent={true}
