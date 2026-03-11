@@ -12,7 +12,7 @@ import { GameIframe } from './GameIframe';
 import { fetchCatalog, fetchAdForMinigame, trackMenuGameClick } from '../../api/client';
 import { GAMES_UNAVAILABLE_IMAGE_BASE64, PRIVACY_CONSENT_REQUIRED_IMAGE_BASE64 } from './assets';
 import { computeWebViewSource, buildOriginWhitelist, isOriginAllowed, DEFAULT_ALLOWED_ORIGINS, ALLOWED_SPECIAL_SCHEMES } from '../../utils/webview-security';
-import { CloseButton } from '../shared/CloseButton';
+import { CountdownCloseButton } from '../shared/CountdownCloseButton';
 import { useSimulaContext } from '../../context/SimulaProvider';
 
 const DEFAULT_CONSENT_MESSAGE = 'Mini games are unavailable. Please enable privacy consent to play sponsored games.';
@@ -371,10 +371,11 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
                 )}
               </View>
 
-              <CloseButton
+              <CountdownCloseButton
                 onPress={handleAdIframeClose}
+                duration={5000}
                 accessibilityLabel="Close ad"
-                accessibilityHint="Double tap to close the ad"
+                accessibilityHint="Wait for countdown to finish, then double tap to close the ad"
                 style={lastGameWasBottomSheet ? styles.adBottomSheetCloseButton : undefined}
               />
             </View>

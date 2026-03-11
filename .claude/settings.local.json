@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "WebFetch(domain:nikitahl.com)",
+      "WebFetch(domain:medium.com)"
     ],
     "deny": [],
     "ask": []
