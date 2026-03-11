@@ -3,22 +3,28 @@
  * Based on https://github.com/Simula-AI-SDK/simula-ad-sdk
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, Pressable } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { View, Text, Modal, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Animated, StatusBar, Linking, TextInput, Platform, Pressable } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MiniGameMenuProps, MiniGameTheme, GameData } from '../../types';
 import { GameGrid } from './GameGrid';
 import { GameIframe } from './GameIframe';
-import { fetchCatalog, fetchAdForMinigame } from '../../api/client';
-import { GAMES_UNAVAILABLE_IMAGE_BASE64 } from './assets';
+import { fetchCatalog, fetchAdForMinigame, trackMenuGameClick } from '../../api/client';
+import { GAMES_UNAVAILABLE_IMAGE_BASE64, PRIVACY_CONSENT_REQUIRED_IMAGE_BASE64 } from './assets';
+import { computeWebViewSource, buildOriginWhitelist, isOriginAllowed, DEFAULT_ALLOWED_ORIGINS, ALLOWED_SPECIAL_SCHEMES } from '../../utils/webview-security';
+import { CountdownCloseButton } from '../shared/CountdownCloseButton';
+import { useSimulaContext } from '../../context/SimulaProvider';
 
-const defaultTheme: Omit<Required<MiniGameTheme>, 'backgroundColor' | 'headerColor' | 'borderColor'> & { backgroundColor?: string; headerColor?: string; borderColor?: string } = {
+const DEFAULT_CONSENT_MESSAGE = 'Mini games are unavailable. Please enable privacy consent to play sponsored games.';
+
+const defaultTheme: Omit<Required<MiniGameTheme>, 'backgroundColor' | 'headerColor' | 'borderColor' | 'playableHeight' | 'playableBorderColor'> & { backgroundColor?: string; headerColor?: string; borderColor?: string; playableHeight?: number | string; playableBorderColor?: string } = {
   titleFont: 'Inter, system-ui, sans-serif',
   secondaryFont: 'Inter, system-ui, sans-serif',
   titleFontColor: '#1F2937',
   secondaryFontColor: '#6B7280',
   iconCornerRadius: 8,
   borderColor: 'rgba(0, 0, 0, 0.08)',
+  accentColor: '#3B82F6',
 };
 
 export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
@@ -32,7 +38,9 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   maxGamesToShow = 6,
   theme = {},
   delegateChar = true,
+  consentRequiredMessage,
 }) => {
+  const { hasPrivacyConsent, apiKey } = useSimulaContext();
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [imageError, setImageError] = useState(false);
   const [games, setGames] = useState<GameData[]>([]);
@@ -41,13 +49,37 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   const [adFetched, setAdFetched] = useState(false);
   const [adIframeUrl, setAdIframeUrl] = useState<string | null>(null);
   const [currentAdId, setCurrentAdId] = useState<string | null>(null);
+  const [menuId, setMenuId] = useState<string | null>(null);
   const [fadeAnim] = useState(new Animated.Value(0));
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+  // Track game frame dimensions for ad frame sizing
+  const [lastGameFrameHeight, setLastGameFrameHeight] = useState<number | null>(null);
+  const [lastGameWasBottomSheet, setLastGameWasBottomSheet] = useState<boolean>(false);
 
   // Merge theme with defaults
-  const appliedTheme: Omit<Required<MiniGameTheme>, 'backgroundColor' | 'headerColor' | 'borderColor'> & { backgroundColor?: string; headerColor?: string; borderColor?: string } = {
+  const appliedTheme: Omit<Required<MiniGameTheme>, 'backgroundColor' | 'headerColor' | 'borderColor' | 'playableHeight' | 'playableBorderColor'> & { backgroundColor?: string; headerColor?: string; borderColor?: string; playableHeight?: number | string; playableBorderColor?: string } = {
     ...defaultTheme,
     ...theme,
   };
+
+  // Filter games based on search query
+  const filteredGames = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return games;
+    }
+    const query = searchQuery.toLowerCase().trim();
+    return games.filter((game) => game.name.toLowerCase().includes(query));
+  }, [games, searchQuery]);
+
+  // Reset search when menu closes
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchQuery('');
+      setIsSearchFocused(false);
+    }
+  }, [isOpen]);
 
   // Get character initials for fallback
   const getInitials = (name: string): string => {
@@ -80,12 +112,13 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
       setCatalogLoading(true);
       setCatalogError(false);
       try {
-        const catalogData = await fetchCatalog();
-        setGames(catalogData);
+        const catalogResponse = await fetchCatalog();
+        setGames(catalogResponse.games);
+        setMenuId(catalogResponse.menuId);
       } catch (error) {
-        console.error('Failed to load game catalog:', error);
         setCatalogError(true);
         setGames([]);
+        setMenuId(null);
       } finally {
         setCatalogLoading(false);
       }
@@ -104,7 +137,14 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
     handleClose();
   };
 
-  const handleGameSelect = (gameId: string) => {
+  const handleGameSelect = (gameId: string, gameName: string) => {
+    // Track menu game click if menuId is available
+    if (menuId && gameName) {
+      trackMenuGameClick(menuId, gameName, apiKey).catch(() => {
+        // Silently fail - tracking is best effort
+      });
+    }
+    
     handleClose();
     setSelectedGameId(gameId);
     // Reset ad tracking when a new game is selected
@@ -115,6 +155,50 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   const handleAdIdReceived = (adId: string) => {
     setCurrentAdId(adId);
   };
+
+  const handleGameDimensionsOnClose = useCallback((height: number, wasBottomSheet: boolean) => {
+    setLastGameFrameHeight(height);
+    setLastGameWasBottomSheet(wasBottomSheet);
+  }, []);
+
+  // Track status bar stack entry for proper cleanup
+  const adStatusBarEntryRef = useRef<any>(null);
+
+  // Helper to push status bar entry
+  const pushAdStatusBarHidden = useCallback(() => {
+    // Pop any existing entry first to avoid stacking
+    if (adStatusBarEntryRef.current) {
+      StatusBar.popStackEntry(adStatusBarEntryRef.current);
+    }
+    // Push a new stack entry that hides the status bar
+    adStatusBarEntryRef.current = StatusBar.pushStackEntry({
+      hidden: true,
+      animated: true,
+      barStyle: 'light-content',
+      translucent: true,
+      backgroundColor: 'transparent',
+    });
+  }, []);
+
+  // Hide status bar when ad modal becomes visible
+  const handleAdModalShow = useCallback(() => {
+    pushAdStatusBarHidden();
+  }, [pushAdStatusBarHidden]);
+
+  // Also hide on adIframeUrl change as a fallback, and restore when ad modal closes
+  useEffect(() => {
+    if (adIframeUrl) {
+      pushAdStatusBarHidden();
+    }
+
+    return () => {
+      // Pop the status bar entry
+      if (adIframeUrl && adStatusBarEntryRef.current) {
+        StatusBar.popStackEntry(adStatusBarEntryRef.current);
+        adStatusBarEntryRef.current = null;
+      }
+    };
+  }, [adIframeUrl, pushAdStatusBarHidden]);
 
   const handleIframeClose = async () => {
     if (!adFetched) {
@@ -127,7 +211,6 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
             setAdFetched(true);
           }
         } catch (error) {
-          console.error('Error fetching ad:', error);
           // If ad fetch fails, just close without showing ad
         }
       }
@@ -143,10 +226,66 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
     // Keep adFetched as true so we don't show another ad
   };
 
-  const handleAdOverlayPress = () => {
-    // Close when clicking the overlay (backdrop)
-    handleAdIframeClose();
-  };
+  /**
+   * Check if URL is a special/internal URL that should be allowed in WebView
+   */
+  const isSpecialUrl = useCallback((url: string): boolean => {
+    if (!url) return true;
+    for (const scheme of ALLOWED_SPECIAL_SCHEMES) {
+      if (url.startsWith(scheme)) {
+        return true;
+      }
+    }
+    return false;
+  }, []);
+
+  /**
+   * Handle ad iframe navigation - open external URLs in system browser
+   */
+  const handleAdShouldStartLoadWithRequest = useCallback(
+    (request: { url: string }) => {
+      const url = request.url;
+
+      // Allow initial load of iframe URL
+      if (adIframeUrl && url === adIframeUrl) {
+        return true;
+      }
+
+      // Allow special/internal URLs (about:blank, about:srcdoc, data:, blob:)
+      if (isSpecialUrl(url)) {
+        return true;
+      }
+
+      // Block javascript: URLs for security
+      if (url.startsWith("javascript:")) {
+        return false;
+      }
+
+      // Check if origin is allowed - still open externally for better UX
+      if (isOriginAllowed(url, DEFAULT_ALLOWED_ORIGINS)) {
+        Linking.openURL(url).catch((err) => {
+          console.error("Failed to open URL:", err);
+        });
+        return false;
+      }
+
+      // For any other navigation, open externally
+      if (url && url !== adIframeUrl) {
+        Linking.openURL(url).catch((err) => {
+          console.error("Failed to open URL:", err);
+        });
+        return false;
+      }
+
+      return true;
+    },
+    [adIframeUrl, isSpecialUrl]
+  );
+
+  /**
+   * Compute WebView source for ad iframe using shared utility
+   */
+  const adWebViewSource = useMemo(() => computeWebViewSource(adIframeUrl), [adIframeUrl]);
 
   if (!isOpen && !selectedGameId && !adIframeUrl) {
     return null;
@@ -156,8 +295,8 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
     <>
       {/* Game Iframe */}
       {selectedGameId && (
-        <GameIframe 
-          gameId={selectedGameId} 
+        <GameIframe
+          gameId={selectedGameId}
           charID={charID}
           charName={charName}
           charImage={charImage}
@@ -166,6 +305,10 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
           delegateChar={delegateChar}
           onClose={handleIframeClose}
           onAdIdReceived={handleAdIdReceived}
+          menuId={menuId ?? undefined}
+          playableHeight={appliedTheme.playableHeight}
+          playableBorderColor={appliedTheme.playableBorderColor}
+          onDimensionsOnClose={handleGameDimensionsOnClose}
         />
       )}
 
@@ -174,40 +317,69 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
         <Modal
           visible={true}
           transparent={true}
-          animationType="fade"
+          animationType={lastGameWasBottomSheet ? 'slide' : 'fade'}
           onRequestClose={handleAdIframeClose}
+          onShow={handleAdModalShow}
           accessibilityViewIsModal={true}
+          statusBarTranslucent={Platform.OS === 'android'}
         >
-          <Pressable
-            onPress={handleAdOverlayPress}
-            style={styles.adOverlay}
+          <View
+            style={[
+              styles.adOverlay,
+              lastGameWasBottomSheet && styles.adBottomSheetOverlay,
+            ]}
           >
             <View
-              style={styles.adContainer}
-              onStartShouldSetResponder={() => true}
+              style={[
+                styles.adContainer,
+                !lastGameWasBottomSheet && styles.adFullScreenContainer,
+                lastGameWasBottomSheet && {
+                  ...styles.adBottomSheetContainer,
+                  height: lastGameFrameHeight ?? 500,
+                  backgroundColor: appliedTheme.playableBorderColor || '#262626',
+                },
+              ]}
             >
-              <TouchableOpacity
-                onPress={handleAdIframeClose}
-                style={styles.adCloseButtonWrapper}
-                accessibilityLabel="Close ad"
-                accessibilityRole="button"
-                activeOpacity={0.8}
-              >
-                <View style={styles.adCloseButton}>
-                  <Text style={styles.adCloseButtonText}>×</Text>
+              {/* Drag handle for bottom sheet only (visual only, not functional for ad) */}
+              {lastGameWasBottomSheet && (
+                <View style={[styles.adDragHandleContainer, { backgroundColor: appliedTheme.playableBorderColor || '#262626' }]}>
+                  <View style={styles.adDragHandle} />
                 </View>
-              </TouchableOpacity>
-              <WebView
-                source={{ uri: adIframeUrl }}
-                style={styles.adWebView}
-                scrollEnabled={false}
-                bounces={false}
-                allowsFullscreen={true}
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
+              )}
+
+              {/* WebView content */}
+              <View
+                style={[
+                  styles.adContentContainer,
+                  lastGameWasBottomSheet && styles.adBottomSheetContentContainer,
+                ]}
+              >
+                {adWebViewSource && (
+                  <WebView
+                    source={adWebViewSource}
+                    originWhitelist={buildOriginWhitelist()}
+                    style={styles.adWebView}
+                    scrollEnabled={false}
+                    bounces={false}
+                    allowsFullscreen={true}
+                    javaScriptEnabled={true}
+                    domStorageEnabled={true}
+                    mediaPlaybackRequiresUserAction={true}
+                    mixedContentMode="never"
+                    onShouldStartLoadWithRequest={handleAdShouldStartLoadWithRequest}
+                  />
+                )}
+              </View>
+
+              <CountdownCloseButton
+                onPress={handleAdIframeClose}
+                duration={5000}
+                accessibilityLabel="Close ad"
+                accessibilityHint="Wait for countdown to finish, then double tap to close the ad"
+                style={lastGameWasBottomSheet ? styles.adBottomSheetCloseButton : undefined}
               />
             </View>
-          </Pressable>
+          </View>
         </Modal>
       )}
 
@@ -228,12 +400,11 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
               },
             ]}
           >
-            <TouchableOpacity
-              activeOpacity={1}
-              onPress={handleBackdropPress}
+            <Pressable
               style={styles.backdrop}
+              onPress={handleBackdropPress}
             >
-              <View
+              <Pressable
                 style={[
                   styles.modalContent,
                   {
@@ -317,12 +488,92 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
                   </TouchableOpacity>
                 </View>
 
+                {/* Search Bar */}
+                {hasPrivacyConsent && !catalogLoading && !catalogError && games.length > 0 && (
+                  <View style={styles.searchContainer}>
+                    <View
+                      style={[
+                        styles.searchInputContainer,
+                        {
+                          borderColor: isSearchFocused
+                            ? appliedTheme.accentColor
+                            : appliedTheme.borderColor,
+                          backgroundColor: appliedTheme.backgroundColor || '#FFFFFF',
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.searchIcon, { color: appliedTheme.secondaryFontColor }]}>
+                        🔍
+                      </Text>
+                      <TextInput
+                        style={[
+                          styles.searchInput,
+                          {
+                            color: appliedTheme.titleFontColor,
+                            fontFamily: appliedTheme.secondaryFont,
+                          },
+                        ]}
+                        placeholder="Search games..."
+                        placeholderTextColor={appliedTheme.secondaryFontColor}
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        onFocus={() => setIsSearchFocused(true)}
+                        onBlur={() => setIsSearchFocused(false)}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        returnKeyType="search"
+                      />
+                      {searchQuery.length > 0 && (
+                        <TouchableOpacity
+                          onPress={() => setSearchQuery('')}
+                          style={styles.clearButton}
+                          accessibilityLabel="Clear search"
+                        >
+                          <Text style={[styles.clearButtonText, { color: appliedTheme.secondaryFontColor }]}>
+                            ✕
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                )}
+
                 {/* Game Grid Content */}
-                <View style={[
-                  styles.content,
-                  (catalogError || catalogLoading) && styles.contentCentered,
-                ]}>
-                  {catalogLoading ? (
+                <View
+                  style={[
+                    styles.content,
+                    (catalogError || catalogLoading || !hasPrivacyConsent || filteredGames.length === 0) && styles.contentCentered,
+                  ]}
+                >
+                  {!hasPrivacyConsent ? (
+                    <View style={styles.errorContainer}>
+                      <View
+                        style={[
+                          styles.errorImageContainer,
+                          {
+                            backgroundColor: appliedTheme.backgroundColor || '#F3F4F6',
+                          },
+                        ]}
+                      >
+                        <Image
+                          source={{ uri: PRIVACY_CONSENT_REQUIRED_IMAGE_BASE64 }}
+                          style={styles.errorImage}
+                          resizeMode="cover"
+                        />
+                      </View>
+                      <Text
+                        style={[
+                          styles.errorText,
+                          {
+                            color: appliedTheme.secondaryFontColor,
+                            fontFamily: appliedTheme.secondaryFont,
+                          },
+                        ]}
+                      >
+                        {consentRequiredMessage || DEFAULT_CONSENT_MESSAGE}
+                      </Text>
+                    </View>
+                  ) : catalogLoading ? (
                     <View style={styles.loadingContainer}>
                       <ActivityIndicator
                         size="large"
@@ -368,17 +619,31 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
                         No games are available to play right now. Please check back later!
                       </Text>
                     </View>
+                  ) : filteredGames.length === 0 ? (
+                    <View style={styles.noResultsContainer}>
+                      <Text
+                        style={[
+                          styles.noResultsText,
+                          {
+                            color: appliedTheme.secondaryFontColor,
+                            fontFamily: appliedTheme.secondaryFont,
+                          },
+                        ]}
+                      >
+                        No games found for "{searchQuery}"
+                      </Text>
+                    </View>
                   ) : (
                     <GameGrid
-                      games={games}
+                      games={filteredGames}
                       maxGamesToShow={maxGamesToShow}
                       theme={appliedTheme}
                       onGameSelect={handleGameSelect}
                     />
                   )}
                 </View>
-              </View>
-            </TouchableOpacity>
+              </Pressable>
+            </Pressable>
           </Animated.View>
         </Modal>
       )}
@@ -401,30 +666,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    borderRadius: 16,
+    borderRadius: 14,
     width: '100%',
     maxWidth: 600,
-    minWidth: 320,
-    minHeight: 400,
+    minWidth: 300,
     maxHeight: '90%',
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.1,
-    shadowRadius: 20,
+    shadowRadius: 16,
     elevation: 10,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    padding: 20,
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     borderBottomWidth: 1,
   },
   avatarContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
@@ -434,35 +699,74 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   avatarInitials: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '600',
   },
   headerText: {
     flex: 1,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '600',
-    lineHeight: 21.6,
+    lineHeight: 20,
   },
   closeButton: {
-    width: 44,
-    height: 44,
+    width: 32,
+    height: 32,
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 4,
   },
   closeButtonText: {
-    fontSize: 24,
-    lineHeight: 24,
+    fontSize: 20,
+    lineHeight: 20,
   },
-  content: {
-    padding: 20,
+  searchContainer: {
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 0,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    height: 32,
+  },
+  searchIcon: {
+    fontSize: 13,
+    marginRight: 6,
+  },
+  searchInput: {
     flex: 1,
+    fontSize: 13,
+    paddingVertical: 0,
   },
-  contentCentered: {
+  clearButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  clearButtonText: {
+    fontSize: 14,
+  },
+  noResultsContainer: {
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 24,
+  },
+  noResultsText: {
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  content: {
+    padding: 14,
+  },
+  contentCentered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 250,
   },
   loadingContainer: {
     alignItems: 'center',
@@ -497,46 +801,55 @@ const styles = StyleSheet.create({
   },
   adOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'black',
+  },
+  adBottomSheetOverlay: {
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   adContainer: {
-    position: 'relative',
+    flex: 1,
     width: '100%',
     height: '100%',
-    justifyContent: 'center',
+    backgroundColor: 'black',
+  },
+  adFullScreenContainer: {
+    backgroundColor: 'black',
+  },
+  adBottomSheetContainer: {
+    flex: 0,
+    width: '100%',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    overflow: 'hidden',
+  },
+  adDragHandleContainer: {
+    width: '100%',
+    paddingVertical: 12,
     alignItems: 'center',
   },
-  adCloseButtonWrapper: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 64,
-    height: 64,
-    zIndex: 10000,
-    elevation: 10,
-    justifyContent: 'flex-start',
-    alignItems: 'flex-end',
-    paddingTop: 8,
-    paddingRight: 8,
+  adDragHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
   },
-  adCloseButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 22,
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
+  adContentContainer: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'black',
   },
-  adCloseButtonText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1F2937',
+  adBottomSheetContentContainer: {
+    backgroundColor: '#FFFFFF',
   },
   adWebView: {
     width: '100%',
     height: '100%',
+    backgroundColor: 'black',
+  },
+  adBottomSheetCloseButton: {
+    top: 32,
   },
 });
 

@@ -1,6 +1,8 @@
 /**
  * Consent management for App Store / Play Store compliance
- * Parent apps should handle consent UI and call setUserConsent()
+ *
+ * Privacy consent (GDPR/TCF 2.0) - for processing conversation data
+ * Note: Ad tracking consent is auto-detected from OS (see adTracking.ts)
  */
 
 /**
@@ -26,14 +28,17 @@ export const PRIVACY_DISCLOSURE = {
 } as const;
 
 /**
- * Consent state manager
+ * Generic consent state manager
  */
 class ConsentManager {
   private hasConsent: boolean = false;
   private listeners: Set<(consent: boolean) => void> = new Set();
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  constructor(_name: string) {}
+
   /**
-   * Set user consent status
+   * Set consent status
    */
   setConsent(consent: boolean): void {
     this.hasConsent = consent;
@@ -63,23 +68,26 @@ class ConsentManager {
   }
 }
 
-// Global consent manager instance
-export const consentManager = new ConsentManager();
+/**
+ * Privacy consent manager (GDPR/TCF 2.0)
+ * Controls whether conversation data can be processed for ad targeting
+ */
+export const privacyConsentManager = new ConsentManager("privacy");
 
 /**
- * Check if consent is required
- * Based on basic heuristics - apps should implement proper consent flow
+ * Check if privacy consent is required
+ * In production, this should check user's region (GDPR, CCPA, etc.)
  */
-export function isConsentRequired(): boolean {
-  // In production, this would check user's region (GDPR, CCPA, etc.)
-  // For now, we assume consent is always required for privacy-first approach
+export function isPrivacyConsentRequired(): boolean {
+  // Privacy-first approach: assume consent is always required
+  // Parent apps can implement region-based logic
   return true;
 }
 
 /**
- * Generate consent request message for parent apps
+ * Generate privacy consent request message
  */
-export function getConsentMessage(): string {
+export function getPrivacyConsentMessage(): string {
   return (
     "This app uses ads to support development. " +
     "We collect conversation context to show relevant ads. " +

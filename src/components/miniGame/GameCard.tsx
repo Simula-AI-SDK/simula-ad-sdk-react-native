@@ -120,7 +120,6 @@ export const GameCard: React.FC<GameCardProps> = ({ game, theme, onGameSelect })
               fontFamily: theme.titleFont,
             },
           ]}
-          numberOfLines={2}
         >
           {game.name}
         </Text>
@@ -131,30 +130,31 @@ export const GameCard: React.FC<GameCardProps> = ({ game, theme, onGameSelect })
 
 const styles = StyleSheet.create({
   card: {
-    width: '30%',
-    minHeight: 140,
-    marginHorizontal: '1.5%',
+    width: '31%',
+    minHeight: 100,
   },
   cardContent: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'flex-start',
-    padding: 16,
-    borderRadius: 12,
+    paddingHorizontal: 6,
+    paddingTop: 6,
+    paddingBottom: 8,
+    borderRadius: 10,
     borderWidth: 1,
-    minHeight: 140,
+    minHeight: 100,
   },
   iconContainer: {
-    width: 80,
-    height: 80,
-    marginBottom: 12,
+    width: 56,
+    height: 56,
+    marginBottom: 6,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
   fallbackIcon: {
-    fontSize: 80,
-    lineHeight: 80,
+    fontSize: 48,
+    lineHeight: 56,
     textAlign: 'center',
   },
   loadingContainer: {
@@ -169,10 +169,10 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   gameName: {
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '500',
     textAlign: 'center',
-    flex: 1,
+    flexWrap: 'wrap',
     width: '100%',
   },
 });

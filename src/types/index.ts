@@ -47,21 +47,28 @@ export interface AdData {
 export interface SimulaProviderProps {
   /** Your Simula API key from https://simula.ad */
   apiKey: string;
-  
+
   /** Child components */
   children: ReactNode;
-  
+
   /** Optional: Development mode flag */
   devMode?: boolean;
-  
+
   /** Optional: Primary user ID for tracking */
   primaryUserID?: string;
-  
-  /** Optional: Callback when user consent is required (RN-specific) */
-  onConsentRequired?: () => void;
-  
-  /** Optional: Initial consent state (RN-specific) */
-  hasUserConsent?: boolean;
+
+  /**
+   * Privacy consent (GDPR/TCF 2.0)
+   * Required for processing conversation data in EU regions.
+   * When false, no ads will be shown and no data will be processed.
+   */
+  hasPrivacyConsent?: boolean;
+
+  /**
+   * Callback when privacy consent is required (GDPR regions)
+   * Use this to show your consent dialog or CMP
+   */
+  onPrivacyConsentRequired?: () => void;
 }
 
 /**
@@ -100,9 +107,29 @@ export interface SimulaContextValue {
   apiKey: string;
   sessionId?: string;
   devMode: boolean;
-  hasUserConsent: boolean;
-  setUserConsent: (consent: boolean) => void;
-  onConsentRequired?: () => void;
+
+  /**
+   * Privacy consent status (GDPR/TCF 2.0)
+   * When false, no ads will be shown and no conversation data processed
+   */
+  hasPrivacyConsent: boolean;
+
+  /**
+   * Ad tracking consent status (iOS ATT / Android GAID)
+   * Auto-detected from OS - read-only
+   * Used for future device ID attribution features
+   */
+  hasAdTrackingConsent: boolean;
+
+  /**
+   * Set privacy consent status
+   */
+  setPrivacyConsent: (consent: boolean) => void;
+
+  /**
+   * Callback when privacy consent is required
+   */
+  onPrivacyConsentRequired?: () => void;
 }
 
 /**
@@ -176,6 +203,28 @@ export interface MiniGameTheme {
   titleFontColor?: string;
   secondaryFontColor?: string;
   iconCornerRadius?: number;
+  /**
+   * Unified accent color for interactive elements.
+   * Used for search bar focus border and pagination dots.
+   * Default: '#3B82F6' (blue-500)
+   */
+  accentColor?: string;
+  /**
+   * Controls the height of the Mini Game iframe (not the ad).
+   * Displayed as a bottom sheet with rounded corners at the top.
+   * - Number: pixel value (e.g., 500 = 500px)
+   * - String with %: percentage of screen height (e.g., "80%")
+   * - "auto": full screen (default behavior)
+   * Minimum height is 500px.
+   */
+  playableHeight?: number | string;
+  /**
+   * Controls the background color of the curved border area above the playable
+   * when playableHeight is not 100% (bottom sheet mode).
+   * This is the color of the rounded top corners and drag handle area.
+   * Default: '#262626' (Instagram comments dark gray)
+   */
+  playableBorderColor?: string;
 }
 
 export interface GameData {
@@ -197,6 +246,11 @@ export interface MiniGameMenuProps {
   maxGamesToShow?: 3 | 6 | 9;
   theme?: MiniGameTheme;
   delegateChar?: boolean; // Whether Simula should display the AI character within the iframe (default: true)
+  /**
+   * Custom message to show when privacy consent is not granted.
+   * If not provided, a default message will be shown.
+   */
+  consentRequiredMessage?: string;
 }
 
 // Re-export theme types

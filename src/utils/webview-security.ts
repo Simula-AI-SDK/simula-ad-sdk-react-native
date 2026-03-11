@@ -3,6 +3,8 @@
  * Implements origin validation and security controls for App Store / Google Play compliance
  */
 
+import type { WebViewSecurityConfig } from "../types";
+
 /**
  * Default allowed origins for Simula ad content
  * These are the known trusted domains for ad delivery
@@ -20,6 +22,8 @@ export const DEFAULT_ALLOWED_ORIGINS: readonly string[] = [
   // Common CDN origins for ad assets
   "https://cdn.jsdelivr.net",
   "https://unpkg.com",
+  // local ngrok domains
+  "https://*.ngrok-free.dev",
 ] as const;
 
 /**
@@ -31,6 +35,97 @@ export const ALLOWED_SPECIAL_SCHEMES: readonly string[] = [
   "data:",
   "blob:",
 ] as const;
+
+/**
+ * Check if a URL is a data URL (base64 encoded content)
+ * @param url - The URL to check
+ * @returns True if it's a data URL
+ */
+export function isDataUrl(url: string | undefined): boolean {
+  return typeof url === "string" && url.startsWith("data:");
+}
+
+/**
+ * Parse a data URL and extract its contents
+ * Handles formats like: data:text/html;charset=utf-8;base64,<content>
+ * @param dataUrl - The data URL to parse
+ * @returns Object with mimeType, encoding, and decoded content, or null if invalid
+ */
+export function parseDataUrl(dataUrl: string): {
+  mimeType: string;
+  charset: string;
+  isBase64: boolean;
+  content: string;
+  decodedHtml: string | null;
+} | null {
+  if (!isDataUrl(dataUrl)) {
+    return null;
+  }
+
+  try {
+    // Remove "data:" prefix
+    const withoutPrefix = dataUrl.slice(5);
+    
+    // Split at the comma to separate metadata from content
+    const commaIndex = withoutPrefix.indexOf(",");
+    if (commaIndex === -1) {
+      return null;
+    }
+    
+    const metadata = withoutPrefix.slice(0, commaIndex);
+    const content = withoutPrefix.slice(commaIndex + 1);
+    
+    // Parse metadata (e.g., "text/html;charset=utf-8;base64")
+    const parts = metadata.split(";");
+    const mimeType = parts[0] || "text/plain";
+    
+    let charset = "utf-8";
+    let isBase64 = false;
+    
+    for (let i = 1; i < parts.length; i++) {
+      const part = parts[i].toLowerCase();
+      if (part === "base64") {
+        isBase64 = true;
+      } else if (part.startsWith("charset=")) {
+        charset = part.slice(8);
+      }
+    }
+    
+    // Decode content
+    let decodedHtml: string | null = null;
+    if (isBase64 && mimeType.includes("html")) {
+      try {
+        // Use atob for base64 decoding (available in React Native)
+        const decoded = atob(content);
+        // Handle UTF-8 encoding
+        decodedHtml = decodeURIComponent(
+          decoded.split("").map((c) => {
+            return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
+          }).join("")
+        );
+      } catch (decodeError) {
+        // Fallback: try direct atob
+        try {
+          decodedHtml = atob(content);
+        } catch {
+          console.warn("[Simula Security] Failed to decode base64 data URL");
+          decodedHtml = null;
+        }
+      }
+    }
+    
+    return {
+      mimeType,
+      charset,
+      isBase64,
+      content,
+      decodedHtml,
+    };
+  } catch (error) {
+    console.warn("[Simula Security] Failed to parse data URL:", error);
+    return null;
+  }
+}
 
 /**
  * Extract the origin (protocol + host) from a URL
@@ -190,7 +285,20 @@ export function validateAdUrl(
     return { isValid: false, error: "No iframe URL provided" };
   }
 
-  // Must be HTTPS
+  // Allow data URLs (base64 encoded HTML from API)
+  // These are trusted as they come directly from our API
+  if (isDataUrl(iframeUrl)) {
+    const parsed = parseDataUrl(iframeUrl);
+    if (!parsed) {
+      return { isValid: false, error: "Invalid data URL format" };
+    }
+    if (!parsed.mimeType.includes("html")) {
+      return { isValid: false, error: "Data URL must contain HTML content" };
+    }
+    return { isValid: true };
+  }
+
+  // Must be HTTPS for non-data URLs
   if (!iframeUrl.startsWith("https://")) {
     return { 
       isValid: false, 
@@ -211,18 +319,6 @@ export function validateAdUrl(
   }
 
   return { isValid: true };
-}
-
-/**
- * Security configuration for WebView
- */
-export interface WebViewSecurityConfig {
-  /** Additional origins to allow beyond defaults */
-  additionalAllowedOrigins?: string[];
-  /** Whether to allow HTTP content (not recommended) */
-  allowInsecureContent?: boolean;
-  /** Whether to enable verbose security logging */
-  debugMode?: boolean;
 }
 
 /**
@@ -287,5 +383,37 @@ export function logSecurityEvent(
   // In production, this could be sent to analytics
   // For now, just console log with prefix for easy filtering
   console.log(`[Simula Security] ${event}:`, JSON.stringify(logEntry));
+}
+
+/**
+ * Compute WebView source from an iframe URL
+ * Handles both HTTPS URLs and data URLs (base64 encoded HTML)
+ * For data URLs, decodes the HTML and returns source.html with baseUrl
+ * This is required because iOS WebView doesn't support data: URLs in source.uri
+ *
+ * @param iframeUrl - The iframe URL (HTTPS or data URL)
+ * @returns WebView source object or null if invalid
+ */
+export function computeWebViewSource(
+  iframeUrl: string | null | undefined
+): { uri: string } | { html: string; baseUrl: string } | null {
+  if (!iframeUrl) {
+    return null;
+  }
+
+  // Check if it's a data URL (base64 encoded HTML)
+  if (isDataUrl(iframeUrl)) {
+    const parsed = parseDataUrl(iframeUrl);
+    if (parsed?.decodedHtml) {
+      // Use source.html for data URLs with a baseUrl for proper origin handling
+      return { html: parsed.decodedHtml, baseUrl: 'https://simula.ad' };
+    }
+    // Decoding failed - return null and let the error state handle it
+    console.error("[Simula] Failed to decode data URL");
+    return null;
+  }
+
+  // Regular HTTPS URL
+  return { uri: iframeUrl };
 }
 

@@ -3,12 +3,17 @@
  * Based on https://github.com/Simula-AI-SDK/simula-ad-sdk
  */
 
-import React, { useEffect, useState } from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity, ActivityIndicator, Dimensions, Pressable } from 'react-native';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { View, Text, Modal, StyleSheet, ActivityIndicator, Dimensions, StatusBar, Linking, Platform, PanResponder, Animated, GestureResponderEvent, PanResponderGestureState } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Message } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
 import { getMinigame, InitMinigameRequest } from '../../api/client';
+import { buildOriginWhitelist, computeWebViewSource, isOriginAllowed, DEFAULT_ALLOWED_ORIGINS, ALLOWED_SPECIAL_SCHEMES } from '../../utils/webview-security';
+import { CloseButton } from '../shared/CloseButton';
+
+/** Default Instagram comments dark gray color */
+const DEFAULT_PLAYABLE_BORDER_COLOR = '#262626';
 
 interface GameIframeProps {
   gameId: string;
@@ -19,84 +24,268 @@ interface GameIframeProps {
   delegateChar?: boolean;
   onClose: () => void;
   onAdIdReceived?: (adId: string) => void;
-  turnsBtwnMsgs?: number;
-  usePubCharApi?: string;
   charDesc?: string;
-  exampleCharMsgs?: string;
+  /**
+   * Menu ID from catalog response for tracking
+   */
+  menuId?: string;
+  /**
+   * Controls the height of the Mini Game iframe.
+   * - Number: pixel value (e.g., 500 = 500px)
+   * - String with %: percentage of screen height (e.g., "80%")
+   * - "auto" or undefined: full screen (default behavior)
+   * Minimum height is 500px.
+   */
+  playableHeight?: number | string;
+  /**
+   * Controls the background color of the curved border area above the playable
+   * when playableHeight is not 100% (bottom sheet mode).
+   * Default: '#262626' (Instagram comments dark gray)
+   */
+  playableBorderColor?: string;
+  /**
+   * Callback when the game frame closes, provides final dimensions.
+   * Used to pass height to the ad frame.
+   */
+  onDimensionsOnClose?: (height: number, isBottomSheet: boolean) => void;
 }
 
-export const GameIframe: React.FC<GameIframeProps> = ({ 
-  gameId, 
-  charID, 
-  charName, 
-  charImage, 
+const MIN_PLAYABLE_HEIGHT = 500;
+
+export const GameIframe: React.FC<GameIframeProps> = ({
+  gameId,
+  charID,
+  charName,
+  charImage,
   messages = [],
   delegateChar = true,
-  onClose, 
+  onClose,
   onAdIdReceived,
   charDesc,
-  // Optional props for API compatibility (not currently used in implementation)
-  // turnsBtwnMsgs, usePubCharApi, exampleCharMsgs are defined in interface but not used
+  menuId,
+  playableHeight,
+  playableBorderColor = DEFAULT_PLAYABLE_BORDER_COLOR,
+  onDimensionsOnClose,
 }) => {
-  console.log('[GameIframe] Component rendered with props:', {
-    gameId,
-    charID,
-    charName,
-    hasCharImage: !!charImage,
-    messagesCount: messages.length,
-    delegateChar,
-    hasCharDesc: !!charDesc,
-  });
-
   const { sessionId } = useSimulaContext();
-  console.log('[GameIframe] Session ID:', sessionId ? 'Present' : 'MISSING');
   
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState(Dimensions.get('window'));
-  
-  console.log('[GameIframe] Initial state:', {
-    iframeUrl: iframeUrl ? 'Set' : 'null',
-    loading,
-    error,
-    dimensions: { width: dimensions.width, height: dimensions.height },
-  });
 
-  // Log state changes
-  useEffect(() => {
-    console.log('[GameIframe] State changed - iframeUrl:', iframeUrl || 'null');
-  }, [iframeUrl]);
+  // Capture initial values for API call (don't re-fetch on changes)
+  const initialDimensionsRef = useRef(Dimensions.get('window'));
+  const messagesRef = useRef(messages);
+  const onAdIdReceivedRef = useRef(onAdIdReceived);
 
-  useEffect(() => {
-    console.log('[GameIframe] State changed - loading:', loading);
-  }, [loading]);
-
-  useEffect(() => {
-    console.log('[GameIframe] State changed - error:', error || 'none');
-  }, [error]);
+  // State for drag-to-resize functionality
+  const [resizedHeight, setResizedHeight] = useState<number | null>(null);
+  const animatedHeight = useRef(new Animated.Value(0)).current;
+  const currentHeightRef = useRef<number>(0);
 
   // Track dimension changes
   useEffect(() => {
-    console.log('[GameIframe] Setting up dimension listener');
     const subscription = Dimensions.addEventListener('change', ({ window }) => {
-      console.log('[GameIframe] Dimensions changed:', { width: window.width, height: window.height });
       setDimensions(window);
     });
 
     return () => {
-      console.log('[GameIframe] Cleaning up dimension listener');
       subscription?.remove();
     };
   }, []);
 
+  /**
+   * Calculate container height based on playableHeight prop
+   * - Number: pixel value (min 500px)
+   * - String with %: percentage of screen height (min 500px), >= 95% treated as full screen
+   * - "auto" or undefined: full screen
+   */
+  const { containerHeight, isBottomSheet } = useMemo(() => {
+    // If no playableHeight or "auto", use full screen
+    if (!playableHeight || playableHeight === 'auto') {
+      return { containerHeight: dimensions.height, isBottomSheet: false };
+    }
+
+    let calculatedHeight: number;
+
+    if (typeof playableHeight === 'number') {
+      // Pixel value
+      calculatedHeight = Math.max(playableHeight, MIN_PLAYABLE_HEIGHT);
+    } else if (typeof playableHeight === 'string') {
+      if (playableHeight.includes('%')) {
+        // Percentage value (e.g., "80%")
+        const percentage = parseFloat(playableHeight) / 100;
+
+        // Treat >= 95% as full screen (no bottom sheet UI)
+        if (percentage >= 0.95) {
+          return { containerHeight: dimensions.height, isBottomSheet: false };
+        }
+
+        calculatedHeight = Math.max(dimensions.height * percentage, MIN_PLAYABLE_HEIGHT);
+      } else {
+        // Numeric string without % (e.g., "500", "700") - treat as pixels
+        const parsed = parseFloat(playableHeight);
+        if (isNaN(parsed)) {
+          // Invalid value, use full screen
+          return { containerHeight: dimensions.height, isBottomSheet: false };
+        }
+        calculatedHeight = Math.max(parsed, MIN_PLAYABLE_HEIGHT);
+      }
+    } else {
+      // Invalid value, use full screen
+      return { containerHeight: dimensions.height, isBottomSheet: false };
+    }
+
+    // Ensure we don't exceed screen height
+    calculatedHeight = Math.min(calculatedHeight, dimensions.height);
+
+    // Also check if pixel value >= 95% of screen height
+    if (calculatedHeight >= dimensions.height * 0.95) {
+      return { containerHeight: dimensions.height, isBottomSheet: false };
+    }
+
+    return { containerHeight: calculatedHeight, isBottomSheet: true };
+  }, [playableHeight, dimensions.height]);
+
+  // Effective height (user-resized or calculated)
+  const effectiveHeight = resizedHeight ?? containerHeight;
+
+  // Track status bar stack entry for proper cleanup
+  const statusBarEntryRef = useRef<any>(null);
+
+  // Helper to push status bar entry
+  const pushStatusBarHidden = useCallback(() => {
+    // Pop any existing entry first to avoid stacking
+    if (statusBarEntryRef.current) {
+      StatusBar.popStackEntry(statusBarEntryRef.current);
+    }
+    // Push a new stack entry that hides the status bar
+    statusBarEntryRef.current = StatusBar.pushStackEntry({
+      hidden: true,
+      animated: true,
+      barStyle: 'light-content',
+      translucent: true,
+      backgroundColor: 'transparent',
+    });
+  }, []);
+
+  // Hide status bar when modal becomes visible
+  const handleModalShow = useCallback(() => {
+    pushStatusBarHidden();
+  }, [pushStatusBarHidden]);
+
+  // Also try hiding on mount as a fallback
+  useEffect(() => {
+    pushStatusBarHidden();
+
+    return () => {
+      // Pop the status bar entry
+      if (statusBarEntryRef.current) {
+        StatusBar.popStackEntry(statusBarEntryRef.current);
+        statusBarEntryRef.current = null;
+      }
+    };
+  }, [pushStatusBarHidden]);
+
+  // Update animated value when containerHeight changes (initial load or reset)
+  useEffect(() => {
+    if (resizedHeight === null) {
+      animatedHeight.setValue(containerHeight);
+      currentHeightRef.current = containerHeight;
+    }
+  }, [containerHeight, resizedHeight, animatedHeight]);
+
+  // Re-clamp resizedHeight if screen rotates and height exceeds new screen height
+  useEffect(() => {
+    if (resizedHeight !== null && resizedHeight > dimensions.height) {
+      const clampedHeight = Math.min(resizedHeight, dimensions.height);
+      setResizedHeight(clampedHeight);
+      animatedHeight.setValue(clampedHeight);
+    }
+  }, [dimensions.height, resizedHeight, animatedHeight]);
+
+  // Track the height used at drag start (separate from animatedHeight to avoid accessing private _value)
+  const dragStartHeightRef = useRef<number>(0);
+
+  // PanResponder for drag-to-resize (only active in bottom sheet mode)
+  const resizePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (
+        _evt: GestureResponderEvent,
+        gestureState: PanResponderGestureState
+      ) => {
+        // Only respond to vertical gestures
+        return Math.abs(gestureState.dy) > Math.abs(gestureState.dx) && Math.abs(gestureState.dy) > 5;
+      },
+      onPanResponderGrant: () => {
+        // Store starting height when drag begins (use currentHeightRef which is kept in sync)
+        dragStartHeightRef.current = currentHeightRef.current;
+      },
+      onPanResponderMove: (
+        _evt: GestureResponderEvent,
+        gestureState: PanResponderGestureState
+      ) => {
+        // Dragging up (negative dy) increases height
+        // Dragging down (positive dy) decreases height
+        const screenHeight = Dimensions.get('window').height;
+        const newHeight = dragStartHeightRef.current - gestureState.dy;
+
+        // Clamp between MIN_PLAYABLE_HEIGHT and screen height
+        const clampedHeight = Math.max(
+          MIN_PLAYABLE_HEIGHT,
+          Math.min(newHeight, screenHeight)
+        );
+
+        animatedHeight.setValue(clampedHeight);
+        currentHeightRef.current = clampedHeight;
+      },
+      onPanResponderRelease: (
+        _evt: GestureResponderEvent,
+        gestureState: PanResponderGestureState
+      ) => {
+        const screenHeight = Dimensions.get('window').height;
+        const newHeight = dragStartHeightRef.current - gestureState.dy;
+        const clampedHeight = Math.max(
+          MIN_PLAYABLE_HEIGHT,
+          Math.min(newHeight, screenHeight)
+        );
+
+        // If dragged close to full screen (>= 95%), snap to full screen
+        if (clampedHeight >= screenHeight * 0.95) {
+          Animated.spring(animatedHeight, {
+            toValue: screenHeight,
+            useNativeDriver: false,
+            tension: 100,
+            friction: 10,
+          }).start(() => {
+            currentHeightRef.current = screenHeight;
+          });
+          setResizedHeight(screenHeight);
+        } else {
+          currentHeightRef.current = clampedHeight;
+          setResizedHeight(clampedHeight);
+        }
+      },
+    })
+  ).current;
+
+  // Handle close with dimension callback
+  const handleClose = useCallback(() => {
+    onDimensionsOnClose?.(effectiveHeight, isBottomSheet);
+    onClose();
+  }, [effectiveHeight, isBottomSheet, onDimensionsOnClose, onClose]);
+
+  /**
+   * Compute WebView source using shared utility
+   */
+  const webViewSource = useMemo(() => computeWebViewSource(iframeUrl), [iframeUrl]);
+
   // Fetch the minigame iframe URL
   useEffect(() => {
-    console.log('[GameIframe] useEffect triggered for minigame fetch');
-    
     // Block if sessionId is missing or invalid
     if (!sessionId) {
-      console.error('[GameIframe] ❌ Session ID is missing or invalid');
       setError('Session invalid, cannot initialize minigame');
       setLoading(false);
       return;
@@ -104,216 +293,256 @@ export const GameIframe: React.FC<GameIframeProps> = ({
 
     const initMinigame = async () => {
       try {
-        console.log('[GameIframe] Starting minigame initialization...');
         setLoading(true);
+        // Use refs for values that may change reference but not content (arrays, callbacks)
+        const { width, height } = initialDimensionsRef.current;
         const params: InitMinigameRequest = {
           gameType: gameId,
           sessionId: sessionId,
           currencyMode: false,
-          w: dimensions.width,
-          h: dimensions.height,
+          w: width,
+          h: height,
           char_id: charID,
           char_name: charName,
           char_image: charImage,
           char_desc: charDesc,
-          messages: messages,
+          messages: messagesRef.current,
           delegate_char: delegateChar,
+          menuId: menuId,
         };
-        console.log('[GameIframe] API request params:', {
-          gameType: params.gameType,
-          sessionId: params.sessionId ? 'Present' : 'Missing',
-          dimensions: { w: params.w, h: params.h },
-          char_id: params.char_id,
-          char_name: params.char_name,
-          messagesCount: params.messages?.length || 0,
-        });
-        
+
         const response = await getMinigame(params);
-        console.log('[GameIframe] ✅ API response received:', {
-          hasAdResponse: !!response.adResponse,
-          iframe_url: response.adResponse?.iframe_url || 'MISSING',
-          ad_id: response.adResponse?.ad_id || 'MISSING',
-        });
-        
+
         if (response.adResponse?.iframe_url) {
-          console.log('[GameIframe] Setting iframe URL:', response.adResponse.iframe_url);
           setIframeUrl(response.adResponse.iframe_url);
         } else {
-          console.error('[GameIframe] ❌ No iframe_url in response:', response);
           setError('No game URL received from server.');
         }
-        
+
         // Callback with the ad_id for tracking
-        if (onAdIdReceived && response.adResponse?.ad_id) {
-          console.log('[GameIframe] Calling onAdIdReceived with:', response.adResponse.ad_id);
-          onAdIdReceived(response.adResponse.ad_id);
+        if (onAdIdReceivedRef.current && response.adResponse?.ad_id) {
+          onAdIdReceivedRef.current(response.adResponse.ad_id);
         }
       } catch (err) {
-        console.error('[GameIframe] ❌ Error initializing minigame:', err);
-        if (err instanceof Error) {
-          console.error('[GameIframe] Error details:', {
-            message: err.message,
-            stack: err.stack,
-          });
-        }
         setError('Failed to load game. Please try again.');
       } finally {
-        console.log('[GameIframe] Setting loading to false');
         setLoading(false);
       }
     };
 
     initMinigame();
-  }, [gameId, charID, charName, charImage, charDesc, messages, delegateChar, sessionId, dimensions.width, dimensions.height]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameId, charID, charName, charImage, charDesc, delegateChar, sessionId, menuId]);
 
-  const handleOverlayPress = () => {
-    // Close when clicking the overlay (backdrop)
-    onClose();
-  };
 
-  // Log render conditions
-  console.log('[GameIframe] Render conditions:', {
-    loading,
-    error,
-    hasIframeUrl: !!iframeUrl,
-    iframeUrl: iframeUrl || 'null',
-    shouldShowLoading: loading,
-    shouldShowError: !!error,
-    shouldShowWebView: !loading && !error && !!iframeUrl,
-  });
+  /**
+   * Check if URL is a special/internal URL that should be allowed in WebView
+   */
+  const isSpecialUrl = useCallback((url: string): boolean => {
+    if (!url) return true;
+    for (const scheme of ALLOWED_SPECIAL_SCHEMES) {
+      if (url.startsWith(scheme)) {
+        return true;
+      }
+    }
+    return false;
+  }, []);
+
+  /**
+   * Handle navigation - open external URLs in system browser
+   */
+  const handleShouldStartLoadWithRequest = useCallback(
+    (request: { url: string }) => {
+      const url = request.url;
+
+      // Allow initial load of iframe URL
+      if (iframeUrl && url === iframeUrl) {
+        return true;
+      }
+
+      // Allow special/internal URLs (about:blank, about:srcdoc, data:, blob:)
+      if (isSpecialUrl(url)) {
+        return true;
+      }
+
+      // Block javascript: URLs for security
+      if (url.startsWith("javascript:")) {
+        return false;
+      }
+
+      // Check if origin is allowed - still open externally for better UX
+      if (isOriginAllowed(url, DEFAULT_ALLOWED_ORIGINS)) {
+        Linking.openURL(url).catch((err) => {
+          console.error("Failed to open URL:", err);
+        });
+        return false;
+      }
+
+      // For any other navigation, open externally
+      if (url && url !== iframeUrl) {
+        Linking.openURL(url).catch((err) => {
+          console.error("Failed to open URL:", err);
+        });
+        return false;
+      }
+
+      return true;
+    },
+    [iframeUrl, isSpecialUrl]
+  );
 
   return (
     <Modal
       visible={true}
       transparent={true}
-      animationType="fade"
-      onRequestClose={onClose}
+      animationType={isBottomSheet ? 'slide' : 'fade'}
+      onRequestClose={handleClose}
+      onShow={handleModalShow}
       accessibilityViewIsModal={true}
+      statusBarTranslucent={Platform.OS === 'android'}
     >
-      <Pressable
-        onPress={handleOverlayPress}
-        style={styles.overlay}
-        onLayout={(event) => {
-          const { width, height } = event.nativeEvent.layout;
-          console.log('[GameIframe] Overlay layout:', { width, height });
-        }}
+      <View
+        style={[
+          styles.overlay,
+          isBottomSheet && styles.bottomSheetOverlay,
+        ]}
       >
-        <View 
-          style={styles.container}
-          onLayout={(event) => {
-            const { width, height } = event.nativeEvent.layout;
-            console.log('[GameIframe] Container layout:', { width, height });
-          }}
-        >
-          {/* Content area - captures touches to prevent backdrop from closing */}
-          <View
-            style={styles.contentContainer}
-            onStartShouldSetResponder={() => true}
-            onMoveShouldSetResponder={() => false}
-            onResponderTerminationRequest={() => true}
-            onLayout={(event) => {
-              const { width, height } = event.nativeEvent.layout;
-              console.log('[GameIframe] ContentContainer layout:', { width, height });
-            }}
+        {/* Use Animated.View for bottom sheet to enable smooth resize animation */}
+        {isBottomSheet ? (
+          <Animated.View
+            style={[
+              styles.container,
+              styles.bottomSheetContainer,
+              {
+                height: animatedHeight,
+                backgroundColor: playableBorderColor,
+              },
+            ]}
           >
-            {loading && (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#FFFFFF" />
-                <Text style={styles.loadingText}>Loading game...</Text>
-              </View>
-            )}
-
-            {error && (
-              <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
-
-            {!loading && !error && iframeUrl && (
-              <WebView
-                source={{ uri: iframeUrl }}
-                style={[styles.webview, { width: dimensions.width, height: dimensions.height }]}
-                scrollEnabled={false}
-                bounces={false}
-                allowsFullscreen={true}
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
-                allowsInlineMediaPlayback={true}
-                mediaPlaybackRequiresUserAction={true}
-                mixedContentMode="never"
-                onLoadStart={() => {
-                  console.log('[GameIframe] 🚀 WebView load started for URL:', iframeUrl);
-                }}
-                onLoadEnd={() => {
-                  console.log('[GameIframe] ✅ WebView load ended successfully');
-                }}
-                onLoad={() => {
-                  console.log('[GameIframe] ✅ WebView onLoad event fired');
-                }}
-                onError={(syntheticEvent) => {
-                  const { nativeEvent } = syntheticEvent;
-                  console.error('[GameIframe] ❌ WebView error:', {
-                    code: nativeEvent.code,
-                    description: nativeEvent.description,
-                    domain: nativeEvent.domain,
-                    url: nativeEvent.url,
-                  });
-                  setError(`Failed to load game content: ${nativeEvent.description || 'Unknown error'}`);
-                }}
-                onHttpError={(syntheticEvent) => {
-                  const { nativeEvent } = syntheticEvent;
-                  console.error('[GameIframe] ❌ WebView HTTP error:', {
-                    statusCode: nativeEvent.statusCode,
-                    description: nativeEvent.description,
-                    url: nativeEvent.url,
-                  });
-                }}
-                onShouldStartLoadWithRequest={(request) => {
-                  console.log('[GameIframe] WebView shouldStartLoadWithRequest:', {
-                    url: request.url,
-                    navigationType: request.navigationType,
-                  });
-                  return true;
-                }}
-                onNavigationStateChange={(navState) => {
-                  console.log('[GameIframe] WebView navigation state changed:', {
-                    url: navState.url,
-                    title: navState.title,
-                    loading: navState.loading,
-                    canGoBack: navState.canGoBack,
-                    canGoForward: navState.canGoForward,
-                  });
-                }}
-                onLayout={(event) => {
-                  const { width, height } = event.nativeEvent.layout;
-                  console.log('[GameIframe] WebView layout:', { width, height });
-                }}
-              />
-            )}
-            
-            {!loading && !error && !iframeUrl && (
-              <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>
-                  No URL available. Check console logs.
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {/* Close button - positioned absolutely above everything with proper touch handling */}
-          <TouchableOpacity
-            onPress={onClose}
-            style={styles.closeButtonWrapper}
-            accessibilityLabel="Close game"
-            accessibilityRole="button"
-            activeOpacity={0.8}
-          >
-            <View style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>×</Text>
+            {/* Drag handle for resize - attach PanResponder */}
+            <View
+              style={[styles.dragHandleContainer, { backgroundColor: playableBorderColor }]}
+              {...resizePanResponder.panHandlers}
+            >
+              <View style={styles.dragHandle} />
             </View>
-          </TouchableOpacity>
-        </View>
-      </Pressable>
+
+            {/* Content area */}
+            <View style={[styles.contentContainer, styles.bottomSheetContentContainer]}>
+              {loading && (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#333333" />
+                  <Text style={[styles.loadingText, styles.bottomSheetLoadingText]}>
+                    Loading game...
+                  </Text>
+                </View>
+              )}
+
+              {error && (
+                <View style={styles.errorContainer}>
+                  <Text style={[styles.errorText, styles.bottomSheetErrorText]}>
+                    {error}
+                  </Text>
+                </View>
+              )}
+
+              {!loading && !error && iframeUrl && webViewSource && (
+                <WebView
+                  source={webViewSource}
+                  originWhitelist={buildOriginWhitelist()}
+                  style={styles.webview}
+                  scrollEnabled={false}
+                  bounces={false}
+                  allowsFullscreen={true}
+                  javaScriptEnabled={true}
+                  domStorageEnabled={true}
+                  allowsInlineMediaPlayback={true}
+                  mediaPlaybackRequiresUserAction={true}
+                  mixedContentMode="never"
+                  onError={(syntheticEvent) => {
+                    const { nativeEvent } = syntheticEvent;
+                    setError(`Failed to load game content: ${nativeEvent.description || 'Unknown error'}`);
+                  }}
+                  onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
+                />
+              )}
+
+              {!loading && !error && !iframeUrl && (
+                <View style={styles.errorContainer}>
+                  <Text style={[styles.errorText, styles.bottomSheetErrorText]}>
+                    No URL available.
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <CloseButton
+              onPress={handleClose}
+              accessibilityLabel="Close game"
+              accessibilityHint="Double tap to close the game and return to chat"
+            />
+          </Animated.View>
+        ) : (
+          <View
+            style={[styles.container, styles.fullScreenContainer]}
+          >
+            {/* Full screen mode content */}
+            <View style={styles.contentContainer}>
+              {loading && (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#FFFFFF" />
+                  <Text style={styles.loadingText}>
+                    Loading game...
+                  </Text>
+                </View>
+              )}
+
+              {error && (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>
+                    {error}
+                  </Text>
+                </View>
+              )}
+
+              {!loading && !error && iframeUrl && webViewSource && (
+                <WebView
+                  source={webViewSource}
+                  originWhitelist={buildOriginWhitelist()}
+                  style={styles.webview}
+                  scrollEnabled={false}
+                  bounces={false}
+                  allowsFullscreen={true}
+                  javaScriptEnabled={true}
+                  domStorageEnabled={true}
+                  allowsInlineMediaPlayback={true}
+                  mediaPlaybackRequiresUserAction={true}
+                  mixedContentMode="never"
+                  onError={(syntheticEvent) => {
+                    const { nativeEvent } = syntheticEvent;
+                    setError(`Failed to load game content: ${nativeEvent.description || 'Unknown error'}`);
+                  }}
+                  onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
+                />
+              )}
+
+              {!loading && !error && !iframeUrl && (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>
+                    No URL available.
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <CloseButton
+              onPress={handleClose}
+              accessibilityLabel="Close game"
+              accessibilityHint="Double tap to close the game and return to chat"
+            />
+          </View>
+        )}
+      </View>
     </Modal>
   );
 };
@@ -321,47 +550,53 @@ export const GameIframe: React.FC<GameIframeProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'black',
+  },
+  bottomSheetOverlay: {
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   container: {
     flex: 1,
     width: '100%',
     height: '100%',
+    backgroundColor: 'black',
+  },
+  fullScreenContainer: {
+    backgroundColor: 'black',
+  },
+  bottomSheetContainer: {
+    flex: 0,
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    overflow: 'hidden',
+  },
+  dragHandleContainer: {
+    width: '100%',
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  dragHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
   },
   contentContainer: {
     flex: 1,
     width: '100%',
     height: '100%',
+    backgroundColor: 'black',
   },
-  closeButtonWrapper: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 64,
-    height: 64,
-    zIndex: 10000,
-    elevation: 10,
-    justifyContent: 'flex-start',
-    alignItems: 'flex-end',
-    paddingTop: 8,
-    paddingRight: 8,
-  },
-  closeButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 22,
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  closeButtonText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1F2937',
+  bottomSheetContentContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   loadingContainer: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -371,7 +606,11 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginTop: 12,
   },
+  bottomSheetLoadingText: {
+    color: '#333333',
+  },
   errorContainer: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
@@ -382,10 +621,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center',
   },
+  bottomSheetErrorText: {
+    color: '#333333',
+  },
   webview: {
     width: '100%',
     height: '100%',
-    backgroundColor: 'transparent',
+    backgroundColor: 'black',
   },
 });
 

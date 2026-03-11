@@ -167,7 +167,29 @@ Before submitting to Play Store, verify:
 
 ## Questions?
 
-Contact support@simula.ad for Data Safety form assistance.
+Contact admin@simula.ad for Data Safety form assistance.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
