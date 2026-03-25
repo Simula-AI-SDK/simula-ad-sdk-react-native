@@ -20,6 +20,8 @@ export interface SimulaProviderProps {
   apiKey: string;
   children: ReactNode;
   hasPrivacyConsent?: boolean;
+  devMode?: boolean;
+  primaryUserID?: string;
 }
 
 /**
@@ -28,6 +30,8 @@ export interface SimulaProviderProps {
 export interface SimulaContextValue {
   apiKey: string;
   hasPrivacyConsent: boolean;
+  devMode: boolean;
+  primaryUserID?: string;
 }
 
 /**
@@ -78,4 +82,108 @@ export interface MiniGameMenuProps {
   maxGamesToShow?: 3 | 6 | 9;
   theme?: MiniGameTheme;
   delegateChar?: boolean;
+}
+
+// ── MiniGameButton Types ────────────────────────────────────────────────────
+
+/**
+ * Theme options for the mini-game trigger button.
+ */
+export interface MiniGameButtonTheme {
+  cornerRadius?: number;
+  backgroundColor?: string;
+  textColor?: string;
+  fontSize?: number;
+  fontFamily?: string;
+  /** String (e.g. "10px 20px") or Number (px) */
+  padding?: number | string;
+  borderWidth?: number;
+  borderColor?: string;
+  /** Color for the pulsate glow animation. Falls back to backgroundColor. */
+  pulsateColor?: string;
+  /** Color for the notification badge dot. Default: '#EF4444' */
+  badgeColor?: string;
+}
+
+export interface MiniGameButtonProps {
+  text?: string;
+  showPulsate?: boolean;
+  showBadge?: boolean;
+  theme?: MiniGameButtonTheme;
+  width?: number | string;
+  onClick: () => void;
+}
+
+// ── MiniGameInvitation Types ────────────────────────────────────────────────
+
+export type MiniGameInvitationAnimation =
+  | "auto"
+  | "slideDown"
+  | "slideUp"
+  | "fadeIn"
+  | "none";
+
+/**
+ * Theme options for the mini-game invitation banner.
+ */
+export interface MiniGameInvitationTheme {
+  cornerRadius?: number;
+  backgroundColor?: string;
+  /** Fallback text color for all text if specific colors are not set. */
+  textColor?: string;
+  titleTextColor?: string;
+  subTextColor?: string;
+  ctaTextColor?: string;
+  ctaColor?: string;
+  charImageCornerRadius?: number;
+  /** "left" or "right" — which side the character image appears on. */
+  charImageAnchor?: "left" | "right";
+  borderWidth?: number;
+  borderColor?: string;
+  fontFamily?: string;
+  fontSize?: number;
+}
+
+export interface MiniGameInvitationProps {
+  titleText?: string;
+  subText?: string;
+  ctaText?: string;
+  charImage: string;
+  animation?: MiniGameInvitationAnimation;
+  theme?: MiniGameInvitationTheme;
+  isOpen: boolean;
+  /** Auto-close duration in milliseconds. */
+  autoCloseDuration?: number;
+  width?: number | string;
+  /** Top offset — number (px) or fraction (0.05 = 5% of screen). */
+  top?: number | string;
+  onClick: () => void;
+  onClose?: () => void;
+}
+
+// ── MiniGameInterstitial Types ──────────────────────────────────────────────
+
+/**
+ * Theme options for the full-screen mini-game interstitial.
+ */
+export interface MiniGameInterstitialTheme {
+  ctaCornerRadius?: number;
+  characterSize?: number;
+  titleTextColor?: string;
+  titleFontSize?: number;
+  ctaTextColor?: string;
+  ctaFontSize?: number;
+  ctaColor?: string;
+  fontFamily?: string;
+}
+
+export interface MiniGameInterstitialProps {
+  charImage: string;
+  invitationText?: string;
+  ctaText?: string;
+  backgroundImage?: string;
+  theme?: MiniGameInterstitialTheme;
+  isOpen: boolean;
+  onClick: () => void;
+  onClose?: () => void;
 }

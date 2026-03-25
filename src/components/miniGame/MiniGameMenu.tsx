@@ -29,7 +29,7 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   theme = {},
   delegateChar = true,
 }) => {
-  const { apiKey, hasPrivacyConsent } = useSimulaContext();
+  const { apiKey, hasPrivacyConsent, devMode, primaryUserID } = useSimulaContext();
   const wasOpenRef = useRef(false);
 
   // Show/hide native menu based on isOpen prop
@@ -40,6 +40,8 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
       SimulaMiniGameModule.showMiniGameMenu({
         apiKey,
         hasPrivacyConsent,
+        devMode,
+        primaryUserID: primaryUserID ?? null,
         charName,
         charID,
         charImage,

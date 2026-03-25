@@ -22,11 +22,13 @@ export function useSimulaContext(): SimulaContextValue {
 export function SimulaProvider({
   apiKey,
   children,
-  hasPrivacyConsent = false,
+  hasPrivacyConsent = true,
+  devMode = false,
+  primaryUserID,
 }: SimulaProviderProps): React.JSX.Element {
   const contextValue = useMemo<SimulaContextValue>(
-    () => ({ apiKey, hasPrivacyConsent }),
-    [apiKey, hasPrivacyConsent],
+    () => ({ apiKey, hasPrivacyConsent, devMode, primaryUserID }),
+    [apiKey, hasPrivacyConsent, devMode, primaryUserID],
   );
 
   return (
