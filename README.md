@@ -12,7 +12,7 @@ A React Native SDK for integrating sponsored mini-games into AI chat application
 ## Installation
 
 ```bash
-npm install @simula/ads-react-native react-native-webview
+npm install @simula/ads-react-native
 ```
 
 ### iOS Setup
