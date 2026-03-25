@@ -1,5 +1,5 @@
 # Ignore source files
-src/
+/src/
 *.ts
 *.tsx
 !*.d.ts

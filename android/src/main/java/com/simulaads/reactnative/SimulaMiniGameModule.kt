@@ -28,7 +28,7 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun showMiniGameMenu(props: ReadableMap) {
-        val activity = currentActivity ?: return
+        val activity = reactApplicationContext.currentActivity ?: return
 
         val apiKey = props.getString("apiKey") ?: return
         val charName = props.getString("charName") ?: return
@@ -96,7 +96,7 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun hideMiniGameMenu() {
         isMenuOpen = false
-        currentActivity?.runOnUiThread { removeComposeView() }
+        reactApplicationContext.currentActivity?.runOnUiThread { removeComposeView() }
     }
 
     private fun removeComposeView() {

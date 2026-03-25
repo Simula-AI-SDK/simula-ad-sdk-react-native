@@ -1,11 +1,15 @@
 buildscript {
-    ext.kotlin_version = '2.1.0'
+    def kotlinVersion = rootProject.ext.has("kotlinVersion")
+        ? rootProject.ext.get("kotlinVersion")
+        : "2.1.20"
+
     repositories {
         google()
         mavenCentral()
     }
     dependencies {
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion"
+        classpath "org.jetbrains.kotlin:compose-compiler-gradle-plugin:$kotlinVersion"
     }
 }
 
@@ -28,13 +32,17 @@ android {
         }
     }
 
+    def javaVersion = rootProject.ext.has("jvmTarget")
+        ? JavaVersion.toVersion(rootProject.ext.get("jvmTarget"))
+        : JavaVersion.VERSION_17
+
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+        sourceCompatibility javaVersion
+        targetCompatibility javaVersion
     }
 
     kotlinOptions {
-        jvmTarget = '11'
+        jvmTarget = javaVersion.toString()
     }
 
     buildFeatures {

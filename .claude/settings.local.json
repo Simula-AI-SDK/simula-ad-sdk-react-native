@@ -4,7 +4,9 @@
       "Bash(npx tsc:*)",
       "WebFetch(domain:nikitahl.com)",
       "WebFetch(domain:medium.com)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(npm pack:*)",
+      "Read(//c/Code/mobile-app-mock/android/**)"
     ],
     "deny": [],
     "ask": []
