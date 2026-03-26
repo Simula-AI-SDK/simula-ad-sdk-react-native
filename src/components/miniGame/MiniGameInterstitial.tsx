@@ -45,6 +45,8 @@ export const MiniGameInterstitial: React.FC<MiniGameInterstitialProps> = ({
         ctaText: ctaText ?? null,
         backgroundImage: backgroundImage ?? null,
         theme,
+      }).catch((error: any) => {
+        console.error('[SimulaMiniGame] showMiniGameInterstitial failed:', error?.message || error);
       });
     } else if (!isOpen && wasOpenRef.current) {
       SimulaMiniGameModule.hideMiniGameInterstitial();

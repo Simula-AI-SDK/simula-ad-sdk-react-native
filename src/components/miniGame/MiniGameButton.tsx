@@ -42,6 +42,8 @@ export const MiniGameButton: React.FC<MiniGameButtonProps> = ({
         showBadge,
         theme,
         width: width ?? null,
+      }).catch((error: any) => {
+        console.error('[SimulaMiniGame] showMiniGameButton failed:', error?.message || error);
       });
     }
 

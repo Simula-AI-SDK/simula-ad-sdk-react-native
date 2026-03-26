@@ -10,6 +10,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
+import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import ad.simula.ad.sdk.minigame.MiniGameMenu
@@ -49,12 +50,20 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
     // ═══════════════════════════════════════════════════════════════════
 
     @ReactMethod
-    fun showMiniGameMenu(props: ReadableMap) {
-        val activity = reactApplicationContext.currentActivity ?: return
+    fun showMiniGameMenu(props: ReadableMap, promise: Promise) {
+        val activity = reactApplicationContext.currentActivity
+        if (activity == null) {
+            promise.reject("NO_ACTIVITY", "No current activity")
+            return
+        }
 
-        val apiKey = props.getString("apiKey") ?: return
-        val charName = props.getString("charName") ?: return
-        val charID = props.getString("charID") ?: return
+        val apiKey = props.getString("apiKey")
+        val charName = props.getString("charName")
+        val charID = props.getString("charID")
+        if (apiKey == null || charName == null || charID == null) {
+            promise.reject("INVALID_PROPS", "Missing required props: apiKey, charName, or charID")
+            return
+        }
         val charImage = props.getString("charImage") ?: ""
         val charDesc = props.getStringOrNull("charDesc")
         val delegateChar = if (props.hasKey("delegateChar")) props.getBoolean("delegateChar") else true
@@ -105,6 +114,7 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
             menuComposeView = view
             addOverlay(activity, view)
+            promise.resolve(null)
         }
     }
 
@@ -122,10 +132,18 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
     // ═══════════════════════════════════════════════════════════════════
 
     @ReactMethod
-    fun showMiniGameButton(props: ReadableMap) {
-        val activity = reactApplicationContext.currentActivity ?: return
+    fun showMiniGameButton(props: ReadableMap, promise: Promise) {
+        val activity = reactApplicationContext.currentActivity
+        if (activity == null) {
+            promise.reject("NO_ACTIVITY", "No current activity")
+            return
+        }
 
-        val apiKey = props.getString("apiKey") ?: return
+        val apiKey = props.getString("apiKey")
+        if (apiKey == null) {
+            promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
+            return
+        }
         val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
             props.getBoolean("hasPrivacyConsent") else true
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
@@ -165,6 +183,7 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
             buttonComposeView = view
             addOverlay(activity, view)
+            promise.resolve(null)
         }
     }
 
@@ -181,10 +200,18 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
     // ═══════════════════════════════════════════════════════════════════
 
     @ReactMethod
-    fun showMiniGameInvitation(props: ReadableMap) {
-        val activity = reactApplicationContext.currentActivity ?: return
+    fun showMiniGameInvitation(props: ReadableMap, promise: Promise) {
+        val activity = reactApplicationContext.currentActivity
+        if (activity == null) {
+            promise.reject("NO_ACTIVITY", "No current activity")
+            return
+        }
 
-        val apiKey = props.getString("apiKey") ?: return
+        val apiKey = props.getString("apiKey")
+        if (apiKey == null) {
+            promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
+            return
+        }
         val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
             props.getBoolean("hasPrivacyConsent") else true
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
@@ -193,7 +220,11 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         val titleText = props.getStringOrNull("titleText") ?: "Want to play a game?"
         val subText = props.getStringOrNull("subText") ?: "Take a break and challenge yourself!"
         val ctaText = props.getStringOrNull("ctaText") ?: "Play a Game"
-        val charImage = props.getString("charImage") ?: return
+        val charImage = props.getString("charImage")
+        if (charImage == null) {
+            promise.reject("INVALID_PROPS", "Missing required prop: charImage")
+            return
+        }
         val animation = if (props.hasKey("animation") && !props.isNull("animation"))
             MiniGameInvitationAnimation.fromString(props.getString("animation") ?: "auto")
             else MiniGameInvitationAnimation.AUTO
@@ -246,6 +277,7 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
             invitationComposeView = view
             addOverlay(activity, view)
+            promise.resolve(null)
         }
     }
 
@@ -263,16 +295,28 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
     // ═══════════════════════════════════════════════════════════════════
 
     @ReactMethod
-    fun showMiniGameInterstitial(props: ReadableMap) {
-        val activity = reactApplicationContext.currentActivity ?: return
+    fun showMiniGameInterstitial(props: ReadableMap, promise: Promise) {
+        val activity = reactApplicationContext.currentActivity
+        if (activity == null) {
+            promise.reject("NO_ACTIVITY", "No current activity")
+            return
+        }
 
-        val apiKey = props.getString("apiKey") ?: return
+        val apiKey = props.getString("apiKey")
+        if (apiKey == null) {
+            promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
+            return
+        }
         val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
             props.getBoolean("hasPrivacyConsent") else true
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
         val primaryUserID = props.getStringOrNull("primaryUserID")
 
-        val charImage = props.getString("charImage") ?: return
+        val charImage = props.getString("charImage")
+        if (charImage == null) {
+            promise.reject("INVALID_PROPS", "Missing required prop: charImage")
+            return
+        }
         val invitationText = props.getStringOrNull("invitationText") ?: "Want to play a game?"
         val ctaText = props.getStringOrNull("ctaText") ?: "Play a Game"
         val backgroundImage = props.getStringOrNull("backgroundImage")
@@ -317,6 +361,7 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
             interstitialComposeView = view
             addOverlay(activity, view)
+            promise.resolve(null)
         }
     }
 

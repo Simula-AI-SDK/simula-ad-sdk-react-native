@@ -6,7 +6,16 @@
       "WebFetch(domain:medium.com)",
       "Bash(npm run:*)",
       "Bash(npm pack:*)",
-      "Read(//c/Code/mobile-app-mock/android/**)"
+      "Read(//c/Code/mobile-app-mock/android/**)",
+      "Bash(find /Users/yizhenzhen/Code/simula-ad-sdk-react-native/android -type f -name *.kt)",
+      "Bash(tar -tf /Users/yizhenzhen/Code/simula-ad-sdk-react-native/simula-ads-react-native-1.2.0-14.tgz)",
+      "Bash(xcodebuild -project /Users/yizhenzhen/Code/mobile-app-mock/ios/Pods/Pods.xcodeproj -list)",
+      "Bash(xcodebuild -project /Users/yizhenzhen/Code/mobile-app-mock/ios/Pods/Pods.xcodeproj -target simula-ads-react-native -sdk iphonesimulator -configuration Debug)",
+      "Bash(find /Users/yizhenzhen/Code/mobile-app-mock/ios/build -name *simula*Swift* -o -name *SimulaMiniGame*)",
+      "Bash(find /Users/yizhenzhen/Code/mobile-app-mock/ios/Pods/SimulaAdSDK -name *.swift -o -name *.m)",
+      "Bash(otool -ov /Users/yizhenzhen/Library/Developer/Xcode/DerivedData/CharacterAIChatbot-atzuqqpaaikvbwdhivmmvgigrwev/Build/Products/Debug-iphoneos/CharacterAIChatbot.app/CharacterAIChatbot)",
+      "Bash(npm install:*)",
+      "Bash(pod install:*)"
     ],
     "deny": [],
     "ask": []
