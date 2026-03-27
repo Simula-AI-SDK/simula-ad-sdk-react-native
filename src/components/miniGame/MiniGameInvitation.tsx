@@ -82,6 +82,7 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
       'onMiniGameInvitationClose',
       () => {
         wasOpenRef.current = false;
+        SimulaMiniGameModule.hideMiniGameInvitation();
         onClose?.();
       },
     );

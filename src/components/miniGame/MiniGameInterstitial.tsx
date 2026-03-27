@@ -74,6 +74,7 @@ export const MiniGameInterstitial: React.FC<MiniGameInterstitialProps> = ({
       'onMiniGameInterstitialClose',
       () => {
         wasOpenRef.current = false;
+        SimulaMiniGameModule.hideMiniGameInterstitial();
         onClose?.();
       },
     );

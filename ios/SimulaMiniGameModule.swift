@@ -106,6 +106,11 @@ class SimulaMiniGameModule: RCTEventEmitter {
                 theme: theme,
                 delegateChar: delegateChar,
                 onClose: { [weak self] in
+                    // Don't destroy window — game/ad may still render in the ZStack
+                    self?.sendEvent(withName: "onMiniGameMenuClose", body: nil)
+                },
+                onFullyDone: { [weak self] in
+                    // User tapped empty overlay after game/ad flow completed
                     self?.dismissOverlay(&self!.menuWindow)
                     self?.provider = nil
                     self?.sendEvent(withName: "onMiniGameMenuClose", body: nil)
@@ -499,26 +504,39 @@ private struct MiniGameMenuWrapper: View {
     let theme: MiniGameTheme
     let delegateChar: Bool
     let onClose: () -> Void
+    let onFullyDone: () -> Void
 
     @State private var isOpen = true
 
     var body: some View {
-        MiniGameMenu(
-            isOpen: $isOpen,
-            onClose: {
-                isOpen = false
-                onClose()
-            },
-            charName: charName,
-            charID: charID,
-            charImage: charImage,
-            messages: messages,
-            charDesc: charDesc,
-            maxGamesToShow: maxGamesToShow,
-            theme: theme,
-            delegateChar: delegateChar
-        )
-        .environmentObject(provider)
+        ZStack {
+            // Tap catcher: when menu card is hidden (isOpen=false) and game/ad
+            // finishes, the ZStack is empty. This catches taps to dismiss the window.
+            if !isOpen {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        onFullyDone()
+                    }
+            }
+
+            MiniGameMenu(
+                isOpen: $isOpen,
+                onClose: {
+                    isOpen = false
+                    onClose()
+                },
+                charName: charName,
+                charID: charID,
+                charImage: charImage,
+                messages: messages,
+                charDesc: charDesc,
+                maxGamesToShow: maxGamesToShow,
+                theme: theme,
+                delegateChar: delegateChar
+            )
+            .environmentObject(provider)
+        }
     }
 }
 
