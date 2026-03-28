@@ -5,10 +5,13 @@ import SimulaAdSDK
 @objc(SimulaMiniGameModule)
 class SimulaMiniGameModule: RCTEventEmitter {
 
+    // Menu/Interstitial use UIWindow (so SDK's presentViewController finds our root VC for links)
     private var menuWindow: UIWindow?
-    private var buttonWindow: UIWindow?
-    private var invitationWindow: UIWindow?
     private var interstitialWindow: UIWindow?
+
+    // Invitation/Button use subview approach (needs touch passthrough)
+    private var buttonHostingController: UIHostingController<AnyView>?
+    private var invitationHostingController: UIHostingController<AnyView>?
 
     private var provider: SimulaProvider?
 
@@ -27,14 +30,24 @@ class SimulaMiniGameModule: RCTEventEmitter {
         ]
     }
 
-    // MARK: - Overlay Window Helper
+    // MARK: - Helpers
+
+    /// A UIView that passes through touches on itself but delivers to subviews.
+    private class PassthroughView: UIView {
+        override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+            let view = super.hitTest(point, with: event)
+            return view === self ? nil : view
+        }
+    }
 
     private func currentWindowScene() -> UIWindowScene? {
         UIApplication.shared.connectedScenes
             .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene
     }
 
-    private func showOverlay(hostingVC: UIHostingController<AnyView>) -> UIWindow? {
+    // MARK: - UIWindow overlay (menu, interstitial)
+
+    private func showWindowOverlay(hostingVC: UIViewController) -> UIWindow? {
         guard let windowScene = currentWindowScene() else { return nil }
         let window = UIWindow(windowScene: windowScene)
         window.windowLevel = .alert
@@ -45,13 +58,58 @@ class SimulaMiniGameModule: RCTEventEmitter {
         return window
     }
 
-    private func dismissOverlay(_ window: inout UIWindow?) {
+    /// Convenience: accept UIHostingController directly
+    private func showWindowOverlay(navVC: UINavigationController) -> UIWindow? {
+        return showWindowOverlay(hostingVC: navVC)
+    }
+
+    private func dismissWindowOverlay(_ window: inout UIWindow?) {
         window?.isHidden = true
         window?.rootViewController = nil
         window = nil
     }
 
-    // MARK: - MiniGameMenu
+    // MARK: - Subview overlay (invitation, button)
+
+    private func addSubviewOverlay(hostingVC: UIHostingController<AnyView>) -> Bool {
+        guard let scene = currentWindowScene(),
+              let rootVC = scene.windows.first(where: \.isKeyWindow)?.rootViewController else { return false }
+
+        hostingVC.view.backgroundColor = .clear
+        rootVC.addChild(hostingVC)
+
+        let container = PassthroughView(frame: rootVC.view.bounds)
+        container.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+
+        if #available(iOS 16.0, *) {
+            hostingVC.sizingOptions = [.intrinsicContentSize]
+        }
+        hostingVC.view.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(hostingVC.view)
+        NSLayoutConstraint.activate([
+            hostingVC.view.topAnchor.constraint(equalTo: container.topAnchor),
+            hostingVC.view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            hostingVC.view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ])
+
+        rootVC.view.addSubview(container)
+        hostingVC.didMove(toParent: rootVC)
+        return true
+    }
+
+    private func removeSubviewOverlay(_ hostingVC: inout UIHostingController<AnyView>?) {
+        guard let vc = hostingVC else { return }
+        vc.willMove(toParent: nil)
+        if let container = vc.view.superview, container is PassthroughView {
+            container.removeFromSuperview()
+        } else {
+            vc.view.removeFromSuperview()
+        }
+        vc.removeFromParent()
+        hostingVC = nil
+    }
+
+    // MARK: - MiniGameMenu (UIWindow — links need our window to be key)
 
     @objc
     func showMiniGameMenu(_ props: NSDictionary,
@@ -81,11 +139,9 @@ class SimulaMiniGameModule: RCTEventEmitter {
                 return
             }
 
-            // Dismiss any existing menu
-            self.dismissOverlay(&self.menuWindow)
+            self.dismissWindowOverlay(&self.menuWindow)
             self.provider = nil
 
-            // Create provider and session
             let provider = SimulaProvider(
                 apiKey: apiKey,
                 devMode: devMode,
@@ -94,7 +150,6 @@ class SimulaMiniGameModule: RCTEventEmitter {
             )
             self.provider = provider
 
-            // Create the menu view
             let menuView = MiniGameMenuWrapper(
                 provider: provider,
                 charName: charName,
@@ -106,12 +161,12 @@ class SimulaMiniGameModule: RCTEventEmitter {
                 theme: theme,
                 delegateChar: delegateChar,
                 onClose: { [weak self] in
-                    // Don't destroy window — game/ad may still render in the ZStack
+                    // Don't destroy — game/ad may still render in the ZStack
                     self?.sendEvent(withName: "onMiniGameMenuClose", body: nil)
                 },
                 onFullyDone: { [weak self] in
-                    // User tapped empty overlay after game/ad flow completed
-                    self?.dismissOverlay(&self!.menuWindow)
+                    // Tap catcher fired — ZStack is empty, safe to destroy
+                    self?.dismissWindowOverlay(&self!.menuWindow)
                     self?.provider = nil
                     self?.sendEvent(withName: "onMiniGameMenuClose", body: nil)
                 }
@@ -120,13 +175,18 @@ class SimulaMiniGameModule: RCTEventEmitter {
             let hostingVC = UIHostingController(rootView: AnyView(menuView))
             hostingVC.view.backgroundColor = .clear
 
-            guard let window = self.showOverlay(hostingVC: hostingVC) else {
+            // Wrap in UINavigationController for reliable modal presentation
+            // (SDK's presentViewController presents SKStoreProductVC/SFSafariVC from the root VC)
+            let navVC = UINavigationController(rootViewController: hostingVC)
+            navVC.setNavigationBarHidden(true, animated: false)
+            navVC.view.backgroundColor = .clear
+
+            guard let window = self.showWindowOverlay(navVC: navVC) else {
                 reject("NO_WINDOW_SCENE", "Could not find active window scene", nil)
                 return
             }
             self.menuWindow = window
 
-            // Create session after showing
             Task {
                 await provider.createSession()
             }
@@ -138,12 +198,13 @@ class SimulaMiniGameModule: RCTEventEmitter {
     @objc
     func hideMiniGameMenu() {
         DispatchQueue.main.async { [weak self] in
-            self?.dismissOverlay(&self!.menuWindow)
-            self?.provider = nil
+            guard let self = self else { return }
+            self.dismissWindowOverlay(&self.menuWindow)
+            self.provider = nil
         }
     }
 
-    // MARK: - MiniGameButton
+    // MARK: - MiniGameButton (subview — needs touch passthrough)
 
     @objc
     func showMiniGameButton(_ props: NSDictionary,
@@ -169,7 +230,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
                 return
             }
 
-            self.dismissOverlay(&self.buttonWindow)
+            self.removeSubviewOverlay(&self.buttonHostingController)
 
             let provider = SimulaProvider(
                 apiKey: apiKey,
@@ -191,13 +252,12 @@ class SimulaMiniGameModule: RCTEventEmitter {
             )
 
             let hostingVC = UIHostingController(rootView: AnyView(buttonView))
-            hostingVC.view.backgroundColor = .clear
 
-            guard let window = self.showOverlay(hostingVC: hostingVC) else {
-                reject("NO_WINDOW_SCENE", "Could not find active window scene", nil)
+            guard self.addSubviewOverlay(hostingVC: hostingVC) else {
+                reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
                 return
             }
-            self.buttonWindow = window
+            self.buttonHostingController = hostingVC
             resolve(nil)
         }
     }
@@ -205,11 +265,12 @@ class SimulaMiniGameModule: RCTEventEmitter {
     @objc
     func hideMiniGameButton() {
         DispatchQueue.main.async { [weak self] in
-            self?.dismissOverlay(&self!.buttonWindow)
+            guard let self = self else { return }
+            self.removeSubviewOverlay(&self.buttonHostingController)
         }
     }
 
-    // MARK: - MiniGameInvitation
+    // MARK: - MiniGameInvitation (subview — needs touch passthrough)
 
     @objc
     func showMiniGameInvitation(_ props: NSDictionary,
@@ -239,7 +300,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
                 return
             }
 
-            self.dismissOverlay(&self.invitationWindow)
+            self.removeSubviewOverlay(&self.invitationHostingController)
 
             let provider = SimulaProvider(
                 apiKey: apiKey,
@@ -263,19 +324,18 @@ class SimulaMiniGameModule: RCTEventEmitter {
                     self?.sendEvent(withName: "onMiniGameInvitationClick", body: nil)
                 },
                 onClose: { [weak self] in
-                    self?.dismissOverlay(&self!.invitationWindow)
+                    self?.removeSubviewOverlay(&self!.invitationHostingController)
                     self?.sendEvent(withName: "onMiniGameInvitationClose", body: nil)
                 }
             )
 
             let hostingVC = UIHostingController(rootView: AnyView(invitationView))
-            hostingVC.view.backgroundColor = .clear
 
-            guard let window = self.showOverlay(hostingVC: hostingVC) else {
-                reject("NO_WINDOW_SCENE", "Could not find active window scene", nil)
+            guard self.addSubviewOverlay(hostingVC: hostingVC) else {
+                reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
                 return
             }
-            self.invitationWindow = window
+            self.invitationHostingController = hostingVC
 
             Task {
                 await provider.createSession()
@@ -288,11 +348,12 @@ class SimulaMiniGameModule: RCTEventEmitter {
     @objc
     func hideMiniGameInvitation() {
         DispatchQueue.main.async { [weak self] in
-            self?.dismissOverlay(&self!.invitationWindow)
+            guard let self = self else { return }
+            self.removeSubviewOverlay(&self.invitationHostingController)
         }
     }
 
-    // MARK: - MiniGameInterstitial
+    // MARK: - MiniGameInterstitial (UIWindow + status bar hidden)
 
     @objc
     func showMiniGameInterstitial(_ props: NSDictionary,
@@ -318,7 +379,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
                 return
             }
 
-            self.dismissOverlay(&self.interstitialWindow)
+            self.dismissWindowOverlay(&self.interstitialWindow)
 
             let provider = SimulaProvider(
                 apiKey: apiKey,
@@ -338,7 +399,8 @@ class SimulaMiniGameModule: RCTEventEmitter {
                     self?.sendEvent(withName: "onMiniGameInterstitialClick", body: nil)
                 },
                 onClose: { [weak self] in
-                    self?.dismissOverlay(&self!.interstitialWindow)
+                    self?.dismissWindowOverlay(&self!.interstitialWindow)
+                    UIApplication.shared.isStatusBarHidden = false
                     self?.sendEvent(withName: "onMiniGameInterstitialClose", body: nil)
                 }
             )
@@ -346,11 +408,14 @@ class SimulaMiniGameModule: RCTEventEmitter {
             let hostingVC = UIHostingController(rootView: AnyView(interstitialView))
             hostingVC.view.backgroundColor = .clear
 
-            guard let window = self.showOverlay(hostingVC: hostingVC) else {
+            guard let window = self.showWindowOverlay(hostingVC: hostingVC) else {
                 reject("NO_WINDOW_SCENE", "Could not find active window scene", nil)
                 return
             }
             self.interstitialWindow = window
+
+            // Hide status bar (UIViewControllerBasedStatusBarAppearance=false, so use UIApplication)
+            UIApplication.shared.isStatusBarHidden = true
 
             Task {
                 await provider.createSession()
@@ -363,7 +428,9 @@ class SimulaMiniGameModule: RCTEventEmitter {
     @objc
     func hideMiniGameInterstitial() {
         DispatchQueue.main.async { [weak self] in
-            self?.dismissOverlay(&self!.interstitialWindow)
+            guard let self = self else { return }
+            self.dismissWindowOverlay(&self.interstitialWindow)
+            UIApplication.shared.isStatusBarHidden = false
         }
     }
 
@@ -510,8 +577,6 @@ private struct MiniGameMenuWrapper: View {
 
     var body: some View {
         ZStack {
-            // Tap catcher: when menu card is hidden (isOpen=false) and game/ad
-            // finishes, the ZStack is empty. This catches taps to dismiss the window.
             if !isOpen {
                 Color.clear
                     .contentShape(Rectangle())
