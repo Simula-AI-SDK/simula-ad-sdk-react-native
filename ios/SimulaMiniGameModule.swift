@@ -1,22 +1,88 @@
 import React
 import SwiftUI
+import WebKit
+import StoreKit
+import SafariServices
 import SimulaAdSDK
 
 @objc(SimulaMiniGameModule)
 class SimulaMiniGameModule: RCTEventEmitter {
 
-    // Menu/Interstitial use UIWindow (so SDK's presentViewController finds our root VC for links)
-    private var menuWindow: UIWindow?
-    private var interstitialWindow: UIWindow?
+    // Menu/Interstitial are presented as .overFullScreen modals so they join
+    // the main window's presentedViewController chain.  The Swift SDK's
+    // presentViewController() then walks that chain, finds our hosting VC,
+    // and presents SKStoreProductViewController / SFSafariViewController from
+    // it — all within the main window (no secondary window to conflict with
+    // SKStoreProductViewController's own system-level window).
+    private var menuHostingController: UIHostingController<AnyView>?
+    private var interstitialHostingController: UIHostingController<AnyView>?
 
     // Invitation/Button use subview approach (needs touch passthrough)
     private var buttonHostingController: UIHostingController<AnyView>?
     private var invitationHostingController: UIHostingController<AnyView>?
 
     private var provider: SimulaProvider?
+    private var hasListeners = false
+
+    // MARK: - UIApplication.open() interceptor
+    //
+    // Swizzles UIApplication.open(_:options:completionHandler:) so that App Store
+    // URLs are caught before they leave the app. When our overlay is active, we
+    // present SKStoreProductViewController ourselves instead of letting the system
+    // open the App Store externally. This is both a diagnostic and a fix.
+
+    static weak var activeHostingController: UIHostingController<AnyView>?
+    static weak var activeModule: SimulaMiniGameModule?
+    static var swizzleInstalled = false
+
+    private static let installInterceptor: Void = {
+        let cls: AnyClass = UIApplication.self
+        let originalSel = NSSelectorFromString("openURL:options:completionHandler:")
+        let swizzledSel = #selector(UIApplication.simula_openURL(_:options:completionHandler:))
+        guard let original = class_getInstanceMethod(cls, originalSel) else {
+            NSLog("[SimulaInterceptor] FAILED: could not find original openURL:options:completionHandler:")
+            return
+        }
+        guard let swizzled = class_getInstanceMethod(cls, swizzledSel) else {
+            NSLog("[SimulaInterceptor] FAILED: could not find swizzled simula_openURL method")
+            return
+        }
+        method_exchangeImplementations(original, swizzled)
+        swizzleInstalled = true
+        NSLog("[SimulaInterceptor] SUCCESS: UIApplication.open() swizzle installed")
+    }()
+
+    static func appStoreID(from url: URL) -> String? {
+        let scheme = url.scheme?.lowercased() ?? ""
+        let host = url.host?.lowercased() ?? ""
+        if scheme == "itms-apps" || scheme == "itms" {
+            if let range = url.absoluteString.range(of: #"id(\d+)"#, options: .regularExpression) {
+                return String(url.absoluteString[range].dropFirst(2))
+            }
+            return nil
+        }
+        guard host.contains("apps.apple.com") || host.contains("itunes.apple.com") else { return nil }
+        if let range = url.path.range(of: #"/id(\d+)"#, options: .regularExpression) {
+            return String(url.path[range].dropFirst(3))
+        }
+        return nil
+    }
+
+    override init() {
+        super.init()
+        _ = SimulaMiniGameModule.installInterceptor
+    }
 
     override static func requiresMainQueueSetup() -> Bool {
         return false
+    }
+
+    override func startObserving() {
+        hasListeners = true
+    }
+
+    override func stopObserving() {
+        hasListeners = false
     }
 
     override func supportedEvents() -> [String]! {
@@ -27,6 +93,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
             "onMiniGameInvitationClose",
             "onMiniGameInterstitialClick",
             "onMiniGameInterstitialClose",
+            "onMiniGameDiagnostic",
         ]
     }
 
@@ -40,33 +107,189 @@ class SimulaMiniGameModule: RCTEventEmitter {
         }
     }
 
-    private func currentWindowScene() -> UIWindowScene? {
+    private func currentKeyWindow() -> UIWindow? {
         UIApplication.shared.connectedScenes
-            .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first(where: \.isKeyWindow)
     }
 
-    // MARK: - UIWindow overlay (menu, interstitial)
-
-    private func showWindowOverlay(hostingVC: UIViewController) -> UIWindow? {
-        guard let windowScene = currentWindowScene() else { return nil }
-        let window = UIWindow(windowScene: windowScene)
-        window.windowLevel = .alert
-        window.rootViewController = hostingVC
-        window.backgroundColor = .clear
-        window.isHidden = false
-        window.makeKeyAndVisible()
-        return window
+    private func currentWindowScene() -> UIWindowScene? {
+        currentKeyWindow()?.windowScene
+            ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
     }
 
-    /// Convenience: accept UIHostingController directly
-    private func showWindowOverlay(navVC: UINavigationController) -> UIWindow? {
-        return showWindowOverlay(hostingVC: navVC)
+    private func currentRootViewController() -> UIViewController? {
+        currentKeyWindow()?.rootViewController
     }
 
-    private func dismissWindowOverlay(_ window: inout UIWindow?) {
-        window?.isHidden = true
-        window?.rootViewController = nil
-        window = nil
+    private func currentTopPresentedViewController() -> UIViewController? {
+        guard let rootVC = currentRootViewController() else { return nil }
+        var topVC = rootVC
+        while let presented = topVC.presentedViewController {
+            topVC = presented
+        }
+        return topVC
+    }
+
+    private func className(of object: AnyObject?) -> String {
+        guard let object = object else { return "nil" }
+        return String(describing: type(of: object))
+    }
+
+    private func emitDiagnostic(_ event: String, source: String) {
+        guard hasListeners else { return }
+        let rootVC = currentRootViewController()
+        let topVC = currentTopPresentedViewController()
+        sendEvent(withName: "onMiniGameDiagnostic", body: [
+            "event": event,
+            "source": source,
+            "keyWindowClass": className(of: currentKeyWindow()),
+            "rootViewControllerClass": className(of: rootVC),
+            "topPresentedViewControllerClass": className(of: topVC),
+        ])
+    }
+
+    func emitInterceptDiagnostic(url: URL, appID: String) {
+        guard hasListeners else { return }
+        sendEvent(withName: "onMiniGameDiagnostic", body: [
+            "event": "url_intercepted",
+            "source": "UIApplication.open",
+            "url": url.absoluteString,
+            "appID": appID,
+            "topPresentedViewControllerClass": className(of: currentTopPresentedViewController()),
+        ])
+    }
+
+    func emitStoreProductDiagnostic(appID: String) {
+        guard hasListeners else { return }
+        sendEvent(withName: "onMiniGameDiagnostic", body: [
+            "event": "presenting_SKStoreProductVC",
+            "source": "presentStoreProduct",
+            "appID": appID,
+            "iTunesItemIdentifier": Int(appID) ?? 0,
+        ])
+    }
+
+    func emitNavigationDiagnostic(url: URL?, navigationType: WKNavigationType, isMainFrame: Bool, extra: String = "decidePolicyFor") {
+        guard hasListeners else { return }
+        let typeStr: String
+        switch navigationType {
+        case .linkActivated: typeStr = "linkActivated"
+        case .formSubmitted: typeStr = "formSubmitted"
+        case .backForward: typeStr = "backForward"
+        case .reload: typeStr = "reload"
+        case .formResubmitted: typeStr = "formResubmitted"
+        case .other: typeStr = "other"
+        @unknown default: typeStr = "unknown"
+        }
+        sendEvent(withName: "onMiniGameDiagnostic", body: [
+            "event": "navigation",
+            "source": extra,
+            "url": url?.absoluteString ?? "nil",
+            "navigationType": typeStr,
+            "isMainFrame": isMainFrame,
+        ])
+    }
+
+    // MARK: - Modal hosting (menu, interstitial)
+    //
+    // Presents the hosting VC as a .overFullScreen modal so it joins the main
+    // window's presentedViewController chain.  The Swift SDK's
+    // presentViewController() then finds it and presents SKStoreProductVC /
+    // SFSafariVC from it — everything stays in the main window, so
+    // SKStoreProductViewController's system-level window renders correctly.
+
+    private func addFullscreenOverlay(hostingVC: UIHostingController<AnyView>) -> Bool {
+        guard let topVC = currentTopPresentedViewController() else { return false }
+
+        hostingVC.view.backgroundColor = .clear
+        hostingVC.modalPresentationStyle = .overFullScreen
+        hostingVC.modalTransitionStyle = .crossDissolve
+
+        topVC.present(hostingVC, animated: false)
+
+        // Enable UIApplication.open() interceptor while overlay is active
+        SimulaMiniGameModule.activeHostingController = hostingVC
+        SimulaMiniGameModule.activeModule = self
+
+        // Start scanning for WKWebViews to install delegate proxy
+        startWebViewScanning(in: hostingVC)
+
+        return true
+    }
+
+    private func removeFullscreenOverlay(_ hostingVC: inout UIHostingController<AnyView>?) {
+        guard let vc = hostingVC else { return }
+        // Stop scanning and clean up proxies
+        stopWebViewScanning()
+        // Disable interceptor if this is the active overlay
+        if SimulaMiniGameModule.activeHostingController === vc {
+            SimulaMiniGameModule.activeHostingController = nil
+        }
+        // Dismiss from the presenting VC so the hosting VC itself is removed
+        // (not just its presented children like SKStoreProductViewController).
+        vc.presentingViewController?.dismiss(animated: false)
+        hostingVC = nil
+    }
+
+    // MARK: - WKWebView delegate proxy
+    //
+    // In a pure SwiftUI app the SDK's WKNavigationDelegate works fine.
+    // In React Native the coordinator can lose its delegate connection.
+    // We scan the hosting VC's view hierarchy for WKWebViews and install
+    // a proxy that ensures App Store / external links are handled in-app.
+
+    private var webViewScanTimer: Timer?
+    private var installedProxies: [WKNavigationDelegateProxy] = []
+
+    private func startWebViewScanning(in hostingVC: UIHostingController<AnyView>) {
+        stopWebViewScanning()
+        // Scan periodically — SwiftUI creates WKWebViews lazily as views appear
+        webViewScanTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self, weak hostingVC] _ in
+            guard let self = self, let hvc = hostingVC else { return }
+            self.scanAndProxyWebViews(in: hvc.view)
+        }
+    }
+
+    private func stopWebViewScanning() {
+        webViewScanTimer?.invalidate()
+        webViewScanTimer = nil
+        installedProxies.removeAll()
+    }
+
+    private func scanAndProxyWebViews(in view: UIView) {
+        if let webView = view as? WKWebView {
+            let alreadyProxied = installedProxies.contains { $0 === webView.navigationDelegate }
+            if !alreadyProxied {
+                let originalDelegate = webView.navigationDelegate
+                let proxy = WKNavigationDelegateProxy(
+                    original: originalDelegate,
+                    module: self
+                )
+                webView.navigationDelegate = proxy
+                webView.uiDelegate = proxy
+                installedProxies.append(proxy)
+
+                // Verify the proxy actually stuck
+                let actualDelegate = webView.navigationDelegate
+                let proxyStuck = actualDelegate === proxy
+
+                if hasListeners {
+                    sendEvent(withName: "onMiniGameDiagnostic", body: [
+                        "event": "webview_proxy_installed",
+                        "source": "delegate_scan",
+                        "originalDelegate": originalDelegate == nil ? "nil" : String(describing: type(of: originalDelegate!)),
+                        "proxyIsDelegate": proxyStuck ? "YES" : "NO",
+                        "webViewURL": webView.url?.absoluteString ?? "nil",
+                    ])
+                }
+            }
+            return
+        }
+        for subview in view.subviews {
+            scanAndProxyWebViews(in: subview)
+        }
     }
 
     // MARK: - Subview overlay (invitation, button)
@@ -109,12 +332,23 @@ class SimulaMiniGameModule: RCTEventEmitter {
         hostingVC = nil
     }
 
-    // MARK: - MiniGameMenu (UIWindow — links need our window to be key)
+    // MARK: - MiniGameMenu (single-window child host)
 
     @objc
     func showMiniGameMenu(_ props: NSDictionary,
                           resolve: @escaping RCTPromiseResolveBlock,
                           reject: @escaping RCTPromiseRejectBlock) {
+        // Ensure UIApplication.open() interceptor is installed (static let, runs once)
+        _ = SimulaMiniGameModule.installInterceptor
+        // Emit swizzle status through RN diagnostics so it's visible in Metro logs
+        if hasListeners {
+            sendEvent(withName: "onMiniGameDiagnostic", body: [
+                "event": "interceptor_status",
+                "source": "swizzle",
+                "installed": SimulaMiniGameModule.swizzleInstalled ? "YES" : "NO",
+            ])
+        }
+
         guard let apiKey = props["apiKey"] as? String,
               let charName = props["charName"] as? String,
               let charID = props["charID"] as? String else {
@@ -139,7 +373,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
                 return
             }
 
-            self.dismissWindowOverlay(&self.menuWindow)
+            self.removeFullscreenOverlay(&self.menuHostingController)
             self.provider = nil
 
             let provider = SimulaProvider(
@@ -166,26 +400,22 @@ class SimulaMiniGameModule: RCTEventEmitter {
                 },
                 onFullyDone: { [weak self] in
                     // Tap catcher fired — ZStack is empty, safe to destroy
-                    self?.dismissWindowOverlay(&self!.menuWindow)
-                    self?.provider = nil
-                    self?.sendEvent(withName: "onMiniGameMenuClose", body: nil)
+                    guard let self = self else { return }
+                    self.removeFullscreenOverlay(&self.menuHostingController)
+                    self.provider = nil
+                    self.sendEvent(withName: "onMiniGameMenuClose", body: nil)
                 }
             )
 
             let hostingVC = UIHostingController(rootView: AnyView(menuView))
             hostingVC.view.backgroundColor = .clear
 
-            // Wrap in UINavigationController for reliable modal presentation
-            // (SDK's presentViewController presents SKStoreProductVC/SFSafariVC from the root VC)
-            let navVC = UINavigationController(rootViewController: hostingVC)
-            navVC.setNavigationBarHidden(true, animated: false)
-            navVC.view.backgroundColor = .clear
-
-            guard let window = self.showWindowOverlay(navVC: navVC) else {
-                reject("NO_WINDOW_SCENE", "Could not find active window scene", nil)
+            guard self.addFullscreenOverlay(hostingVC: hostingVC) else {
+                reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
                 return
             }
-            self.menuWindow = window
+            self.menuHostingController = hostingVC
+            self.emitDiagnostic("menu_attached", source: "menu")
 
             Task {
                 await provider.createSession()
@@ -199,7 +429,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
     func hideMiniGameMenu() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.dismissWindowOverlay(&self.menuWindow)
+            self.removeFullscreenOverlay(&self.menuHostingController)
             self.provider = nil
         }
     }
@@ -353,7 +583,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
         }
     }
 
-    // MARK: - MiniGameInterstitial (UIWindow + status bar hidden)
+    // MARK: - MiniGameInterstitial (single-window child host)
 
     @objc
     func showMiniGameInterstitial(_ props: NSDictionary,
@@ -379,7 +609,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
                 return
             }
 
-            self.dismissWindowOverlay(&self.interstitialWindow)
+            self.removeFullscreenOverlay(&self.interstitialHostingController)
 
             let provider = SimulaProvider(
                 apiKey: apiKey,
@@ -399,20 +629,22 @@ class SimulaMiniGameModule: RCTEventEmitter {
                     self?.sendEvent(withName: "onMiniGameInterstitialClick", body: nil)
                 },
                 onClose: { [weak self] in
-                    self?.dismissWindowOverlay(&self!.interstitialWindow)
+                    guard let self = self else { return }
+                    self.removeFullscreenOverlay(&self.interstitialHostingController)
                     UIApplication.shared.isStatusBarHidden = false
-                    self?.sendEvent(withName: "onMiniGameInterstitialClose", body: nil)
+                    self.sendEvent(withName: "onMiniGameInterstitialClose", body: nil)
                 }
             )
 
             let hostingVC = UIHostingController(rootView: AnyView(interstitialView))
             hostingVC.view.backgroundColor = .clear
 
-            guard let window = self.showWindowOverlay(hostingVC: hostingVC) else {
-                reject("NO_WINDOW_SCENE", "Could not find active window scene", nil)
+            guard self.addFullscreenOverlay(hostingVC: hostingVC) else {
+                reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
                 return
             }
-            self.interstitialWindow = window
+            self.interstitialHostingController = hostingVC
+            self.emitDiagnostic("interstitial_attached", source: "interstitial")
 
             // Hide status bar (UIViewControllerBasedStatusBarAppearance=false, so use UIApplication)
             UIApplication.shared.isStatusBarHidden = true
@@ -429,19 +661,19 @@ class SimulaMiniGameModule: RCTEventEmitter {
     func hideMiniGameInterstitial() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.dismissWindowOverlay(&self.interstitialWindow)
+            self.removeFullscreenOverlay(&self.interstitialHostingController)
             UIApplication.shared.isStatusBarHidden = false
         }
     }
 
     // MARK: - Type Conversion
 
-    private func convertMessages(_ raw: Any?) -> [Message] {
+    private func convertMessages(_ raw: Any?) -> [SimulaAdSDK.Message] {
         guard let array = raw as? [[String: Any]] else { return [] }
         return array.compactMap { dict in
             guard let role = dict["role"] as? String,
                   let content = dict["content"] as? String else { return nil }
-            return Message(role: role, content: content)
+            return SimulaAdSDK.Message(role: role, content: content)
         }
     }
 
@@ -565,7 +797,7 @@ private struct MiniGameMenuWrapper: View {
     let charName: String
     let charID: String
     let charImage: String
-    let messages: [Message]
+    let messages: [SimulaAdSDK.Message]
     let charDesc: String?
     let maxGamesToShow: MaxGamesToShow
     let theme: MiniGameTheme
@@ -692,5 +924,193 @@ private struct MiniGameInterstitialWrapper: View {
             }
         )
         .environmentObject(provider)
+    }
+}
+
+// MARK: - WKNavigationDelegateProxy
+//
+// Wraps the Swift SDK's coordinator as the WKWebView's navigation/UI delegate.
+// Intercepts App Store URLs and external links, presenting them in-app.
+// Falls through to the original delegate for everything else.
+
+class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate {
+    weak var original: WKNavigationDelegate?
+    weak var originalUI: WKUIDelegate?
+    weak var module: SimulaMiniGameModule?
+
+    private let internalSchemes: Set<String> = ["about", "data", "blob"]
+
+    init(original: WKNavigationDelegate?, module: SimulaMiniGameModule) {
+        self.original = original
+        self.originalUI = original as? WKUIDelegate
+        self.module = module
+    }
+
+    private func presentViewController(_ vc: UIViewController) {
+        guard let hostingVC = SimulaMiniGameModule.activeHostingController else { return }
+        var topVC: UIViewController = hostingVC
+        while let presented = topVC.presentedViewController {
+            topVC = presented
+        }
+        topVC.present(vc, animated: true)
+    }
+
+    private func presentStoreProduct(appID: String) {
+        module?.emitStoreProductDiagnostic(appID: appID)
+        let storeVC = SKStoreProductViewController()
+        storeVC.loadProduct(withParameters: [
+            SKStoreProductParameterITunesItemIdentifier: NSNumber(value: Int(appID) ?? 0)
+        ])
+        presentViewController(storeVC)
+    }
+
+    private func presentSafari(url: URL) {
+        let safariVC = SFSafariViewController(url: url)
+        presentViewController(safariVC)
+    }
+
+    // Saved URL to restore the webview after redirect-following navigates it away
+    private var savedWebViewURL: URL?
+
+    // MARK: - WKNavigationDelegate
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        original?.webView?(webView, didFinish: navigation)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        original?.webView?(webView, didFail: navigation, withError: error)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        original?.webView?(webView, didFailProvisionalNavigation: navigation, withError: error)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.allow)
+            return
+        }
+
+        let scheme = url.scheme?.lowercased() ?? ""
+
+        // Log EVERY navigation through the proxy
+        module?.emitNavigationDiagnostic(
+            url: url,
+            navigationType: navigationAction.navigationType,
+            isMainFrame: navigationAction.targetFrame?.isMainFrame ?? false
+        )
+
+        if internalSchemes.contains(scheme) {
+            decisionHandler(.allow)
+            return
+        }
+
+        if scheme == "javascript" {
+            decisionHandler(.cancel)
+            return
+        }
+
+        // Intercept App Store URLs
+        if let appID = SimulaMiniGameModule.appStoreID(from: url) {
+            module?.emitInterceptDiagnostic(url: url, appID: appID)
+            presentStoreProduct(appID: appID)
+            // Restore the webview to the original ad content (before redirect-following navigated it away)
+            if let savedURL = savedWebViewURL {
+                webView.load(URLRequest(url: savedURL))
+                savedWebViewURL = nil
+            }
+            decisionHandler(.cancel)
+            return
+        }
+
+        // Intercept itms-apps / itms schemes
+        if scheme == "itms-apps" || scheme == "itms" {
+            module?.emitInterceptDiagnostic(url: url, appID: "unknown")
+            decisionHandler(.cancel)
+            return
+        }
+
+        // Everything else (same-origin, cross-domain, iframes) — allow.
+        // If a server redirect lands on apps.apple.com, this method is called
+        // again and the App Store check above catches it.
+        decisionHandler(.allow)
+    }
+
+    // MARK: - WKUIDelegate (target="_blank" / window.open)
+
+    func webView(
+        _ webView: WKWebView,
+        createWebViewWith configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        // Log window.open / target="_blank"
+        module?.emitNavigationDiagnostic(
+            url: navigationAction.request.url,
+            navigationType: navigationAction.navigationType,
+            isMainFrame: true,
+            extra: "createWebViewWith"
+        )
+
+        if let url = navigationAction.request.url {
+            let scheme = url.scheme?.lowercased() ?? ""
+            if let appID = SimulaMiniGameModule.appStoreID(from: url) {
+                module?.emitInterceptDiagnostic(url: url, appID: appID)
+                presentStoreProduct(appID: appID)
+            } else if scheme == "http" || scheme == "https" {
+                // Save the current ad URL so we can restore it after the redirect chain
+                // navigates the webview away (decidePolicyFor restores it when App Store is caught)
+                if savedWebViewURL == nil {
+                    savedWebViewURL = webView.url
+                }
+                // Load in the WKWebView — it follows HTTP + JS redirects.
+                // decidePolicyFor catches the App Store URL at the end of the chain.
+                webView.load(URLRequest(url: url))
+            }
+        }
+        return nil
+    }
+}
+
+// MARK: - UIApplication.open() interceptor
+//
+// Catches App Store URLs that would otherwise leave the app and presents
+// SKStoreProductViewController in-app instead.
+
+extension UIApplication {
+    @objc func simula_openURL(_ url: URL, options: [String: Any], completionHandler: ((Bool) -> Void)?) {
+        // Log ALL UIApplication.open() calls so we can see if anything flows through here
+        let isOverlayActive = SimulaMiniGameModule.activeHostingController != nil
+        NSLog("[SimulaInterceptor] UIApplication.open() called — url: %@, overlayActive: %@", url.absoluteString, isOverlayActive ? "YES" : "NO")
+
+        if let hostingVC = SimulaMiniGameModule.activeHostingController,
+           let appID = SimulaMiniGameModule.appStoreID(from: url) {
+            // Emit diagnostic so the React Native side can see what was intercepted
+            SimulaMiniGameModule.activeModule?.emitInterceptDiagnostic(url: url, appID: appID)
+
+            // Present SKStoreProductViewController in-app instead of opening externally
+            DispatchQueue.main.async {
+                let storeVC = SKStoreProductViewController()
+                storeVC.loadProduct(withParameters: [
+                    SKStoreProductParameterITunesItemIdentifier: NSNumber(value: Int(appID) ?? 0)
+                ])
+                var topVC: UIViewController = hostingVC
+                while let presented = topVC.presentedViewController {
+                    topVC = presented
+                }
+                topVC.present(storeVC, animated: true)
+            }
+            completionHandler?(true)
+            return
+        }
+
+        // Not intercepted — call original (implementations are swapped, so this
+        // calls the real UIApplication.open)
+        simula_openURL(url, options: options, completionHandler: completionHandler)
     }
 }

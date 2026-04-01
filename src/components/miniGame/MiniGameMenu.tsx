@@ -73,6 +73,14 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
     return () => subscription.remove();
   }, [onClose]);
 
+  useEffect(() => {
+    if (!emitter) return;
+    const subscription = emitter.addListener('onMiniGameDiagnostic', (payload: any) => {
+      console.warn('[SimulaMiniGame][iOS diagnostic]', payload);
+    });
+    return () => subscription.remove();
+  }, []);
+
   // Native handles all rendering
   return null;
 };

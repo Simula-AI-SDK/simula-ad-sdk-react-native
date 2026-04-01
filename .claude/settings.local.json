@@ -15,7 +15,9 @@
       "Bash(find /Users/yizhenzhen/Code/mobile-app-mock/ios/Pods/SimulaAdSDK -name *.swift -o -name *.m)",
       "Bash(otool -ov /Users/yizhenzhen/Library/Developer/Xcode/DerivedData/CharacterAIChatbot-atzuqqpaaikvbwdhivmmvgigrwev/Build/Products/Debug-iphoneos/CharacterAIChatbot.app/CharacterAIChatbot)",
       "Bash(npm install:*)",
-      "Bash(pod install:*)"
+      "Bash(pod install:*)",
+      "Bash(git log:*)",
+      "Bash(xargs ls:*)"
     ],
     "deny": [],
     "ask": []
