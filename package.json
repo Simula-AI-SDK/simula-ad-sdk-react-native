@@ -1,6 +1,6 @@
 {
   "name": "@simula/ads-react-native",
-  "version": "1.2.0-50",
+  "version": "1.2.0-56",
   "description": "React Native wrapper for Simula MiniGame SDKs (iOS & Android)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

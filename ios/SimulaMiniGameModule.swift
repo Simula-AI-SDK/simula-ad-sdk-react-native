@@ -223,6 +223,10 @@ class SimulaMiniGameModule: RCTEventEmitter {
         guard let vc = hostingVC else { return }
         // Stop scanning and clean up proxies
         stopWebViewScanning()
+        // Reset global proxy state
+        WKNavigationDelegateProxy.isHandlingExternalLink = false
+        WKNavigationDelegateProxy.isResolving = false
+        WKNavigationDelegateProxy.activeSession = nil
         // Disable interceptor if this is the active overlay
         if SimulaMiniGameModule.activeHostingController === vc {
             SimulaMiniGameModule.activeHostingController = nil
@@ -933,12 +937,17 @@ private struct MiniGameInterstitialWrapper: View {
 // Intercepts App Store URLs and external links, presenting them in-app.
 // Falls through to the original delegate for everything else.
 
-class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate {
+class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, SKStoreProductViewControllerDelegate, SFSafariViewControllerDelegate {
     weak var original: WKNavigationDelegate?
     weak var originalUI: WKUIDelegate?
     weak var module: SimulaMiniGameModule?
 
     private let internalSchemes: Set<String> = ["about", "data", "blob"]
+
+    // GLOBAL guards — shared across ALL proxy instances to prevent:
+    // 1. Multiple concurrent redirect resolutions
+    // 2. Stacking modals (SKStoreProductVC or SFSafariVC) on top of each other
+    static var isHandlingExternalLink = false
 
     init(original: WKNavigationDelegate?, module: SimulaMiniGameModule) {
         self.original = original
@@ -956,26 +965,44 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     private func presentStoreProduct(appID: String) {
+        guard !WKNavigationDelegateProxy.isHandlingExternalLink else { return }
+        WKNavigationDelegateProxy.isHandlingExternalLink = true
+
         module?.emitStoreProductDiagnostic(appID: appID)
         let storeVC = SKStoreProductViewController()
+        storeVC.delegate = self
         storeVC.loadProduct(withParameters: [
             SKStoreProductParameterITunesItemIdentifier: NSNumber(value: Int(appID) ?? 0)
         ])
         presentViewController(storeVC)
     }
 
+    func productViewControllerDidFinish(_ viewController: SKStoreProductViewController) {
+        WKNavigationDelegateProxy.isHandlingExternalLink = false
+        viewController.dismiss(animated: true)
+    }
+
+    func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
+        WKNavigationDelegateProxy.isHandlingExternalLink = false
+    }
+
     private func presentSafari(url: URL) {
+        guard !WKNavigationDelegateProxy.isHandlingExternalLink else { return }
+        WKNavigationDelegateProxy.isHandlingExternalLink = true
+
         let safariVC = SFSafariViewController(url: url)
+        safariVC.delegate = self
         presentViewController(safariVC)
     }
 
-    // Use a hidden offscreen WKWebView to follow the redirect chain
-    // (handles JS redirects that URLSession can't). The ad webview is never touched.
-    private var redirectWebView: WKWebView?
-    private var redirectDelegate: RedirectWebViewDelegate?
+    // URLSession-based redirect resolution (like Swift SDK's resolveAndRoute).
+    // Uses .ephemeral config to bypass any React Native custom URL protocols.
+    static var isResolving = false
+    static var activeSession: URLSession?
 
     private func resolveAndRoute(url: URL) {
-        guard redirectWebView == nil else { return }
+        guard !WKNavigationDelegateProxy.isResolving,
+              !WKNavigationDelegateProxy.isHandlingExternalLink else { return }
 
         if let appID = SimulaMiniGameModule.appStoreID(from: url) {
             module?.emitInterceptDiagnostic(url: url, appID: appID)
@@ -983,22 +1010,38 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate {
             return
         }
 
-        let delegate = RedirectWebViewDelegate { [weak self] finalURL in
-            guard let self = self else { return }
-            self.redirectWebView = nil
-            self.redirectDelegate = nil
-            if let appID = SimulaMiniGameModule.appStoreID(from: finalURL) {
-                self.module?.emitInterceptDiagnostic(url: finalURL, appID: appID)
-                self.presentStoreProduct(appID: appID)
-            } else {
-                self.presentSafari(url: finalURL)
+        WKNavigationDelegateProxy.isResolving = true
+
+        // Capture strong self to prevent deallocation during async resolution
+        let proxy = self
+        let moduleRef = module
+
+        let resolver = RedirectResolver { finalURL in
+            DispatchQueue.main.async {
+                WKNavigationDelegateProxy.isResolving = false
+                WKNavigationDelegateProxy.activeSession = nil
+
+                moduleRef?.sendEvent(withName: "onMiniGameDiagnostic", body: [
+                    "event": "redirect_resolved",
+                    "source": "resolveAndRoute",
+                    "originalURL": url.absoluteString,
+                    "finalURL": finalURL.absoluteString,
+                ])
+
+                if let appID = SimulaMiniGameModule.appStoreID(from: finalURL) {
+                    moduleRef?.emitInterceptDiagnostic(url: finalURL, appID: appID)
+                    proxy.presentStoreProduct(appID: appID)
+                } else {
+                    proxy.presentSafari(url: finalURL)
+                }
             }
         }
-        self.redirectDelegate = delegate
-        let wv = WKWebView(frame: .zero)
-        wv.navigationDelegate = delegate
-        self.redirectWebView = wv
-        wv.load(URLRequest(url: url))
+
+        // Use .ephemeral to bypass React Native's custom URLProtocols
+        let config = URLSessionConfiguration.ephemeral
+        let session = URLSession(configuration: config, delegate: resolver, delegateQueue: nil)
+        WKNavigationDelegateProxy.activeSession = session  // Retain session
+        session.dataTask(with: URLRequest(url: url)).resume()
     }
 
     // MARK: - WKNavigationDelegate
@@ -1087,65 +1130,62 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate {
                 module?.emitInterceptDiagnostic(url: url, appID: appID)
                 presentStoreProduct(appID: appID)
             } else if scheme == "http" || scheme == "https" {
-                let currentHost = webView.url?.host?.lowercased() ?? ""
-                let targetHost = url.host?.lowercased() ?? ""
-                if !targetHost.isEmpty && currentHost != targetHost {
-                    // Follow redirects in background via URLSession — no webview flash.
-                    resolveAndRoute(url: url)
-                } else {
-                    webView.load(URLRequest(url: url))
-                }
+                // Follow redirect chain via URLSession (.ephemeral bypasses RN URL protocols).
+                // If final URL is App Store → SKStoreProductVC, else → SFSafariVC.
+                // Ad webview is never touched (no flash).
+                resolveAndRoute(url: url)
             }
         }
         return nil
     }
 }
 
-// MARK: - RedirectWebViewDelegate
-//
-// Navigation delegate for the hidden offscreen WKWebView that follows
-// redirect chains (including JS redirects). Stops at App Store URLs.
+// MARK: - RedirectResolver
 
-private class RedirectWebViewDelegate: NSObject, WKNavigationDelegate {
-    let onResolved: (URL) -> Void
-    private var resolved = false
+class RedirectResolver: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate {
+    let completion: (URL) -> Void
+    private var completed = false
 
-    init(onResolved: @escaping (URL) -> Void) {
-        self.onResolved = onResolved
+    init(completion: @escaping (URL) -> Void) {
+        self.completion = completion
     }
 
-    func webView(
-        _ webView: WKWebView,
-        decidePolicyFor navigationAction: WKNavigationAction,
-        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
     ) {
-        guard let url = navigationAction.request.url else {
-            decisionHandler(.allow)
+        guard let redirectURL = request.url else {
+            finish(with: task.currentRequest?.url ?? request.url!)
+            completionHandler(nil)
             return
         }
 
-        // Check if this is an App Store URL
-        if let _ = SimulaMiniGameModule.appStoreID(from: url) {
-            finish(with: url)
-            decisionHandler(.cancel)
+        let scheme = redirectURL.scheme?.lowercased() ?? ""
+        let host = redirectURL.host?.lowercased() ?? ""
+
+        if host.contains("apps.apple.com") || host.contains("itunes.apple.com")
+            || scheme == "itms-apps" || scheme == "itms" {
+            finish(with: redirectURL)
+            completionHandler(nil)
             return
         }
 
-        let scheme = url.scheme?.lowercased() ?? ""
-        if scheme == "itms-apps" || scheme == "itms" {
-            finish(with: url)
-            decisionHandler(.cancel)
-            return
-        }
+        completionHandler(request)
+    }
 
-        // Allow — keep following the redirect chain
-        decisionHandler(.allow)
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let finalURL = task.currentRequest?.url {
+            finish(with: finalURL)
+        }
     }
 
     private func finish(with url: URL) {
-        guard !resolved else { return }
-        resolved = true
-        onResolved(url)
+        guard !completed else { return }
+        completed = true
+        completion(url)
     }
 }
 
