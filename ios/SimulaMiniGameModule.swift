@@ -969,8 +969,38 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate {
         presentViewController(safariVC)
     }
 
-    // Saved URL to restore the webview after redirect-following navigates it away
-    private var savedWebViewURL: URL?
+    // Follow redirect chain in the background via URLSession (no webview flash).
+    // Both the resolver AND the session must be retained or the request dies.
+    private var activeResolver: RedirectResolver?
+    private var activeSession: URLSession?
+
+    private func resolveAndRoute(url: URL) {
+        guard activeResolver == nil else { return }
+
+        if let appID = SimulaMiniGameModule.appStoreID(from: url) {
+            module?.emitInterceptDiagnostic(url: url, appID: appID)
+            presentStoreProduct(appID: appID)
+            return
+        }
+
+        let resolver = RedirectResolver { [weak self] finalURL in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.activeResolver = nil
+                self.activeSession = nil
+                if let appID = SimulaMiniGameModule.appStoreID(from: finalURL) {
+                    self.module?.emitInterceptDiagnostic(url: finalURL, appID: appID)
+                    self.presentStoreProduct(appID: appID)
+                } else {
+                    self.presentSafari(url: finalURL)
+                }
+            }
+        }
+        self.activeResolver = resolver
+        let session = URLSession(configuration: .default, delegate: resolver, delegateQueue: nil)
+        self.activeSession = session
+        session.dataTask(with: URLRequest(url: url)).resume()
+    }
 
     // MARK: - WKNavigationDelegate
 
@@ -1019,11 +1049,6 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate {
         if let appID = SimulaMiniGameModule.appStoreID(from: url) {
             module?.emitInterceptDiagnostic(url: url, appID: appID)
             presentStoreProduct(appID: appID)
-            // Restore the webview to the original ad content (before redirect-following navigated it away)
-            if let savedURL = savedWebViewURL {
-                webView.load(URLRequest(url: savedURL))
-                savedWebViewURL = nil
-            }
             decisionHandler(.cancel)
             return
         }
@@ -1063,17 +1088,66 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate {
                 module?.emitInterceptDiagnostic(url: url, appID: appID)
                 presentStoreProduct(appID: appID)
             } else if scheme == "http" || scheme == "https" {
-                // Save the current ad URL so we can restore it after the redirect chain
-                // navigates the webview away (decidePolicyFor restores it when App Store is caught)
-                if savedWebViewURL == nil {
-                    savedWebViewURL = webView.url
+                let currentHost = webView.url?.host?.lowercased() ?? ""
+                let targetHost = url.host?.lowercased() ?? ""
+                if !targetHost.isEmpty && currentHost != targetHost {
+                    // Follow redirects in background via URLSession — no webview flash.
+                    resolveAndRoute(url: url)
+                } else {
+                    webView.load(URLRequest(url: url))
                 }
-                // Load in the WKWebView — it follows HTTP + JS redirects.
-                // decidePolicyFor catches the App Store URL at the end of the chain.
-                webView.load(URLRequest(url: url))
             }
         }
         return nil
+    }
+}
+
+// MARK: - RedirectResolver
+
+private class RedirectResolver: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate {
+    let completion: (URL) -> Void
+    private var completed = false
+
+    init(completion: @escaping (URL) -> Void) {
+        self.completion = completion
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        guard let redirectURL = request.url else {
+            finish(with: task.currentRequest?.url ?? request.url!)
+            completionHandler(nil)
+            return
+        }
+
+        let scheme = redirectURL.scheme?.lowercased() ?? ""
+        let host = redirectURL.host?.lowercased() ?? ""
+
+        if host.contains("apps.apple.com") || host.contains("itunes.apple.com")
+            || scheme == "itms-apps" || scheme == "itms" {
+            finish(with: redirectURL)
+            completionHandler(nil)
+            return
+        }
+
+        completionHandler(request)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let finalURL = task.currentRequest?.url {
+            finish(with: finalURL)
+        }
+    }
+
+    private func finish(with url: URL) {
+        guard !completed else { return }
+        completed = true
+        completion(url)
     }
 }
 
