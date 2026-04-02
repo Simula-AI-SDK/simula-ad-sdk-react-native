@@ -1,5 +1,5 @@
 # Ignore source files
-src/
+/src/
 *.ts
 *.tsx
 !*.d.ts
@@ -24,3 +24,7 @@ node_modules/@types/react/
 
 # Ignore packed tarball files
 *.tgz
+
+# Ignore docs and tooling config
+docs/
+.claude/
