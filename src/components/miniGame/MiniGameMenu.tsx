@@ -37,7 +37,6 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
     if (!SimulaMiniGameModule) return;
 
     if (isOpen && !wasOpenRef.current) {
-      console.warn('[SimulaMiniGame] calling showMiniGameMenu...');
       SimulaMiniGameModule.showMiniGameMenu({
         apiKey,
         hasPrivacyConsent,
@@ -51,10 +50,6 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
         maxGamesToShow: maxGamesToShow ?? null,
         theme,
         delegateChar,
-      }).then(() => {
-        console.warn('[SimulaMiniGame] showMiniGameMenu resolved (presented successfully)');
-      }).catch((error: any) => {
-        console.error('[SimulaMiniGame] showMiniGameMenu failed:', error?.message || error);
       });
     } else if (!isOpen && wasOpenRef.current) {
       SimulaMiniGameModule.hideMiniGameMenu();
@@ -72,14 +67,6 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
     });
     return () => subscription.remove();
   }, [onClose]);
-
-  useEffect(() => {
-    if (!emitter) return;
-    const subscription = emitter.addListener('onMiniGameDiagnostic', (payload: any) => {
-      console.warn('[SimulaMiniGame][iOS diagnostic]', payload);
-    });
-    return () => subscription.remove();
-  }, []);
 
   // Native handles all rendering
   return null;
