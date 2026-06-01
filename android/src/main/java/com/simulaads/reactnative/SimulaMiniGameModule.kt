@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
+import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
@@ -26,7 +27,14 @@ import ad.simula.ad.sdk.model.MiniGameInterstitialTheme
 import ad.simula.ad.sdk.provider.SimulaProvider
 
 class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
-    ReactContextBaseJavaModule(reactContext) {
+    ReactContextBaseJavaModule(reactContext), LifecycleEventListener {
+
+    init {
+        // The module is a singleton that can outlive the host Activity
+        // (rotation, recreation). Listen for host destroy so we can detach
+        // every overlay and release its Activity context.
+        reactContext.addLifecycleEventListener(this)
+    }
 
     override fun getName(): String = "SimulaMiniGameModule"
 
@@ -120,8 +128,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun hideMiniGameMenu() {
-        isMenuOpen = false
         reactApplicationContext.currentActivity?.runOnUiThread {
+            isMenuOpen = false
             removeComposeView(menuComposeView)
             menuComposeView = null
         }
@@ -283,8 +291,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun hideMiniGameInvitation() {
-        isInvitationOpen = false
         reactApplicationContext.currentActivity?.runOnUiThread {
+            isInvitationOpen = false
             removeComposeView(invitationComposeView)
             invitationComposeView = null
         }
@@ -367,8 +375,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun hideMiniGameInterstitial() {
-        isInterstitialOpen = false
         reactApplicationContext.currentActivity?.runOnUiThread {
+            isInterstitialOpen = false
             removeComposeView(interstitialComposeView)
             interstitialComposeView = null
         }
@@ -391,11 +399,17 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     private fun removeComposeView(view: ComposeView?) {
         view?.let { v ->
+            // Detach via the view's own parent (works even when currentActivity
+            // is already gone) and dispose the composition to release it.
             (v.parent as? ViewGroup)?.removeView(v)
+            v.disposeComposition()
         }
     }
 
     private fun sendEvent(eventName: String, params: Any?) {
+        // Bridge may be tearing down (reload / host destroy) — getJSModule would
+        // throw if there's no active instance.
+        if (!reactApplicationContext.hasActiveReactInstance()) return
         reactApplicationContext
             .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit(eventName, params)
@@ -509,6 +523,30 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         } catch (_: Exception) {
             try { getString(key) } catch (_: Exception) { null }
         }
+    }
+
+    // ── LifecycleEventListener ──────────────────────────────────────────
+
+    override fun onHostResume() {}
+
+    override fun onHostPause() {}
+
+    override fun onHostDestroy() {
+        // Delivered on the main thread. Detach and dispose every overlay so we
+        // never leak the destroyed Activity's context through a retained
+        // ComposeView. removeComposeView detaches via each view's own parent,
+        // so this works even though currentActivity may already be null.
+        isMenuOpen = false
+        isInvitationOpen = false
+        isInterstitialOpen = false
+        removeComposeView(menuComposeView)
+        removeComposeView(buttonComposeView)
+        removeComposeView(invitationComposeView)
+        removeComposeView(interstitialComposeView)
+        menuComposeView = null
+        buttonComposeView = null
+        invitationComposeView = null
+        interstitialComposeView = null
     }
 
     // ── NativeEventEmitter required methods ─────────────────────────────

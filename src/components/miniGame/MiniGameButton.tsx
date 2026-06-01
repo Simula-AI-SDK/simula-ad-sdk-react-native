@@ -55,17 +55,21 @@ export const MiniGameButton: React.FC<MiniGameButtonProps> = ({
     };
   }, []);
 
-  // Listen for native click event
+  // Keep the latest onClick in a ref so the native listener subscribes once
+  // and never goes stale (no re-subscription churn on every render).
+  const onClickRef = useRef(onClick);
+  useEffect(() => {
+    onClickRef.current = onClick;
+  }, [onClick]);
+
+  // Listen for native click event (subscribe once)
   useEffect(() => {
     if (!emitter) return;
-    const subscription = emitter.addListener(
-      'onMiniGameButtonClick',
-      () => {
-        onClick();
-      },
-    );
+    const subscription = emitter.addListener('onMiniGameButtonClick', () => {
+      onClickRef.current();
+    });
     return () => subscription.remove();
-  }, [onClick]);
+  }, []);
 
   // Native handles all rendering
   return null;

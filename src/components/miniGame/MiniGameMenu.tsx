@@ -58,15 +58,31 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
     wasOpenRef.current = isOpen;
   }, [isOpen]);
 
-  // Listen for native close event
+  // Keep the latest onClose in a ref so the native listener subscribes once.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  // Listen for native close event (subscribe once)
   useEffect(() => {
     if (!emitter) return;
     const subscription = emitter.addListener('onMiniGameMenuClose', () => {
       wasOpenRef.current = false;
-      onClose();
+      onCloseRef.current();
     });
     return () => subscription.remove();
-  }, [onClose]);
+  }, []);
+
+  // If React unmounts while the native menu is still open, tear it down.
+  useEffect(() => {
+    return () => {
+      if (wasOpenRef.current) {
+        SimulaMiniGameModule?.hideMiniGameMenu();
+        wasOpenRef.current = false;
+      }
+    };
+  }, []);
 
   // Native handles all rendering
   return null;

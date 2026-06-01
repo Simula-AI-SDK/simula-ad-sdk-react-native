@@ -63,6 +63,15 @@ class SimulaMiniGameModule: RCTEventEmitter {
         _ = SimulaMiniGameModule.installInterceptor
     }
 
+    // All exported methods run on the main thread, so their bodies present
+    // view controllers, mutate the status bar, and add/remove overlays
+    // directly — no nested DispatchQueue.main.async hop is needed.
+    // requiresMainQueueSetup stays false so the module still initializes
+    // lazily off the main thread and adds nothing to app-startup time.
+    override var methodQueue: DispatchQueue {
+        return DispatchQueue.main
+    }
+
     override static func requiresMainQueueSetup() -> Bool {
         return false
     }
@@ -272,70 +281,60 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let messages = convertMessages(props["messages"])
         let theme = convertTheme(props["theme"])
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                reject("INTERNAL_ERROR", "Module deallocated", nil)
-                return
+        self.removeFullscreenOverlay(&self.menuHostingController)
+        self.provider = nil
+
+        let provider = SimulaProvider(
+            apiKey: apiKey,
+            devMode: devMode,
+            primaryUserID: primaryUserID,
+            hasPrivacyConsent: hasPrivacyConsent
+        )
+        self.provider = provider
+
+        let menuView = MiniGameMenuWrapper(
+            provider: provider,
+            charName: charName,
+            charID: charID,
+            charImage: charImage,
+            messages: messages,
+            charDesc: charDesc,
+            maxGamesToShow: maxGamesToShow,
+            theme: theme,
+            delegateChar: delegateChar,
+            onClose: { [weak self] in
+                // Don't destroy — game/ad may still render in the ZStack
+                self?.sendEvent(withName: "onMiniGameMenuClose", body: nil)
+            },
+            onFullyDone: { [weak self] in
+                // Tap catcher fired — ZStack is empty, safe to destroy
+                guard let self = self else { return }
+                self.removeFullscreenOverlay(&self.menuHostingController)
+                self.provider = nil
+                self.sendEvent(withName: "onMiniGameMenuClose", body: nil)
             }
+        )
 
-            self.removeFullscreenOverlay(&self.menuHostingController)
-            self.provider = nil
+        let hostingVC = UIHostingController(rootView: AnyView(menuView))
+        hostingVC.view.backgroundColor = .clear
 
-            let provider = SimulaProvider(
-                apiKey: apiKey,
-                devMode: devMode,
-                primaryUserID: primaryUserID,
-                hasPrivacyConsent: hasPrivacyConsent
-            )
-            self.provider = provider
-
-            let menuView = MiniGameMenuWrapper(
-                provider: provider,
-                charName: charName,
-                charID: charID,
-                charImage: charImage,
-                messages: messages,
-                charDesc: charDesc,
-                maxGamesToShow: maxGamesToShow,
-                theme: theme,
-                delegateChar: delegateChar,
-                onClose: { [weak self] in
-                    // Don't destroy — game/ad may still render in the ZStack
-                    self?.sendEvent(withName: "onMiniGameMenuClose", body: nil)
-                },
-                onFullyDone: { [weak self] in
-                    // Tap catcher fired — ZStack is empty, safe to destroy
-                    guard let self = self else { return }
-                    self.removeFullscreenOverlay(&self.menuHostingController)
-                    self.provider = nil
-                    self.sendEvent(withName: "onMiniGameMenuClose", body: nil)
-                }
-            )
-
-            let hostingVC = UIHostingController(rootView: AnyView(menuView))
-            hostingVC.view.backgroundColor = .clear
-
-            guard self.addFullscreenOverlay(hostingVC: hostingVC) else {
-                reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
-                return
-            }
-            self.menuHostingController = hostingVC
-
-            Task {
-                await provider.createSession()
-            }
-
-            resolve(nil)
+        guard self.addFullscreenOverlay(hostingVC: hostingVC) else {
+            reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
+            return
         }
+        self.menuHostingController = hostingVC
+
+        Task {
+            await provider.createSession()
+        }
+
+        resolve(nil)
     }
 
     @objc
     func hideMiniGameMenu() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.removeFullscreenOverlay(&self.menuHostingController)
-            self.provider = nil
-        }
+        self.removeFullscreenOverlay(&self.menuHostingController)
+        self.provider = nil
     }
 
     // MARK: - MiniGameButton (subview — needs touch passthrough)
@@ -358,50 +357,40 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let theme = convertButtonTheme(props["theme"])
         let width = convertDimension(props["width"])
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                reject("INTERNAL_ERROR", "Module deallocated", nil)
-                return
+        self.removeSubviewOverlay(&self.buttonHostingController)
+
+        let provider = SimulaProvider(
+            apiKey: apiKey,
+            devMode: devMode,
+            primaryUserID: primaryUserID,
+            hasPrivacyConsent: hasPrivacyConsent
+        )
+
+        let buttonView = MiniGameButtonWrapper(
+            provider: provider,
+            text: text,
+            showPulsate: showPulsate,
+            showBadge: showBadge,
+            theme: theme,
+            width: width,
+            onClick: { [weak self] in
+                self?.sendEvent(withName: "onMiniGameButtonClick", body: nil)
             }
+        )
 
-            self.removeSubviewOverlay(&self.buttonHostingController)
+        let hostingVC = UIHostingController(rootView: AnyView(buttonView))
 
-            let provider = SimulaProvider(
-                apiKey: apiKey,
-                devMode: devMode,
-                primaryUserID: primaryUserID,
-                hasPrivacyConsent: hasPrivacyConsent
-            )
-
-            let buttonView = MiniGameButtonWrapper(
-                provider: provider,
-                text: text,
-                showPulsate: showPulsate,
-                showBadge: showBadge,
-                theme: theme,
-                width: width,
-                onClick: { [weak self] in
-                    self?.sendEvent(withName: "onMiniGameButtonClick", body: nil)
-                }
-            )
-
-            let hostingVC = UIHostingController(rootView: AnyView(buttonView))
-
-            guard self.addSubviewOverlay(hostingVC: hostingVC) else {
-                reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
-                return
-            }
-            self.buttonHostingController = hostingVC
-            resolve(nil)
+        guard self.addSubviewOverlay(hostingVC: hostingVC) else {
+            reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
+            return
         }
+        self.buttonHostingController = hostingVC
+        resolve(nil)
     }
 
     @objc
     func hideMiniGameButton() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.removeSubviewOverlay(&self.buttonHostingController)
-        }
+        self.removeSubviewOverlay(&self.buttonHostingController)
     }
 
     // MARK: - MiniGameInvitation (subview — needs touch passthrough)
@@ -428,63 +417,54 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let width = props["width"]
         let top = props["top"]
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                reject("INTERNAL_ERROR", "Module deallocated", nil)
-                return
+        self.removeSubviewOverlay(&self.invitationHostingController)
+
+        let provider = SimulaProvider(
+            apiKey: apiKey,
+            devMode: devMode,
+            primaryUserID: primaryUserID,
+            hasPrivacyConsent: hasPrivacyConsent
+        )
+
+        let invitationView = MiniGameInvitationWrapper(
+            provider: provider,
+            titleText: titleText,
+            subText: subText,
+            ctaText: ctaText,
+            charImage: charImage,
+            animation: animation,
+            theme: theme,
+            autoCloseDuration: autoCloseDuration,
+            width: convertDimension(width),
+            top: convertDimension(top),
+            onClick: { [weak self] in
+                self?.sendEvent(withName: "onMiniGameInvitationClick", body: nil)
+            },
+            onClose: { [weak self] in
+                guard let self = self else { return }
+                self.removeSubviewOverlay(&self.invitationHostingController)
+                self.sendEvent(withName: "onMiniGameInvitationClose", body: nil)
             }
+        )
 
-            self.removeSubviewOverlay(&self.invitationHostingController)
+        let hostingVC = UIHostingController(rootView: AnyView(invitationView))
 
-            let provider = SimulaProvider(
-                apiKey: apiKey,
-                devMode: devMode,
-                primaryUserID: primaryUserID,
-                hasPrivacyConsent: hasPrivacyConsent
-            )
-
-            let invitationView = MiniGameInvitationWrapper(
-                provider: provider,
-                titleText: titleText,
-                subText: subText,
-                ctaText: ctaText,
-                charImage: charImage,
-                animation: animation,
-                theme: theme,
-                autoCloseDuration: autoCloseDuration,
-                width: convertDimension(width),
-                top: convertDimension(top),
-                onClick: { [weak self] in
-                    self?.sendEvent(withName: "onMiniGameInvitationClick", body: nil)
-                },
-                onClose: { [weak self] in
-                    self?.removeSubviewOverlay(&self!.invitationHostingController)
-                    self?.sendEvent(withName: "onMiniGameInvitationClose", body: nil)
-                }
-            )
-
-            let hostingVC = UIHostingController(rootView: AnyView(invitationView))
-
-            guard self.addSubviewOverlay(hostingVC: hostingVC) else {
-                reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
-                return
-            }
-            self.invitationHostingController = hostingVC
-
-            Task {
-                await provider.createSession()
-            }
-
-            resolve(nil)
+        guard self.addSubviewOverlay(hostingVC: hostingVC) else {
+            reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
+            return
         }
+        self.invitationHostingController = hostingVC
+
+        Task {
+            await provider.createSession()
+        }
+
+        resolve(nil)
     }
 
     @objc
     func hideMiniGameInvitation() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.removeSubviewOverlay(&self.invitationHostingController)
-        }
+        self.removeSubviewOverlay(&self.invitationHostingController)
     }
 
     // MARK: - MiniGameInterstitial
@@ -507,66 +487,56 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let backgroundImage = props["backgroundImage"] as? String
         let theme = convertInterstitialTheme(props["theme"])
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                reject("INTERNAL_ERROR", "Module deallocated", nil)
-                return
+        self.removeFullscreenOverlay(&self.interstitialHostingController)
+
+        let provider = SimulaProvider(
+            apiKey: apiKey,
+            devMode: devMode,
+            primaryUserID: primaryUserID,
+            hasPrivacyConsent: hasPrivacyConsent
+        )
+
+        let interstitialView = MiniGameInterstitialWrapper(
+            provider: provider,
+            charImage: charImage,
+            invitationText: invitationText,
+            ctaText: ctaText,
+            backgroundImage: backgroundImage,
+            theme: theme,
+            onClick: { [weak self] in
+                self?.sendEvent(withName: "onMiniGameInterstitialClick", body: nil)
+            },
+            onClose: { [weak self] in
+                guard let self = self else { return }
+                self.removeFullscreenOverlay(&self.interstitialHostingController)
+                UIApplication.shared.isStatusBarHidden = false
+                self.sendEvent(withName: "onMiniGameInterstitialClose", body: nil)
             }
+        )
 
-            self.removeFullscreenOverlay(&self.interstitialHostingController)
+        let hostingVC = UIHostingController(rootView: AnyView(interstitialView))
+        hostingVC.view.backgroundColor = .clear
 
-            let provider = SimulaProvider(
-                apiKey: apiKey,
-                devMode: devMode,
-                primaryUserID: primaryUserID,
-                hasPrivacyConsent: hasPrivacyConsent
-            )
-
-            let interstitialView = MiniGameInterstitialWrapper(
-                provider: provider,
-                charImage: charImage,
-                invitationText: invitationText,
-                ctaText: ctaText,
-                backgroundImage: backgroundImage,
-                theme: theme,
-                onClick: { [weak self] in
-                    self?.sendEvent(withName: "onMiniGameInterstitialClick", body: nil)
-                },
-                onClose: { [weak self] in
-                    guard let self = self else { return }
-                    self.removeFullscreenOverlay(&self.interstitialHostingController)
-                    UIApplication.shared.isStatusBarHidden = false
-                    self.sendEvent(withName: "onMiniGameInterstitialClose", body: nil)
-                }
-            )
-
-            let hostingVC = UIHostingController(rootView: AnyView(interstitialView))
-            hostingVC.view.backgroundColor = .clear
-
-            guard self.addFullscreenOverlay(hostingVC: hostingVC) else {
-                reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
-                return
-            }
-            self.interstitialHostingController = hostingVC
-
-            // Hide status bar (UIViewControllerBasedStatusBarAppearance=false, so use UIApplication)
-            UIApplication.shared.isStatusBarHidden = true
-
-            Task {
-                await provider.createSession()
-            }
-
-            resolve(nil)
+        guard self.addFullscreenOverlay(hostingVC: hostingVC) else {
+            reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
+            return
         }
+        self.interstitialHostingController = hostingVC
+
+        // Hide status bar (UIViewControllerBasedStatusBarAppearance=false, so use UIApplication)
+        UIApplication.shared.isStatusBarHidden = true
+
+        Task {
+            await provider.createSession()
+        }
+
+        resolve(nil)
     }
 
     @objc
     func hideMiniGameInterstitial() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.removeFullscreenOverlay(&self.interstitialHostingController)
-            UIApplication.shared.isStatusBarHidden = false
-        }
+        self.removeFullscreenOverlay(&self.interstitialHostingController)
+        UIApplication.shared.isStatusBarHidden = false
     }
 
     // MARK: - Type Conversion

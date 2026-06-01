@@ -55,31 +55,43 @@ export const MiniGameInterstitial: React.FC<MiniGameInterstitialProps> = ({
     wasOpenRef.current = isOpen;
   }, [isOpen]);
 
-  // Listen for native click event
+  // Keep the latest callbacks in refs so native listeners subscribe once.
+  const onClickRef = useRef(onClick);
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
-    if (!emitter) return;
-    const subscription = emitter.addListener(
-      'onMiniGameInterstitialClick',
-      () => {
-        onClick();
-      },
-    );
-    return () => subscription.remove();
-  }, [onClick]);
+    onClickRef.current = onClick;
+    onCloseRef.current = onClose;
+  }, [onClick, onClose]);
 
-  // Listen for native close event
+  // Listen for native click event (subscribe once)
   useEffect(() => {
     if (!emitter) return;
-    const subscription = emitter.addListener(
-      'onMiniGameInterstitialClose',
-      () => {
-        wasOpenRef.current = false;
-        SimulaMiniGameModule.hideMiniGameInterstitial();
-        onClose?.();
-      },
-    );
+    const subscription = emitter.addListener('onMiniGameInterstitialClick', () => {
+      onClickRef.current();
+    });
     return () => subscription.remove();
-  }, [onClose]);
+  }, []);
+
+  // Listen for native close event (subscribe once)
+  useEffect(() => {
+    if (!emitter) return;
+    const subscription = emitter.addListener('onMiniGameInterstitialClose', () => {
+      wasOpenRef.current = false;
+      SimulaMiniGameModule.hideMiniGameInterstitial();
+      onCloseRef.current?.();
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // If React unmounts while the native interstitial is still open, tear it down.
+  useEffect(() => {
+    return () => {
+      if (wasOpenRef.current) {
+        SimulaMiniGameModule?.hideMiniGameInterstitial();
+        wasOpenRef.current = false;
+      }
+    };
+  }, []);
 
   // Native handles all rendering
   return null;

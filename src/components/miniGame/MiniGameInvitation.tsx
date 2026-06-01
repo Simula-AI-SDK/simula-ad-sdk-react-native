@@ -63,31 +63,43 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
     wasOpenRef.current = isOpen;
   }, [isOpen]);
 
-  // Listen for native click event
+  // Keep the latest callbacks in refs so native listeners subscribe once.
+  const onClickRef = useRef(onClick);
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
-    if (!emitter) return;
-    const subscription = emitter.addListener(
-      'onMiniGameInvitationClick',
-      () => {
-        onClick();
-      },
-    );
-    return () => subscription.remove();
-  }, [onClick]);
+    onClickRef.current = onClick;
+    onCloseRef.current = onClose;
+  }, [onClick, onClose]);
 
-  // Listen for native close event
+  // Listen for native click event (subscribe once)
   useEffect(() => {
     if (!emitter) return;
-    const subscription = emitter.addListener(
-      'onMiniGameInvitationClose',
-      () => {
-        wasOpenRef.current = false;
-        SimulaMiniGameModule.hideMiniGameInvitation();
-        onClose?.();
-      },
-    );
+    const subscription = emitter.addListener('onMiniGameInvitationClick', () => {
+      onClickRef.current();
+    });
     return () => subscription.remove();
-  }, [onClose]);
+  }, []);
+
+  // Listen for native close event (subscribe once)
+  useEffect(() => {
+    if (!emitter) return;
+    const subscription = emitter.addListener('onMiniGameInvitationClose', () => {
+      wasOpenRef.current = false;
+      SimulaMiniGameModule.hideMiniGameInvitation();
+      onCloseRef.current?.();
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // If React unmounts while the native invitation is still open, tear it down.
+  useEffect(() => {
+    return () => {
+      if (wasOpenRef.current) {
+        SimulaMiniGameModule?.hideMiniGameInvitation();
+        wasOpenRef.current = false;
+      }
+    };
+  }, []);
 
   // Native handles all rendering
   return null;
