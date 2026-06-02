@@ -14,12 +14,17 @@ class SimulaMiniGameModule: RCTEventEmitter {
     // and presents SKStoreProductViewController / SFSafariViewController from
     // it — all within the main window (no secondary window to conflict with
     // SKStoreProductViewController's own system-level window).
-    private var menuHostingController: UIHostingController<AnyView>?
-    private var interstitialHostingController: UIHostingController<AnyView>?
+    //
+    // Each hosting controller is specialized to its concrete root-view type
+    // (no AnyView): keeping the UIHostingController non-erased lets SwiftUI
+    // diff the root view tree instead of re-evaluating it through a type-erased
+    // boundary on every state change.
+    private var menuHostingController: UIHostingController<MiniGameMenuWrapper>?
+    private var interstitialHostingController: UIHostingController<MiniGameInterstitialWrapper>?
 
     // Invitation/Button use subview approach (needs touch passthrough)
-    private var buttonHostingController: UIHostingController<AnyView>?
-    private var invitationHostingController: UIHostingController<AnyView>?
+    private var buttonHostingController: UIHostingController<MiniGameButtonWrapper>?
+    private var invitationHostingController: UIHostingController<MiniGameInvitationWrapper>?
 
     private var provider: SimulaProvider?
     private var hasListeners = false
@@ -31,7 +36,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
     // present SKStoreProductViewController ourselves instead of letting the system
     // open the App Store externally. This is both a diagnostic and a fix.
 
-    static weak var activeHostingController: UIHostingController<AnyView>?
+    static weak var activeHostingController: UIViewController?
 
     private static let installInterceptor: Void = {
         let cls: AnyClass = UIApplication.self
@@ -138,7 +143,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
     // SFSafariVC from it — everything stays in the main window, so
     // SKStoreProductViewController's system-level window renders correctly.
 
-    private func addFullscreenOverlay(hostingVC: UIHostingController<AnyView>) -> Bool {
+    private func addFullscreenOverlay<Content: View>(hostingVC: UIHostingController<Content>) -> Bool {
         guard let topVC = currentTopPresentedViewController() else { return false }
 
         hostingVC.view.backgroundColor = .clear
@@ -155,7 +160,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
         return true
     }
 
-    private func removeFullscreenOverlay(_ hostingVC: inout UIHostingController<AnyView>?) {
+    private func removeFullscreenOverlay<Content: View>(_ hostingVC: inout UIHostingController<Content>?) {
         guard let vc = hostingVC else { return }
         // Stop scanning and clean up proxies
         stopWebViewScanning()
@@ -183,7 +188,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
     private var webViewScanTimer: Timer?
     private var installedProxies: [WKNavigationDelegateProxy] = []
 
-    private func startWebViewScanning(in hostingVC: UIHostingController<AnyView>) {
+    private func startWebViewScanning<Content: View>(in hostingVC: UIHostingController<Content>) {
         stopWebViewScanning()
         // Scan periodically — SwiftUI creates WKWebViews lazily as views appear
         webViewScanTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self, weak hostingVC] _ in
@@ -217,7 +222,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
 
     // MARK: - Subview overlay (invitation, button)
 
-    private func addSubviewOverlay(hostingVC: UIHostingController<AnyView>) -> Bool {
+    private func addSubviewOverlay<Content: View>(hostingVC: UIHostingController<Content>) -> Bool {
         guard let scene = currentWindowScene(),
               let rootVC = scene.windows.first(where: \.isKeyWindow)?.rootViewController else { return false }
 
@@ -243,7 +248,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
         return true
     }
 
-    private func removeSubviewOverlay(_ hostingVC: inout UIHostingController<AnyView>?) {
+    private func removeSubviewOverlay<Content: View>(_ hostingVC: inout UIHostingController<Content>?) {
         guard let vc = hostingVC else { return }
         vc.willMove(toParent: nil)
         if let container = vc.view.superview, container is PassthroughView {
@@ -315,7 +320,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
             }
         )
 
-        let hostingVC = UIHostingController(rootView: AnyView(menuView))
+        let hostingVC = UIHostingController(rootView: menuView)
         hostingVC.view.backgroundColor = .clear
 
         guard self.addFullscreenOverlay(hostingVC: hostingVC) else {
@@ -378,7 +383,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
             }
         )
 
-        let hostingVC = UIHostingController(rootView: AnyView(buttonView))
+        let hostingVC = UIHostingController(rootView: buttonView)
 
         guard self.addSubviewOverlay(hostingVC: hostingVC) else {
             reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
@@ -447,7 +452,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
             }
         )
 
-        let hostingVC = UIHostingController(rootView: AnyView(invitationView))
+        let hostingVC = UIHostingController(rootView: invitationView)
 
         guard self.addSubviewOverlay(hostingVC: hostingVC) else {
             reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
@@ -514,7 +519,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
             }
         )
 
-        let hostingVC = UIHostingController(rootView: AnyView(interstitialView))
+        let hostingVC = UIHostingController(rootView: interstitialView)
         hostingVC.view.backgroundColor = .clear
 
         guard self.addFullscreenOverlay(hostingVC: hostingVC) else {
