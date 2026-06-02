@@ -26,7 +26,14 @@ class SimulaMiniGameModule: RCTEventEmitter {
     private var buttonHostingController: UIHostingController<MiniGameButtonWrapper>?
     private var invitationHostingController: UIHostingController<MiniGameInvitationWrapper>?
 
-    private var provider: SimulaProvider?
+    // A single SimulaProvider is cached and reused across re-shows so the SDK's
+    // per-provider session cache actually applies — without this, a fresh
+    // provider every show forces a new createSession() round-trip on the ad
+    // path. Keyed by the full config; a config change replaces the previous one.
+    // The SDK is built around one shared provider, so every minigame surface
+    // (menu/button/invitation/interstitial) reuses it.
+    private var cachedProvider: SimulaProvider?
+    private var cachedProviderKey: String?
     private var hasListeners = false
 
     // MARK: - UIApplication.open() interceptor
@@ -258,6 +265,29 @@ class SimulaMiniGameModule: RCTEventEmitter {
         hostingVC = nil
     }
 
+    // MARK: - Provider reuse
+
+    /// Returns a SimulaProvider for the given config, reusing the cached instance
+    /// when the config is unchanged so its warm session survives across re-shows.
+    private func reusableProvider(apiKey: String,
+                                  devMode: Bool,
+                                  primaryUserID: String?,
+                                  hasPrivacyConsent: Bool) -> SimulaProvider {
+        let key = "\(apiKey)|\(devMode)|\(primaryUserID ?? "")|\(hasPrivacyConsent)"
+        if let cached = cachedProvider, cachedProviderKey == key {
+            return cached
+        }
+        let provider = SimulaProvider(
+            apiKey: apiKey,
+            devMode: devMode,
+            primaryUserID: primaryUserID,
+            hasPrivacyConsent: hasPrivacyConsent
+        )
+        cachedProvider = provider
+        cachedProviderKey = key
+        return provider
+    }
+
     // MARK: - MiniGameMenu
 
     @objc
@@ -285,15 +315,13 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let theme = convertTheme(props["theme"])
 
         self.removeFullscreenOverlay(&self.menuHostingController)
-        self.provider = nil
 
-        let provider = SimulaProvider(
+        let provider = self.reusableProvider(
             apiKey: apiKey,
             devMode: devMode,
             primaryUserID: primaryUserID,
             hasPrivacyConsent: hasPrivacyConsent
         )
-        self.provider = provider
 
         let menuView = MiniGameMenuWrapper(
             provider: provider,
@@ -313,7 +341,6 @@ class SimulaMiniGameModule: RCTEventEmitter {
                 // Tap catcher fired — ZStack is empty, safe to destroy
                 guard let self = self else { return }
                 self.removeFullscreenOverlay(&self.menuHostingController)
-                self.provider = nil
                 self.sendEvent(withName: "onMiniGameMenuClose", body: nil)
             }
         )
@@ -337,7 +364,6 @@ class SimulaMiniGameModule: RCTEventEmitter {
     @objc
     func hideMiniGameMenu() {
         self.removeFullscreenOverlay(&self.menuHostingController)
-        self.provider = nil
     }
 
     // MARK: - MiniGameButton (subview — needs touch passthrough)
@@ -362,7 +388,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
 
         self.removeSubviewOverlay(&self.buttonHostingController)
 
-        let provider = SimulaProvider(
+        let provider = self.reusableProvider(
             apiKey: apiKey,
             devMode: devMode,
             primaryUserID: primaryUserID,
@@ -422,7 +448,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
 
         self.removeSubviewOverlay(&self.invitationHostingController)
 
-        let provider = SimulaProvider(
+        let provider = self.reusableProvider(
             apiKey: apiKey,
             devMode: devMode,
             primaryUserID: primaryUserID,
@@ -492,7 +518,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
 
         self.removeFullscreenOverlay(&self.interstitialHostingController)
 
-        let provider = SimulaProvider(
+        let provider = self.reusableProvider(
             apiKey: apiKey,
             devMode: devMode,
             primaryUserID: primaryUserID,
@@ -540,6 +566,34 @@ class SimulaMiniGameModule: RCTEventEmitter {
     func hideMiniGameInterstitial() {
         self.removeFullscreenOverlay(&self.interstitialHostingController)
         UIApplication.shared.isStatusBarHidden = false
+    }
+
+    // MARK: - Preload
+
+    @objc
+    func preload(_ props: NSDictionary,
+                 resolve: @escaping RCTPromiseResolveBlock,
+                 reject: @escaping RCTPromiseRejectBlock) {
+        guard let apiKey = props["apiKey"] as? String else {
+            reject("INVALID_PROPS", "Missing required prop: apiKey", nil)
+            return
+        }
+        let devMode = props["devMode"] as? Bool ?? false
+        let primaryUserID = props["primaryUserID"] as? String
+        let hasPrivacyConsent = props["hasPrivacyConsent"] as? Bool ?? true
+
+        // Warm (and cache) the provider so the first real show reuses a live
+        // session instead of paying the createSession() round-trip on the ad path.
+        let provider = self.reusableProvider(
+            apiKey: apiKey,
+            devMode: devMode,
+            primaryUserID: primaryUserID,
+            hasPrivacyConsent: hasPrivacyConsent
+        )
+        Task {
+            await provider.createSession()
+            resolve(nil)
+        }
     }
 
     // MARK: - Type Conversion

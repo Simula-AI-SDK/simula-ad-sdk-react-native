@@ -7,6 +7,7 @@
  */
 
 export { SimulaProvider, useSimulaContext } from "./context/SimulaProvider";
+export { useMiniGamePreload } from "./hooks/useMiniGamePreload";
 export { MiniGameMenu } from "./components/miniGame/MiniGameMenu";
 export { MiniGameButton } from "./components/miniGame/MiniGameButton";
 export { MiniGameInvitation } from "./components/miniGame/MiniGameInvitation";

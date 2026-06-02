@@ -383,6 +383,22 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // Preload
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * Warms ad delivery ahead of the first show. The Android SDK has no public
+     * imperative session/asset warm-up API yet — session creation and WebView/
+     * image warming happen automatically when a surface first mounts — so this
+     * resolves as a no-op for cross-platform API parity. It becomes effective
+     * once the native SDK exposes a preload entry point.
+     */
+    @ReactMethod
+    fun preload(props: ReadableMap, promise: Promise) {
+        promise.resolve(null)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // Shared helpers
     // ═══════════════════════════════════════════════════════════════════
 
