@@ -14,7 +14,7 @@ Pod::Spec.new do |s|
   s.source_files = "ios/**/*.{h,m,swift}"
 
   s.dependency "React-Core"
-  s.dependency "SimulaAdSDK"
+  s.dependency "SimulaAdSDK", "~> 1.0.2"
 
   s.frameworks = "StoreKit", "SafariServices"
 end

@@ -6,14 +6,12 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { NativeModules, NativeEventEmitter } from 'react-native';
+import { NativeModules } from 'react-native';
 import { MiniGameButtonProps } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
+import { miniGameEmitter as emitter, warnIfDuplicateSurface } from '../../internal/emitter';
 
 const { SimulaMiniGameModule } = NativeModules;
-const emitter = SimulaMiniGameModule
-  ? new NativeEventEmitter(SimulaMiniGameModule)
-  : null;
 
 export const MiniGameButton: React.FC<MiniGameButtonProps> = ({
   text,
@@ -70,6 +68,9 @@ export const MiniGameButton: React.FC<MiniGameButtonProps> = ({
     });
     return () => subscription.remove();
   }, []);
+
+  // Dev-only guard: this surface is a singleton natively.
+  useEffect(() => warnIfDuplicateSurface('MiniGameButton'), []);
 
   // Native handles all rendering
   return null;

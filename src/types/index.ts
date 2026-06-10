@@ -3,6 +3,7 @@
  */
 
 import { ReactNode } from "react";
+import { SimulaPrivacyConfig } from "../privacy/types";
 
 /**
  * Message format for conversation context
@@ -22,6 +23,16 @@ export interface SimulaProviderProps {
   hasPrivacyConsent?: boolean;
   devMode?: boolean;
   primaryUserID?: string;
+  /** Granular privacy / consent configuration. Takes precedence over hasPrivacyConsent. */
+  privacy?: SimulaPrivacyConfig;
+  /** Opt out of in-house SDK telemetry. Default true. */
+  telemetryEnabled?: boolean;
+  /**
+   * Eagerly call `SimulaAds.initialize(...)` on mount to warm the native session
+   * off the first ad's critical path (and, on Android, enable telemetry). Default
+   * true. Set false if you call `SimulaAds.initialize` yourself.
+   */
+  initializeOnMount?: boolean;
 }
 
 /**

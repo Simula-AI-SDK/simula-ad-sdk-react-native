@@ -14,6 +14,7 @@ import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import ad.simula.ad.sdk.ads.SimulaAds
 import ad.simula.ad.sdk.minigame.MiniGameMenu
 import ad.simula.ad.sdk.minigame.MiniGameButton
 import ad.simula.ad.sdk.minigame.MiniGameInvitation
@@ -79,8 +80,15 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
             props.getBoolean("hasPrivacyConsent") else true
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
         val primaryUserID = props.getStringOrNull("primaryUserID")
-        val maxGamesToShow = if (props.hasKey("maxGamesToShow") && !props.isNull("maxGamesToShow"))
-            props.getInt("maxGamesToShow") else 6
+        // Coerce to one of the supported values (parity with iOS convertMaxGamesToShow).
+        val maxGamesToShow = when (
+            if (props.hasKey("maxGamesToShow") && !props.isNull("maxGamesToShow"))
+                props.getInt("maxGamesToShow") else 6
+        ) {
+            3 -> 3
+            9 -> 9
+            else -> 6
+        }
 
         val messages = if (props.hasKey("messages") && !props.isNull("messages"))
             convertMessages(props.getArray("messages")) else emptyList()
@@ -387,14 +395,30 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
     // ═══════════════════════════════════════════════════════════════════
 
     /**
-     * Warms ad delivery ahead of the first show. The Android SDK has no public
-     * imperative session/asset warm-up API yet — session creation and WebView/
-     * image warming happen automatically when a surface first mounts — so this
-     * resolves as a no-op for cross-platform API parity. It becomes effective
-     * once the native SDK exposes a preload entry point.
+     * Warms ad delivery ahead of the first show by initializing the imperative SDK
+     * (idempotent — the first valid call wins). This warms the shared server session
+     * off the critical path, attaches IAB consent auto-read, installs telemetry, and
+     * drains any pending reward verifications. Safe to call repeatedly.
      */
     @ReactMethod
     fun preload(props: ReadableMap, promise: Promise) {
+        val apiKey = props.getString("apiKey")
+        if (apiKey.isNullOrBlank()) {
+            promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
+            return
+        }
+        val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
+        val primaryUserID = props.getStringOrNull("primaryUserID")
+        val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
+            props.getBoolean("hasPrivacyConsent") else true
+
+        SimulaAds.initialize(
+            context = reactApplicationContext,
+            apiKey = apiKey,
+            devMode = devMode,
+            primaryUserID = primaryUserID,
+            hasPrivacyConsent = hasPrivacyConsent,
+        )
         promise.resolve(null)
     }
 

@@ -5,14 +5,13 @@
  * so the first MiniGame surface (menu / invitation / interstitial) reuses a live
  * session instead of paying the createSession() round-trip on the ad path.
  *
- * Call it early — e.g. on app start or a screen mount — inside a SimulaProvider:
+ * @deprecated `SimulaProvider` now warms the session on mount via
+ * `initializeOnMount` (default true). Prefer that, or call `SimulaAds.initialize`
+ * directly. This hook is retained for backward compatibility and now delegates to
+ * the same native initialize path on both platforms.
  *
  *   const preload = useMiniGamePreload();
  *   useEffect(() => { preload(); }, [preload]);
- *
- * iOS: warms and caches the SDK session (and is reused by every surface).
- * Android: currently a no-op (the native SDK warms automatically on first
- * mount); safe to call on both platforms.
  */
 import { useCallback } from 'react';
 import { NativeModules } from 'react-native';

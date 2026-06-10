@@ -269,11 +269,30 @@ class SimulaMiniGameModule: RCTEventEmitter {
 
     /// Returns a SimulaProvider for the given config, reusing the cached instance
     /// when the config is unchanged so its warm session survives across re-shows.
+    ///
+    /// Prefers the imperative SDK's shared provider (`SimulaAds.shared`) when its
+    /// config matches, so the imperative and declarative paths share one warm
+    /// session (mirrors the SDK's own `SimulaProviderView`). Falls back to a
+    /// locally-cached provider, then to a freshly created one.
     private func reusableProvider(apiKey: String,
                                   devMode: Bool,
                                   primaryUserID: String?,
                                   hasPrivacyConsent: Bool) -> SimulaProvider {
         let key = "\(apiKey)|\(devMode)|\(primaryUserID ?? "")|\(hasPrivacyConsent)"
+
+        // `SimulaAds` is @MainActor; we're on methodQueue = .main, so this read is
+        // safe. When the host called SimulaAds.initialize (e.g. via SimulaProvider's
+        // initializeOnMount or preload), reuse that already-warm session.
+        if let shared = MainActor.assumeIsolated({ SimulaAds.shared }),
+           shared.apiKey == apiKey,
+           shared.devMode == devMode,
+           (shared.primaryUserID ?? "") == (primaryUserID ?? ""),
+           shared.hasPrivacyConsent == hasPrivacyConsent {
+            cachedProvider = shared
+            cachedProviderKey = key
+            return shared
+        }
+
         if let cached = cachedProvider, cachedProviderKey == key {
             return cached
         }
@@ -581,6 +600,19 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let devMode = props["devMode"] as? Bool ?? false
         let primaryUserID = props["primaryUserID"] as? String
         let hasPrivacyConsent = props["hasPrivacyConsent"] as? Bool ?? true
+
+        // Initialize the imperative SDK (idempotent) so its shared session warms and
+        // is reused by every declarative surface via reusableProvider — unifying the
+        // imperative + declarative session. SimulaAds is @MainActor; methodQueue is
+        // .main, so this is safe.
+        MainActor.assumeIsolated {
+            SimulaAds.initialize(
+                apiKey: apiKey,
+                devMode: devMode,
+                primaryUserID: primaryUserID,
+                hasPrivacyConsent: hasPrivacyConsent
+            )
+        }
 
         // Warm (and cache) the provider so the first real show reuses a live
         // session instead of paying the createSession() round-trip on the ad path.

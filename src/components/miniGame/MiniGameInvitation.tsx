@@ -7,14 +7,12 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { NativeModules, NativeEventEmitter } from 'react-native';
+import { NativeModules } from 'react-native';
 import { MiniGameInvitationProps } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
+import { miniGameEmitter as emitter, warnIfDuplicateSurface } from '../../internal/emitter';
 
 const { SimulaMiniGameModule } = NativeModules;
-const emitter = SimulaMiniGameModule
-  ? new NativeEventEmitter(SimulaMiniGameModule)
-  : null;
 
 export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
   titleText,
@@ -100,6 +98,9 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
       }
     };
   }, []);
+
+  // Dev-only guard: this surface is a singleton natively.
+  useEffect(() => warnIfDuplicateSurface('MiniGameInvitation'), []);
 
   // Native handles all rendering
   return null;

@@ -66,7 +66,7 @@ dependencies {
     implementation 'com.facebook.react:react-android:+'
 
     // Simula Ad SDK (native Kotlin SDK from Maven Central)
-    implementation 'ad.simula:ad-sdk:+'
+    implementation 'ad.simula:ad-sdk:1.0.3'
 
     // Jetpack Compose (needed to host MiniGameMenu composable)
     implementation platform('androidx.compose:compose-bom:2024.02.00')
