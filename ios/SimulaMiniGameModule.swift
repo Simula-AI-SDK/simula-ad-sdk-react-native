@@ -96,6 +96,21 @@ class SimulaMiniGameModule: RCTEventEmitter {
         hasListeners = false
     }
 
+    // Bridge teardown (dev reload / app shutdown) can land while an overlay is
+    // still up. Without this, the repeating `webViewScanTimer` is retained by the
+    // run loop and keeps firing every second forever, the presented overlay VCs
+    // and the cached provider/session leak, and a hidden status bar stays hidden.
+    // Mirrors `SimulaAdsModule.invalidate()`: tear everything down on the main
+    // thread. (UI teardown — Timer.invalidate, view removal — must run on main.)
+    override func invalidate() {
+        super.invalidate()
+        if Thread.isMainThread {
+            teardownAllOverlays()
+        } else {
+            DispatchQueue.main.async { [self] in teardownAllOverlays() }
+        }
+    }
+
     override func supportedEvents() -> [String]! {
         return [
             "onMiniGameMenuClose",
@@ -263,6 +278,22 @@ class SimulaMiniGameModule: RCTEventEmitter {
         }
         vc.removeFromParent()
         hostingVC = nil
+    }
+
+    /// Tears down every overlay, the scan timer, the cached provider, and any
+    /// shared link-handling / status-bar state. Main thread only (called from
+    /// `invalidate()` and any future host-teardown hook).
+    private func teardownAllOverlays() {
+        stopWebViewScanning()
+        WKNavigationDelegateProxy.resetLinkHandlingState()
+        SimulaMiniGameModule.activeHostingController = nil
+        removeFullscreenOverlay(&menuHostingController)
+        removeFullscreenOverlay(&interstitialHostingController)
+        removeSubviewOverlay(&buttonHostingController)
+        removeSubviewOverlay(&invitationHostingController)
+        UIApplication.shared.isStatusBarHidden = false
+        cachedProvider = nil
+        cachedProviderKey = nil
     }
 
     // MARK: - Provider reuse

@@ -574,8 +574,17 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
     override fun onHostDestroy() {
         // Delivered on the main thread. Detach and dispose every overlay so we
         // never leak the destroyed Activity's context through a retained
-        // ComposeView. removeComposeView detaches via each view's own parent,
-        // so this works even though currentActivity may already be null.
+        // ComposeView.
+        detachAllOverlays()
+    }
+
+    /**
+     * Detaches and disposes every overlay and clears its open-state. Main thread
+     * only (snapshot-state writes + view removal). `removeComposeView` detaches via
+     * each view's own parent, so this works even when `currentActivity` is null.
+     * Idempotent — safe to run from both onHostDestroy and invalidate.
+     */
+    private fun detachAllOverlays() {
         isMenuOpen = false
         isInvitationOpen = false
         isInterstitialOpen = false
@@ -587,6 +596,17 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         buttonComposeView = null
         invitationComposeView = null
         interstitialComposeView = null
+    }
+
+    override fun invalidate() {
+        // A JS-only reload destroys the React instance WITHOUT destroying the
+        // Activity, so onHostDestroy never fires — the old ComposeViews would stay
+        // attached to android.R.id.content with their compositions undisposed,
+        // leaking across every reload. Detach on the main thread, and stop leaking
+        // this module through the reactContext's lifecycle-listener list.
+        reactApplicationContext.removeLifecycleEventListener(this)
+        android.os.Handler(android.os.Looper.getMainLooper()).post { detachAllOverlays() }
+        super.invalidate()
     }
 
     // ── NativeEventEmitter required methods ─────────────────────────────

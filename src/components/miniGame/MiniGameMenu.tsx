@@ -48,6 +48,8 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
         maxGamesToShow: maxGamesToShow ?? null,
         theme,
         delegateChar,
+      }).catch((error: any) => {
+        console.error('[SimulaMiniGame] showMiniGameMenu failed:', error?.message || error);
       });
     } else if (!isOpen && wasOpenRef.current) {
       SimulaMiniGameModule.hideMiniGameMenu();
