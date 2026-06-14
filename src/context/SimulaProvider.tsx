@@ -31,6 +31,7 @@ export function SimulaProvider({
   primaryUserID,
   privacy,
   telemetryEnabled = true,
+  adContext,
   initializeOnMount = true,
 }: SimulaProviderProps): React.JSX.Element {
   const contextValue = useMemo<SimulaContextValue>(
@@ -41,6 +42,11 @@ export function SimulaProvider({
   // Stable identity for the (otherwise inline) privacy object so the effects below
   // re-run only on a real consent change, not on every render.
   const privacyKey = useMemo(() => JSON.stringify(privacy ?? null), [privacy]);
+  // Same, for the ad-targeting context.
+  const adContextKey = useMemo(
+    () => JSON.stringify(adContext ?? null),
+    [adContext],
+  );
 
   // Eager init: warms the native session off the first ad's critical path, and on
   // Android is the only path that enables telemetry. Native init is idempotent
@@ -54,10 +60,11 @@ export function SimulaProvider({
       hasPrivacyConsent,
       privacy,
       telemetryEnabled,
+      adContext,
     }).catch((error: unknown) => {
       console.error("[Simula] initialize failed:", error);
     });
-    // privacyKey stands in for the (deep) privacy object.
+    // privacyKey / adContextKey stand in for the (deep) privacy / adContext objects.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     initializeOnMount,
@@ -67,6 +74,7 @@ export function SimulaProvider({
     hasPrivacyConsent,
     telemetryEnabled,
     privacyKey,
+    adContextKey,
   ]);
 
   // Runtime consent changes after mount → push to the native store (which debounces
@@ -81,6 +89,19 @@ export function SimulaProvider({
     SimulaPrivacy.update({ hasPrivacyConsent, ...(privacy ?? {}) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasPrivacyConsent, privacyKey]);
+
+  // Runtime ad-context changes after mount → replace the native targeting context.
+  // Skipped on the first run since initialize already applied the initial value.
+  const didMountContext = useRef(false);
+  useEffect(() => {
+    if (!didMountContext.current) {
+      didMountContext.current = true;
+      return;
+    }
+    SimulaAds.updateContext(adContext ?? null);
+    // adContextKey stands in for the (deep) adContext object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adContextKey]);
 
   return (
     <SimulaContext.Provider value={contextValue}>

@@ -26,6 +26,10 @@ class SimulaMiniGameModule: RCTEventEmitter {
     private var buttonHostingController: UIHostingController<MiniGameButtonWrapper>?
     private var invitationHostingController: UIHostingController<MiniGameInvitationWrapper>?
 
+    // Character selector — a full-screen modal like the menu, but with no game
+    // WebView, so it's presented plainly (no WebView-scan timer / link interceptor).
+    private var characterSelectorHostingController: UIHostingController<CharacterSelectorWrapper>?
+
     // A single SimulaProvider is cached and reused across re-shows so the SDK's
     // per-provider session cache actually applies — without this, a fresh
     // provider every show forces a new createSession() round-trip on the ad
@@ -119,6 +123,9 @@ class SimulaMiniGameModule: RCTEventEmitter {
             "onMiniGameInvitationClose",
             "onMiniGameInterstitialClick",
             "onMiniGameInterstitialClose",
+            "onCharacterSelectorSelect",
+            "onCharacterSelectorPreview",
+            "onCharacterSelectorClose",
         ]
     }
 
@@ -291,6 +298,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
         removeFullscreenOverlay(&interstitialHostingController)
         removeSubviewOverlay(&buttonHostingController)
         removeSubviewOverlay(&invitationHostingController)
+        removeCharacterSelectorOverlay()
         UIApplication.shared.isStatusBarHidden = false
         cachedProvider = nil
         cachedProviderKey = nil
@@ -659,6 +667,123 @@ class SimulaMiniGameModule: RCTEventEmitter {
         }
     }
 
+    // MARK: - CharacterSelector
+
+    @objc
+    func showCharacterSelector(_ props: NSDictionary,
+                               resolve: @escaping RCTPromiseResolveBlock,
+                               reject: @escaping RCTPromiseRejectBlock) {
+        guard let apiKey = props["apiKey"] as? String else {
+            reject("INVALID_PROPS", "Missing required prop: apiKey", nil)
+            return
+        }
+
+        let hasPrivacyConsent = props["hasPrivacyConsent"] as? Bool ?? true
+        let devMode = props["devMode"] as? Bool ?? false
+        let primaryUserID = props["primaryUserID"] as? String
+        let title = props["title"] as? String ?? "Select Your Game Partner"
+        let ctaText = props["ctaText"] as? String ?? "🚀 Launch Game"
+        let characters = convertCharacters(props["characters"])
+        let theme = convertCharacterSelectorTheme(props["theme"])
+
+        self.removeCharacterSelectorOverlay()
+
+        let provider = self.reusableProvider(
+            apiKey: apiKey,
+            devMode: devMode,
+            primaryUserID: primaryUserID,
+            hasPrivacyConsent: hasPrivacyConsent
+        )
+
+        let view = CharacterSelectorWrapper(
+            provider: provider,
+            title: title,
+            ctaText: ctaText,
+            characters: characters,
+            theme: theme,
+            onSelected: { [weak self] character in
+                guard let self = self else { return }
+                self.removeCharacterSelectorOverlay()
+                self.sendEvent(withName: "onCharacterSelectorSelect",
+                               body: SimulaMiniGameModule.characterBody(character))
+            },
+            onPreview: { [weak self] character in
+                self?.sendEvent(withName: "onCharacterSelectorPreview",
+                                body: SimulaMiniGameModule.characterBody(character))
+            },
+            onClose: { [weak self] in
+                guard let self = self else { return }
+                self.removeCharacterSelectorOverlay()
+                self.sendEvent(withName: "onCharacterSelectorClose", body: nil)
+            }
+        )
+
+        let hostingVC = UIHostingController(rootView: view)
+        hostingVC.view.backgroundColor = .clear
+        hostingVC.modalPresentationStyle = .overFullScreen
+        hostingVC.modalTransitionStyle = .crossDissolve
+
+        guard let topVC = currentTopPresentedViewController() else {
+            reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
+            return
+        }
+        topVC.present(hostingVC, animated: false)
+        self.characterSelectorHostingController = hostingVC
+
+        Task {
+            await provider.createSession()
+        }
+
+        resolve(nil)
+    }
+
+    @objc
+    func hideCharacterSelector() {
+        self.removeCharacterSelectorOverlay()
+    }
+
+    private func removeCharacterSelectorOverlay() {
+        guard let vc = characterSelectorHostingController else { return }
+        vc.presentingViewController?.dismiss(animated: false)
+        characterSelectorHostingController = nil
+    }
+
+    private static func characterBody(_ character: CharacterData) -> [String: Any] {
+        [
+            "id": character.id,
+            "name": character.name,
+            "imageUrl": character.imageUrl,
+            "description": character.description,
+        ]
+    }
+
+    private func convertCharacters(_ raw: Any?) -> [CharacterData]? {
+        guard let array = raw as? [[String: Any]] else { return nil }
+        let characters = array.compactMap { dict -> CharacterData? in
+            guard let id = dict["id"] as? String,
+                  let name = dict["name"] as? String,
+                  let imageUrl = dict["imageUrl"] as? String,
+                  let description = dict["description"] as? String else { return nil }
+            return CharacterData(id: id, name: name, imageUrl: imageUrl, description: description)
+        }
+        return characters.isEmpty ? nil : characters
+    }
+
+    private func convertCharacterSelectorTheme(_ raw: Any?) -> CharacterSelectorTheme {
+        guard let dict = raw as? [String: Any] else { return CharacterSelectorTheme() }
+        var theme = CharacterSelectorTheme()
+        theme.backgroundColor = dict["backgroundColor"] as? String
+        theme.titleFontColor = dict["titleFontColor"] as? String
+        theme.secondaryFontColor = dict["secondaryFontColor"] as? String
+        theme.accentColor = dict["accentColor"] as? String
+        theme.ctaFontColor = dict["ctaFontColor"] as? String
+        theme.cardBackgroundColor = dict["cardBackgroundColor"] as? String
+        theme.cardBorderColor = dict["cardBorderColor"] as? String
+        theme.cardCornerRadius = dict["cardCornerRadius"] as? CGFloat
+        theme.fontFamily = dict["fontFamily"] as? String
+        return theme
+    }
+
     // MARK: - Type Conversion
 
     private func convertMessages(_ raw: Any?) -> [SimulaAdSDK.Message] {
@@ -915,6 +1040,41 @@ private struct MiniGameInterstitialWrapper: View {
                 isOpen = false
                 onClose()
             }
+        )
+        .environmentObject(provider)
+    }
+}
+
+private struct CharacterSelectorWrapper: View {
+    @StateObject var provider: SimulaProvider
+    let title: String
+    let ctaText: String
+    let characters: [CharacterData]?
+    let theme: CharacterSelectorTheme
+    let onSelected: (CharacterData) -> Void
+    let onPreview: (CharacterData) -> Void
+    let onClose: () -> Void
+
+    @State private var isOpen = true
+
+    var body: some View {
+        CharacterSelector(
+            isOpen: isOpen,
+            onClose: {
+                isOpen = false
+                onClose()
+            },
+            onCharacterSelected: { character in
+                isOpen = false
+                onSelected(character)
+            },
+            onCharacterPreview: { character in
+                onPreview(character)
+            },
+            title: title,
+            ctaText: ctaText,
+            characters: characters,
+            theme: theme
         )
         .environmentObject(provider)
     }

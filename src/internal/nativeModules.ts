@@ -29,6 +29,17 @@ export interface NativeSimulaAdsModule {
   // ── Lifecycle ──────────────────────────────────────────────────────────
   initialize(config: Record<string, unknown>): Promise<void>;
   isInitialized(): Promise<boolean>;
+  updateContext(context: Record<string, unknown>): void;
+
+  // ── Native ad (imperative) ─────────────────────────────────────────────
+  preloadNativeAd(
+    adUnitId: string | null,
+    position: number,
+    theme: string | null,
+  ): Promise<string | null>;
+  destroyPreloadedAd(preloadedAdId: string): void;
+  invalidateNativeAd(adUnitId: string | null, position: number): void;
+  invalidateNativeAds(): void;
 
   // ── Imperative ads (instanceId-routed) ─────────────────────────────────
   createInterstitial(instanceId: string, adUnitId: string): void;

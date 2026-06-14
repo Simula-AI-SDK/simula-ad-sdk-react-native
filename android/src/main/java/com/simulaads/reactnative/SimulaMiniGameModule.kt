@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
+import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -15,10 +16,13 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import ad.simula.ad.sdk.ads.SimulaAds
+import ad.simula.ad.sdk.character.CharacterSelector
 import ad.simula.ad.sdk.minigame.MiniGameMenu
 import ad.simula.ad.sdk.minigame.MiniGameButton
 import ad.simula.ad.sdk.minigame.MiniGameInvitation
 import ad.simula.ad.sdk.minigame.MiniGameInterstitial
+import ad.simula.ad.sdk.model.CharacterData
+import ad.simula.ad.sdk.model.CharacterSelectorTheme
 import ad.simula.ad.sdk.model.Message
 import ad.simula.ad.sdk.model.MiniGameTheme
 import ad.simula.ad.sdk.model.MiniGameButtonTheme
@@ -53,6 +57,9 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
     // ── Interstitial state ──────────────────────────────────────────────
     private var interstitialComposeView: ComposeView? = null
     private var isInterstitialOpen by mutableStateOf(false)
+
+    private var characterSelectorComposeView: ComposeView? = null
+    private var isCharacterSelectorOpen by mutableStateOf(false)
 
     // ═══════════════════════════════════════════════════════════════════
     // MiniGameMenu
@@ -426,6 +433,93 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
     // Shared helpers
     // ═══════════════════════════════════════════════════════════════════
 
+    // ═══════════════════════════════════════════════════════════════════
+    // CharacterSelector
+    // ═══════════════════════════════════════════════════════════════════
+
+    @ReactMethod
+    fun showCharacterSelector(props: ReadableMap, promise: Promise) {
+        val activity = reactApplicationContext.currentActivity
+        if (activity == null) {
+            promise.reject("NO_ACTIVITY", "No current activity")
+            return
+        }
+        val apiKey = props.getString("apiKey")
+        if (apiKey == null) {
+            promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
+            return
+        }
+        val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
+            props.getBoolean("hasPrivacyConsent") else true
+        val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
+        val primaryUserID = props.getStringOrNull("primaryUserID")
+        val title = props.getStringOrNull("title") ?: "Select Your Game Partner"
+        val ctaText = props.getStringOrNull("ctaText") ?: "🚀 Launch Game"
+        val characters = convertCharacters(
+            if (props.hasKey("characters") && !props.isNull("characters"))
+                props.getArray("characters") else null,
+        )
+        val theme = if (props.hasKey("theme") && !props.isNull("theme"))
+            convertCharacterSelectorTheme(props.getMap("theme")) else CharacterSelectorTheme()
+
+        activity.runOnUiThread {
+            removeComposeView(characterSelectorComposeView)
+            isCharacterSelectorOpen = true
+
+            val view = ComposeView(activity).apply {
+                setContent {
+                    SimulaProvider(
+                        apiKey = apiKey,
+                        hasPrivacyConsent = hasPrivacyConsent,
+                        devMode = devMode,
+                        primaryUserID = primaryUserID,
+                    ) {
+                        CharacterSelector(
+                            isOpen = isCharacterSelectorOpen,
+                            onClose = {
+                                isCharacterSelectorOpen = false
+                                activity.runOnUiThread {
+                                    removeComposeView(characterSelectorComposeView)
+                                    characterSelectorComposeView = null
+                                }
+                                sendEvent("onCharacterSelectorClose", null)
+                            },
+                            onCharacterSelected = { character ->
+                                // Selection closes the selector.
+                                isCharacterSelectorOpen = false
+                                activity.runOnUiThread {
+                                    removeComposeView(characterSelectorComposeView)
+                                    characterSelectorComposeView = null
+                                }
+                                sendEvent("onCharacterSelectorSelect", characterToMap(character))
+                            },
+                            onCharacterPreview = { character ->
+                                sendEvent("onCharacterSelectorPreview", characterToMap(character))
+                            },
+                            title = title,
+                            ctaText = ctaText,
+                            characters = characters,
+                            theme = theme,
+                        )
+                    }
+                }
+            }
+
+            characterSelectorComposeView = view
+            addOverlay(activity, view)
+            promise.resolve(null)
+        }
+    }
+
+    @ReactMethod
+    fun hideCharacterSelector() {
+        reactApplicationContext.currentActivity?.runOnUiThread {
+            isCharacterSelectorOpen = false
+            removeComposeView(characterSelectorComposeView)
+            characterSelectorComposeView = null
+        }
+    }
+
     private fun addOverlay(activity: android.app.Activity, view: ComposeView) {
         val rootView = activity.findViewById<ViewGroup>(android.R.id.content)
         rootView.addView(
@@ -456,6 +550,46 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
     }
 
     // ── Message conversion ──────────────────────────────────────────────
+
+    private fun convertCharacters(array: ReadableArray?): List<CharacterData>? {
+        if (array == null) return null
+        val characters = mutableListOf<CharacterData>()
+        for (i in 0 until array.size()) {
+            val map = array.getMap(i) ?: continue
+            val id = map.getString("id") ?: continue
+            val name = map.getString("name") ?: continue
+            val imageUrl = map.getString("imageUrl") ?: continue
+            val description = map.getString("description") ?: continue
+            characters.add(
+                CharacterData(id = id, name = name, imageUrl = imageUrl, description = description),
+            )
+        }
+        return characters.ifEmpty { null }
+    }
+
+    private fun convertCharacterSelectorTheme(map: ReadableMap?): CharacterSelectorTheme {
+        if (map == null) return CharacterSelectorTheme()
+        return CharacterSelectorTheme(
+            backgroundColor = map.getStringOrNull("backgroundColor"),
+            titleFontColor = map.getStringOrNull("titleFontColor"),
+            secondaryFontColor = map.getStringOrNull("secondaryFontColor"),
+            accentColor = map.getStringOrNull("accentColor"),
+            ctaFontColor = map.getStringOrNull("ctaFontColor"),
+            cardBackgroundColor = map.getStringOrNull("cardBackgroundColor"),
+            cardBorderColor = map.getStringOrNull("cardBorderColor"),
+            cardCornerRadius = if (map.hasKey("cardCornerRadius") && !map.isNull("cardCornerRadius"))
+                map.getInt("cardCornerRadius") else null,
+            fontFamily = map.getStringOrNull("fontFamily"),
+        )
+    }
+
+    private fun characterToMap(character: CharacterData) =
+        Arguments.createMap().apply {
+            putString("id", character.id)
+            putString("name", character.name)
+            putString("imageUrl", character.imageUrl)
+            putString("description", character.description)
+        }
 
     private fun convertMessages(array: ReadableArray?): List<Message> {
         if (array == null) return emptyList()
@@ -588,14 +722,17 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         isMenuOpen = false
         isInvitationOpen = false
         isInterstitialOpen = false
+        isCharacterSelectorOpen = false
         removeComposeView(menuComposeView)
         removeComposeView(buttonComposeView)
         removeComposeView(invitationComposeView)
         removeComposeView(interstitialComposeView)
+        removeComposeView(characterSelectorComposeView)
         menuComposeView = null
         buttonComposeView = null
         invitationComposeView = null
         interstitialComposeView = null
+        characterSelectorComposeView = null
     }
 
     override fun invalidate() {

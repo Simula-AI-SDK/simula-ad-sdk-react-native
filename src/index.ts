@@ -13,11 +13,15 @@ export { MiniGameMenu } from "./components/miniGame/MiniGameMenu";
 export { MiniGameButton } from "./components/miniGame/MiniGameButton";
 export { MiniGameInvitation } from "./components/miniGame/MiniGameInvitation";
 export { MiniGameInterstitial } from "./components/miniGame/MiniGameInterstitial";
+export { CharacterSelector } from "./components/CharacterSelector";
 
 // ── Imperative ad API ───────────────────────────────────────────────────────
 export { SimulaAds } from "./ads/SimulaAds";
 export { SimulaInterstitialAd } from "./ads/SimulaInterstitialAd";
 export { SimulaRewardedAd } from "./ads/SimulaRewardedAd";
+
+// ── Native ad (inline feed card) ──────────────────────────────────────────────
+export { NativeAd } from "./nativeAd/NativeAd";
 export {
   SimulaAdEventType,
   SimulaRewardedAdEventType,
@@ -42,9 +46,18 @@ export type {
   MiniGameInvitationProps,
   MiniGameInterstitialTheme,
   MiniGameInterstitialProps,
+  CharacterData,
+  CharacterSelectorTheme,
+  CharacterSelectorProps,
 } from "./types";
 
 export type { SimulaInitConfig } from "./ads/SimulaAds";
+export type { SimulaAdContext } from "./ads/context";
+export type {
+  NativeAdProps,
+  NativeAdData,
+  SimulaNativeAdTheme,
+} from "./nativeAd/types";
 export type { SimulaRewardedAdOptions } from "./ads/SimulaRewardedAd";
 export type {
   SimulaAdType,

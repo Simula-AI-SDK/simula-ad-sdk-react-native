@@ -42,6 +42,11 @@ function makeAdsModule() {
   return {
     initialize: jest.fn().mockResolvedValue(undefined),
     isInitialized: jest.fn().mockResolvedValue(true),
+    updateContext: jest.fn(),
+    preloadNativeAd: jest.fn().mockResolvedValue("preloaded_1"),
+    destroyPreloadedAd: jest.fn(),
+    invalidateNativeAd: jest.fn(),
+    invalidateNativeAds: jest.fn(),
     createInterstitial: jest.fn(),
     createRewarded: jest.fn(),
     loadAd: jest.fn(),

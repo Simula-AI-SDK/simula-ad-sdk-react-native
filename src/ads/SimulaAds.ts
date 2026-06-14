@@ -12,6 +12,8 @@ import {
   warnAdsUnavailable,
 } from "../internal/nativeModules";
 import { SimulaPrivacyConfig } from "../privacy/types";
+import { SimulaAdContext, toNativeAdContext } from "./context";
+import type { SimulaNativeAdTheme } from "../nativeAd/types";
 
 export interface SimulaInitConfig {
   apiKey: string;
@@ -25,6 +27,8 @@ export interface SimulaInitConfig {
   privacy?: SimulaPrivacyConfig;
   /** Opt out of in-house SDK telemetry. Default true. */
   telemetryEnabled?: boolean;
+  /** Native-ad targeting context auto-attached to every native-ad request. */
+  adContext?: SimulaAdContext;
 }
 
 /** Marshals an init config into the flat shape the native modules expect. */
@@ -36,6 +40,7 @@ function toNativeConfig(config: SimulaInitConfig): Record<string, unknown> {
     hasPrivacyConsent: config.hasPrivacyConsent ?? true,
     telemetryEnabled: config.telemetryEnabled ?? true,
     privacy: config.privacy ? toNativePrivacy(config.privacy) : null,
+    adContext: config.adContext ? toNativeAdContext(config.adContext) : null,
   };
 }
 
@@ -67,5 +72,60 @@ export const SimulaAds = {
   async isInitialized(): Promise<boolean> {
     if (!isAdsModuleAvailable()) return false;
     return NativeAds!.isInitialized();
+  },
+
+  /**
+   * Replace the native-ad targeting context at runtime (e.g. when the feed
+   * category changes). A full replacement, not a merge. Pass `null`/`undefined`
+   * (or omit) to clear it. No-op before `initialize`.
+   */
+  updateContext(context?: SimulaAdContext | null): void {
+    if (!isAdsModuleAvailable()) return warnAdsUnavailable("updateContext");
+    NativeAds!.updateContext(context ? toNativeAdContext(context) : {});
+  },
+
+  /**
+   * Imperatively preload one native ad before its slot scrolls into view. Fires a
+   * single native-ad request using the current targeting context, caches it, and
+   * resolves a `preloadedAdId` to pass to a `<NativeAd preloadedAdId={...}>` (which
+   * then renders from cache with no live request). Resolves `null` before
+   * `initialize` or when the cache cap (5) is reached.
+   */
+  async preloadNativeAd(options?: {
+    adUnitId?: string;
+    position?: number;
+    theme?: SimulaNativeAdTheme;
+  }): Promise<string | null> {
+    if (!isAdsModuleAvailable()) {
+      warnAdsUnavailable("preloadNativeAd");
+      return null;
+    }
+    return NativeAds!.preloadNativeAd(
+      options?.adUnitId ?? null,
+      options?.position ?? 0,
+      options?.theme ?? null,
+    );
+  },
+
+  /** Release a preloaded native ad that was never consumed (cancels an in-flight request). */
+  destroyPreloadedAd(preloadedAdId: string): void {
+    if (!isAdsModuleAvailable()) return warnAdsUnavailable("destroyPreloadedAd");
+    NativeAds!.destroyPreloadedAd(preloadedAdId);
+  },
+
+  /**
+   * Drop the cached ad for a native slot so its next appearance fetches a fresh one.
+   * A `<NativeAd>` caches its resolved ad per `(adUnitId, position)`, so scrolling it
+   * out and back reuses the same serve; call this to force a refresh for that slot.
+   */
+  invalidateNativeAd(options?: { adUnitId?: string; position?: number }): void {
+    if (!isAdsModuleAvailable()) return warnAdsUnavailable("invalidateNativeAd");
+    NativeAds!.invalidateNativeAd(options?.adUnitId ?? null, options?.position ?? 0);
+  },
+
+  /** Clear every cached native ad (all slots). */
+  invalidateNativeAds(): void {
+    if (!isAdsModuleAvailable()) return warnAdsUnavailable("invalidateNativeAds");
+    NativeAds!.invalidateNativeAds();
   },
 };

@@ -22,5 +22,9 @@ RCT_EXTERN_METHOD(hideMiniGameInterstitial)
 RCT_EXTERN_METHOD(preload:(NSDictionary *)props
                   resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(showCharacterSelector:(NSDictionary *)props
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(hideCharacterSelector)
 
 @end

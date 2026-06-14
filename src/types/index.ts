@@ -4,6 +4,7 @@
 
 import { ReactNode } from "react";
 import { SimulaPrivacyConfig } from "../privacy/types";
+import { SimulaAdContext } from "../ads/context";
 
 /**
  * Message format for conversation context
@@ -27,6 +28,11 @@ export interface SimulaProviderProps {
   privacy?: SimulaPrivacyConfig;
   /** Opt out of in-house SDK telemetry. Default true. */
   telemetryEnabled?: boolean;
+  /**
+   * Native-ad targeting context auto-attached to every native-ad request. Applied
+   * at init and pushed to native on change (a full replacement, not a merge).
+   */
+  adContext?: SimulaAdContext;
   /**
    * Eagerly call `SimulaAds.initialize(...)` on mount to warm the native session
    * off the first ad's critical path (and, on Android, enable telemetry). Default
@@ -197,4 +203,47 @@ export interface MiniGameInterstitialProps {
   isOpen: boolean;
   onClick: () => void;
   onClose?: () => void;
+}
+
+// ── CharacterSelector Types ─────────────────────────────────────────────────
+
+/** A character the host offers (the backend backfills the grid + adds fallbacks). */
+export interface CharacterData {
+  id: string;
+  name: string;
+  /** 1:1 portrait URL. */
+  imageUrl: string;
+  description: string;
+}
+
+/** Theme options for the full-screen character selector. */
+export interface CharacterSelectorTheme {
+  backgroundColor?: string;
+  titleFontColor?: string;
+  /** Character-name color. */
+  secondaryFontColor?: string;
+  /** Selected-card border + active CTA color. */
+  accentColor?: string;
+  ctaFontColor?: string;
+  cardBackgroundColor?: string;
+  cardBorderColor?: string;
+  cardCornerRadius?: number;
+  fontFamily?: string;
+}
+
+export interface CharacterSelectorProps {
+  isOpen: boolean;
+  /** Dismissed without confirming a character. Set `isOpen` to false here. */
+  onClose: () => void;
+  /** The user confirmed a character (tapped the CTA). The selector then closes. */
+  onCharacterSelected: (character: CharacterData) => void;
+  /** A card was tapped (before the CTA confirms). The selector stays open. */
+  onCharacterPreview?: (character: CharacterData) => void;
+  /** Default: "Select Your Game Partner". */
+  title?: string;
+  /** Default: "🚀 Launch Game". */
+  ctaText?: string;
+  /** Host roster; the backend backfills the gap and adds bundled fallbacks. */
+  characters?: CharacterData[];
+  theme?: CharacterSelectorTheme;
 }

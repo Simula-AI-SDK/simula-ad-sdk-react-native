@@ -14,6 +14,7 @@ import ad.simula.ad.sdk.ads.SimulaInterstitialAd
 import ad.simula.ad.sdk.ads.SimulaInterstitialAdListener
 import ad.simula.ad.sdk.ads.SimulaRewardedAd
 import ad.simula.ad.sdk.ads.SimulaRewardedAdListener
+import ad.simula.ad.sdk.model.SimulaAdContext
 import ad.simula.ad.sdk.privacy.SimulaPrivacy
 import ad.simula.ad.sdk.privacy.SimulaPrivacyConfig
 import java.util.concurrent.ConcurrentHashMap
@@ -62,6 +63,8 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
         val telemetryEnabled = config.getBooleanOrNull("telemetryEnabled") ?: true
         val privacy = if (config.hasKey("privacy") && !config.isNull("privacy"))
             convertPrivacyConfig(config.getMap("privacy")) else null
+        val adContext = if (config.hasKey("adContext") && !config.isNull("adContext"))
+            convertAdContext(config.getMap("adContext")) else null
 
         // Idempotent natively (first valid call wins); any-context is fine (the SDK
         // retains the application context).
@@ -73,6 +76,7 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
             hasPrivacyConsent = hasPrivacyConsent,
             privacy = privacy,
             telemetryEnabled = telemetryEnabled,
+            adContext = adContext,
         )
         promise.resolve(null)
     }
@@ -80,6 +84,37 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun isInitialized(promise: Promise) {
         promise.resolve(SimulaAds.isInitialized)
+    }
+
+    /**
+     * Replace the native-ad targeting context at runtime. An empty map (the JS
+     * "clear" signal) maps to null — a full replacement, not a merge.
+     */
+    @ReactMethod
+    fun updateContext(context: ReadableMap) {
+        SimulaAds.updateContext(convertAdContext(context))
+    }
+
+    // ── Native ad (imperative) ────────────────────────────────────────────────
+
+    @ReactMethod
+    fun preloadNativeAd(adUnitId: String?, position: Int, theme: String?, promise: Promise) {
+        promise.resolve(SimulaAds.preloadNativeAd(adUnitId, position, theme))
+    }
+
+    @ReactMethod
+    fun destroyPreloadedAd(preloadedAdId: String) {
+        SimulaAds.destroyPreloadedAd(preloadedAdId)
+    }
+
+    @ReactMethod
+    fun invalidateNativeAd(adUnitId: String?, position: Int) {
+        SimulaAds.invalidateNativeAd(adUnitId, position)
+    }
+
+    @ReactMethod
+    fun invalidateNativeAds() {
+        SimulaAds.invalidateNativeAds()
     }
 
     // ── Create / destroy ──────────────────────────────────────────────────────
@@ -317,6 +352,32 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
             tcfPurpose1Consent = map.getBooleanOrNull("tcfPurpose1Consent"),
             coppaApplies = map.getBooleanOrNull("coppaApplies") ?: false,
             enableAdvertisingId = map.getBooleanOrNull("enableAdvertisingId") ?: false,
+        )
+    }
+
+    // ── Ad-context conversion ─────────────────────────────────────────────────
+
+    /**
+     * Builds a [SimulaAdContext] from a JS map. A null/empty map → null (no
+     * targeting / clear). `customContext` is converted recursively via
+     * [ReadableMap.toHashMap]; `tags` keeps only string entries.
+     */
+    private fun convertAdContext(map: ReadableMap?): SimulaAdContext? {
+        if (map == null || !map.keySetIterator().hasNextKey()) return null
+        val tags = map.getArray("tags")?.toArrayList()?.filterIsInstance<String>()
+        @Suppress("UNCHECKED_CAST")
+        val customContext = if (map.hasKey("customContext") && !map.isNull("customContext"))
+            map.getMap("customContext")?.toHashMap() as? Map<String, Any> else null
+        return SimulaAdContext(
+            searchTerm = map.getStringOrNull("searchTerm"),
+            tags = tags,
+            category = map.getStringOrNull("category"),
+            title = map.getStringOrNull("title"),
+            description = map.getStringOrNull("description"),
+            userProfile = map.getStringOrNull("userProfile"),
+            userEmail = map.getStringOrNull("userEmail"),
+            customContext = customContext,
+            nsfw = map.getBooleanOrNull("nsfw") ?: false,
         )
     }
 

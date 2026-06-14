@@ -9,6 +9,18 @@ RCT_EXTERN_METHOD(initialize:(NSDictionary *)config
                   reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(isInitialized:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(updateContext:(NSDictionary *)context)
+
+// ── Native ad (imperative) ────────────────────────────────────────────────────
+RCT_EXTERN_METHOD(preloadNativeAd:(NSString *)adUnitId
+                  position:(nonnull NSNumber *)position
+                  theme:(NSString *)theme
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(destroyPreloadedAd:(NSString *)preloadedAdId)
+RCT_EXTERN_METHOD(invalidateNativeAd:(NSString *)adUnitId
+                  position:(nonnull NSNumber *)position)
+RCT_EXTERN_METHOD(invalidateNativeAds)
 
 // ── Imperative ads ──────────────────────────────────────────────────────────
 RCT_EXTERN_METHOD(createInterstitial:(NSString *)instanceId

@@ -95,6 +95,7 @@ class SimulaAdsModule: RCTEventEmitter {
         let hasPrivacyConsent = config["hasPrivacyConsent"] as? Bool ?? true
         let telemetryEnabled = config["telemetryEnabled"] as? Bool ?? true
         let privacy = convertPrivacyConfig(config["privacy"])
+        let adContext = convertAdContext(config["adContext"])
 
         MainActor.assumeIsolated {
             SimulaAds.initialize(
@@ -103,9 +104,59 @@ class SimulaAdsModule: RCTEventEmitter {
                 primaryUserID: primaryUserID,
                 hasPrivacyConsent: hasPrivacyConsent,
                 privacy: privacy,
-                telemetryEnabled: telemetryEnabled
+                telemetryEnabled: telemetryEnabled,
+                adContext: adContext
             )
             resolve(nil)
+        }
+    }
+
+    /// Replace the native-ad targeting context at runtime. An empty dictionary
+    /// (the JS "clear" signal) maps to `nil` — a full replacement, not a merge.
+    @objc
+    func updateContext(_ context: NSDictionary) {
+        let adContext = convertAdContext(context)
+        MainActor.assumeIsolated {
+            SimulaAds.updateContext(adContext)
+        }
+    }
+
+    // MARK: - Native ad (imperative)
+
+    @objc
+    func preloadNativeAd(_ adUnitId: NSString?,
+                         position: NSNumber,
+                         theme: NSString?,
+                         resolve: @escaping RCTPromiseResolveBlock,
+                         reject: @escaping RCTPromiseRejectBlock) {
+        Task { @MainActor in
+            let id = await SimulaAds.preloadNativeAd(
+                adUnitId: adUnitId as String?,
+                position: position.intValue,
+                theme: theme as String?
+            )
+            resolve(id)
+        }
+    }
+
+    @objc
+    func destroyPreloadedAd(_ preloadedAdId: NSString) {
+        MainActor.assumeIsolated {
+            SimulaAds.destroyPreloadedAd(preloadedAdId as String)
+        }
+    }
+
+    @objc
+    func invalidateNativeAd(_ adUnitId: NSString?, position: NSNumber) {
+        MainActor.assumeIsolated {
+            SimulaAds.invalidateNativeAd(adUnitId: adUnitId as String?, position: position.intValue)
+        }
+    }
+
+    @objc
+    func invalidateNativeAds() {
+        MainActor.assumeIsolated {
+            SimulaAds.invalidateNativeAds()
         }
     }
 
@@ -344,6 +395,52 @@ class SimulaAdsModule: RCTEventEmitter {
             coppaApplies: dict["coppaApplies"] as? Bool ?? false,
             enableAdvertisingId: dict["enableAdvertisingId"] as? Bool ?? false
         )
+    }
+
+    /// Builds a `SimulaAdContext` from a JS dict. An empty/absent dict → `nil`
+    /// (no targeting / clear).
+    private func convertAdContext(_ raw: Any?) -> SimulaAdContext? {
+        guard let dict = raw as? [String: Any], !dict.isEmpty else { return nil }
+        return SimulaAdContext(
+            searchTerm: dict["searchTerm"] as? String,
+            tags: dict["tags"] as? [String],
+            category: dict["category"] as? String,
+            title: dict["title"] as? String,
+            description: dict["description"] as? String,
+            userProfile: dict["userProfile"] as? String,
+            userEmail: dict["userEmail"] as? String,
+            customContext: convertCustomContext(dict["customContext"]),
+            nsfw: dict["nsfw"] as? Bool ?? false
+        )
+    }
+
+    private func convertCustomContext(_ raw: Any?) -> [String: JSONValue]? {
+        guard let dict = raw as? [String: Any], !dict.isEmpty else { return nil }
+        var out: [String: JSONValue] = [:]
+        for (key, value) in dict { out[key] = SimulaAdsModule.jsonValue(value) }
+        return out
+    }
+
+    /// Converts a bridged JSON value (NSString / NSNumber / NSArray / NSDictionary /
+    /// NSNull) into the SDK's `JSONValue`. `NSNumber` is disambiguated so a JS boolean
+    /// maps to `.bool` (not `.int`) and integral numbers map to `.int`.
+    private static func jsonValue(_ value: Any) -> JSONValue {
+        if let string = value as? String { return .string(string) }
+        if let number = value as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() { return .bool(number.boolValue) }
+            let asDouble = number.doubleValue
+            if asDouble == asDouble.rounded() && abs(asDouble) < 1e15 {
+                return .int(number.intValue)
+            }
+            return .double(asDouble)
+        }
+        if let array = value as? [Any] { return .array(array.map { jsonValue($0) }) }
+        if let object = value as? [String: Any] {
+            var out: [String: JSONValue] = [:]
+            for (key, nested) in object { out[key] = jsonValue(nested) }
+            return .object(out)
+        }
+        return .null
     }
 }
 
