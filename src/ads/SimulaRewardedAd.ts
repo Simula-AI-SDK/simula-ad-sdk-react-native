@@ -7,7 +7,7 @@
  * REWARD_VERIFICATION_FAILED. Reward verification is durable and server-side —
  * the native SDK owns the retry queue.
  *
- *   const ad = SimulaRewardedAd.create('reward_slot', { minPlayThresholdSeconds: 5 });
+ *   const ad = SimulaRewardedAd.create('reward_slot');
  *   ad.addAdEventListener(SimulaRewardedAdEventType.REWARD_VERIFIED, (e) =>
  *     grant(e.rewardToken));
  *   ad.load();
@@ -16,31 +16,17 @@ import { NativeAds } from "../internal/nativeModules";
 import { SimulaBaseAd } from "./SimulaBaseAd";
 import { RewardedPreviewOptions } from "./types";
 
-export interface SimulaRewardedAdOptions {
-  /**
-   * Optional minimum play time (seconds) requested from the server. When `> 0` it
-   * is sent as `min_play_threshold`; the server's returned `duration_seconds` is
-   * what the SDK actually enforces.
-   */
-  minPlayThresholdSeconds?: number;
-}
-
 export class SimulaRewardedAd extends SimulaBaseAd {
-  private constructor(adUnitId: string, options: SimulaRewardedAdOptions) {
+  private constructor(adUnitId: string) {
     super("rewarded", adUnitId, "rew");
     if (this.requireNative("create")) {
-      NativeAds!.createRewarded(this.instanceId, adUnitId, {
-        minPlayThresholdSeconds: options.minPlayThresholdSeconds ?? 0,
-      });
+      NativeAds!.createRewarded(this.instanceId, adUnitId);
     }
   }
 
   /** Creates a new rewarded ad for the given placement id. */
-  static create(
-    adUnitId: string,
-    options: SimulaRewardedAdOptions = {},
-  ): SimulaRewardedAd {
-    return new SimulaRewardedAd(adUnitId, options);
+  static create(adUnitId: string): SimulaRewardedAd {
+    return new SimulaRewardedAd(adUnitId);
   }
 
   /**

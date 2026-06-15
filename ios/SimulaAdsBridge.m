@@ -26,8 +26,7 @@ RCT_EXTERN_METHOD(invalidateNativeAds)
 RCT_EXTERN_METHOD(createInterstitial:(NSString *)instanceId
                   adUnitId:(NSString *)adUnitId)
 RCT_EXTERN_METHOD(createRewarded:(NSString *)instanceId
-                  adUnitId:(NSString *)adUnitId
-                  options:(NSDictionary *)options)
+                  adUnitId:(NSString *)adUnitId)
 RCT_EXTERN_METHOD(loadAd:(NSString *)instanceId
                   options:(NSDictionary *)options)
 RCT_EXTERN_METHOD(showAd:(NSString *)instanceId)

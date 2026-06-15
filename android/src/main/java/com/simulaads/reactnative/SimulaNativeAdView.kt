@@ -12,9 +12,9 @@ import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.uimanager.ThemedReactContext
 import com.facebook.react.uimanager.events.RCTEventEmitter
-import ad.simula.ad.sdk.ads.SimulaAdError
 import ad.simula.ad.sdk.ads.SimulaAds
 import ad.simula.ad.sdk.model.NativeAdData
+import ad.simula.ad.sdk.nativead.NativeAdError
 import ad.simula.ad.sdk.nativead.NativeAdSlot
 import kotlinx.coroutines.delay
 
@@ -149,12 +149,10 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
         emit("onAdImpression", payload)
     }
 
-    private fun emitError(error: SimulaAdError) {
-        val (code, retry) = mapError(error)
+    private fun emitError(error: NativeAdError) {
         val payload = Arguments.createMap().apply {
-            putString("code", code)
-            putString("message", error.message ?: "")
-            if (retry != null) putInt("retryInSeconds", retry)
+            putString("code", errorCode(error))
+            putString("message", errorMessage(error))
         }
         emit("onAdError", payload)
     }
@@ -164,18 +162,19 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
         reactContext.getJSModule(RCTEventEmitter::class.java).receiveEvent(id, name, payload)
     }
 
-    private val retryRegex = Regex("""in (\d+) seconds""")
+    // The native enum carries no message (pure enum), so the bridge maps each case to the stable
+    // JS code + a human-readable description (mirrors the native SDKs' SimulaAdError copy).
+    private fun errorCode(error: NativeAdError): String = when (error) {
+        NativeAdError.NotInitialized -> "not_initialized"
+        NativeAdError.NoSession -> "no_session"
+        NativeAdError.NoFill -> "no_fill"
+        NativeAdError.Network -> "network"
+    }
 
-    private fun mapError(error: SimulaAdError): Pair<String, Int?> = when (error) {
-        is SimulaAdError.NotInitialized -> "not_initialized" to null
-        is SimulaAdError.NoSession -> "no_session" to null
-        is SimulaAdError.NoFill -> "no_fill" to null
-        is SimulaAdError.NotReady -> "not_ready" to null
-        is SimulaAdError.Stale -> "stale" to null
-        is SimulaAdError.DuplicateRequest ->
-            "duplicate_request" to retryRegex.find(error.message ?: "")?.groupValues?.get(1)?.toIntOrNull()
-        is SimulaAdError.AlreadyShowing -> "already_showing" to null
-        is SimulaAdError.NoPresentationContext -> "no_presentation_context" to null
-        is SimulaAdError.Network -> "network" to null
+    private fun errorMessage(error: NativeAdError): String = when (error) {
+        NativeAdError.NotInitialized -> "SimulaAds is not initialized — call SimulaAds.initialize() first."
+        NativeAdError.NoSession -> "Could not create a session. Check the API key and network connection."
+        NativeAdError.NoFill -> "No ad available to show right now (no fill)."
+        NativeAdError.Network -> "Network error while loading the ad — check the connection and try again."
     }
 }

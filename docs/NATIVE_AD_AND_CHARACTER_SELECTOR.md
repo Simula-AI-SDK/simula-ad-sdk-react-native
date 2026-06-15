@@ -34,20 +34,24 @@ SimulaAds.updateContext(null); // clear
 ## `<NativeAd>` — inline feed card
 
 An inline, auto-height ad card. It grows to its creative and **collapses to zero height
-on a no-fill or error** — so don't set a fixed height; only width/margins. Designed to
+on a no-fill or error**. Height is managed for you, so `width` is the only dimension you
+set (mirroring the Kotlin/Swift slots). For spacing, wrap it in a `<View>`. Designed to
 live in a `FlatList`/`ScrollView` feed.
 
 ```tsx
+import { View } from 'react-native';
 import { NativeAd } from '@simula/ads-react-native';
 
-<NativeAd
-  adUnitId="feed_native"
-  position={index}            // stable per slot → cached & reused on recycle
-  theme="system"              // "dark" | "light" | "system"
-  style={{ marginVertical: 12 }}
-  onImpression={(d) => console.log('impression', d.impressionId)}
-  onError={(e) => console.log('native ad error', e.code)}
-/>;
+<View style={{ marginVertical: 12 }}>
+  <NativeAd
+    adUnitId="feed_native"
+    position={index}          // stable per slot → cached & reused on recycle
+    theme="system"            // "dark" | "light" | "system"
+    width="100%"              // optional; defaults to fill the parent (min 300pt)
+    onImpression={(d) => console.log('impression', d.impressionId)}
+    onError={(e) => console.log('native ad error', e.code)}
+  />
+</View>;
 ```
 
 - **Must be used under a `<SimulaProvider>`** (or after `SimulaAds.initialize`) — it
