@@ -5,6 +5,21 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Android build artifacts (keep android/build.gradle — only the build/ output dir is ignored)
+android/build/
+android/.gradle/
+android/.cxx/
+android/local.properties
+*.iml
+
+# iOS build artifacts
+ios/build/
+ios/Pods/
+ios/Podfile.lock
+**/xcuserdata/
+*.xcuserstate
+DerivedData/
+
 # Packed tarballs
 *.tgz
 

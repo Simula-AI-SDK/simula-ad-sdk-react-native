@@ -58,7 +58,6 @@ export type {
   NativeAdData,
   SimulaNativeAdTheme,
 } from "./nativeAd/types";
-export type { SimulaRewardedAdOptions } from "./ads/SimulaRewardedAd";
 export type {
   SimulaAdType,
   SimulaAnyAdEventType,

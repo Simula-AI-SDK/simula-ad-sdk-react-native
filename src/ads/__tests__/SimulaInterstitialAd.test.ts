@@ -82,12 +82,11 @@ describe("SimulaInterstitialAd", () => {
 });
 
 describe("SimulaRewardedAd", () => {
-  it("passes the play threshold through create", () => {
-    const ad = SimulaRewardedAd.create("reward", { minPlayThresholdSeconds: 7 });
+  it("creates a rewarded ad for the placement", () => {
+    const ad = SimulaRewardedAd.create("reward");
     expect(native.createRewarded).toHaveBeenCalledWith(
       expect.any(String),
       "reward",
-      { minPlayThresholdSeconds: 7 },
     );
     ad.destroy();
   });

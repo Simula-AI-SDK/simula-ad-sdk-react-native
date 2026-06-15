@@ -49,7 +49,7 @@ export function NativeAd({
   previewHtml,
   onImpression,
   onError,
-  style,
+  width,
 }: NativeAdProps): React.JSX.Element | null {
   // Collapsed until the native view reports a height (shimmer/provisional height
   // arrives on the first measure; a no-fill keeps it at 0).
@@ -78,9 +78,10 @@ export function NativeAd({
     [onError],
   );
 
-  // Height is JS-managed; width/other layout come from the caller's style. Memoized so
-  // an unrelated re-render doesn't hand the native view a "new" style object.
-  const containerStyle = useMemo(() => [style, { height }], [style, height]);
+  // Height is JS-managed; width comes from the caller (undefined → fill the parent,
+  // matching the native slot). Memoized so an unrelated re-render doesn't hand the
+  // native view a "new" style object.
+  const containerStyle = useMemo(() => ({ width, height }), [width, height]);
 
   if (!NativeAdView) {
     if (__DEV__) warnNativeAdUnavailable();

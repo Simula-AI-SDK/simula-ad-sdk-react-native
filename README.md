@@ -256,9 +256,7 @@ function Screen() {
 import { useRewardedAd } from "@simula/ads-react-native";
 
 function Screen() {
-  const { isLoaded, load, show, rewardToken } = useRewardedAd("reward_slot", {
-    minPlayThresholdSeconds: 5,
-  });
+  const { isLoaded, load, show, rewardToken } = useRewardedAd("reward_slot");
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     if (rewardToken !== undefined) grantReward(rewardToken); // null = idempotent re-verify

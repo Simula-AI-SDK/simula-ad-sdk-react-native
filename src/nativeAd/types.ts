@@ -1,4 +1,4 @@
-import type { StyleProp, ViewStyle } from "react-native";
+import type { DimensionValue, StyleProp, ViewStyle } from "react-native";
 import type { SimulaAdError } from "../ads/types";
 
 /**
@@ -45,11 +45,12 @@ export interface NativeAdProps {
   /** Fired on a load/render failure (network, bad session). Not fired on a no-fill. */
   onError?: (error: SimulaAdError) => void;
   /**
-   * Container style. Width is honored (min 300; defaults to fill the parent). The
-   * height is managed automatically — the card grows to its creative and collapses
-   * to zero on a no-fill or error, so do NOT set a fixed height here.
+   * Card width (min 300; defaults to fill the parent), mirroring the `width` on the
+   * Kotlin/Swift slots. Height is managed automatically — the card grows to its
+   * creative and collapses to zero on a no-fill or error — so width is the only
+   * dimension you control. For spacing/positioning, wrap `<NativeAd>` in a `<View>`.
    */
-  style?: StyleProp<ViewStyle>;
+  width?: DimensionValue;
 }
 
 /** @internal Props for the underlying native view (height is JS-managed). */

@@ -181,10 +181,9 @@ class SimulaAdsModule: RCTEventEmitter {
     }
 
     @objc
-    func createRewarded(_ instanceId: String, adUnitId: String, options: NSDictionary) {
+    func createRewarded(_ instanceId: String, adUnitId: String) {
         MainActor.assumeIsolated {
-            let threshold = (options["minPlayThresholdSeconds"] as? NSNumber)?.doubleValue ?? 0
-            let ad = SimulaRewardedAd(adUnitId: adUnitId, minPlayThreshold: threshold)
+            let ad = SimulaRewardedAd(adUnitId: adUnitId)
             let proxy = RewardedDelegateProxy(module: self, instanceId: instanceId)
             ad.delegate = proxy
             entries[instanceId] = AdEntry(rewarded: ad, proxy: proxy)

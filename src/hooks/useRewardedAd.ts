@@ -6,11 +6,10 @@
  * SDK may deliver REWARD_VERIFIED long after close (even after a relaunch), so the
  * hook only reflects events while mounted; persist the token yourself if needed.
  *
- *   const { isLoaded, load, show, rewardToken } =
- *     useRewardedAd('reward_slot', { minPlayThresholdSeconds: 5 });
+ *   const { isLoaded, load, show, rewardToken } = useRewardedAd('reward_slot');
  */
 import { useEffect, useRef, useState, useCallback } from "react";
-import { SimulaRewardedAd, SimulaRewardedAdOptions } from "../ads/SimulaRewardedAd";
+import { SimulaRewardedAd } from "../ads/SimulaRewardedAd";
 import { SimulaAdLoadOptions, SimulaAdError } from "../ads/types";
 
 export interface UseRewardedAd {
@@ -24,10 +23,7 @@ export interface UseRewardedAd {
   show: () => void;
 }
 
-export function useRewardedAd(
-  adUnitId: string,
-  options: SimulaRewardedAdOptions = {},
-): UseRewardedAd {
+export function useRewardedAd(adUnitId: string): UseRewardedAd {
   const adRef = useRef<SimulaRewardedAd | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
@@ -38,15 +34,8 @@ export function useRewardedAd(
   );
   const [error, setError] = useState<SimulaAdError | undefined>(undefined);
 
-  // Keep the latest threshold without re-creating the ad when an inline options
-  // object changes identity each render.
-  const thresholdRef = useRef(options.minPlayThresholdSeconds);
-  thresholdRef.current = options.minPlayThresholdSeconds;
-
   useEffect(() => {
-    const ad = SimulaRewardedAd.create(adUnitId, {
-      minPlayThresholdSeconds: thresholdRef.current,
-    });
+    const ad = SimulaRewardedAd.create(adUnitId);
     adRef.current = ad;
     setIsLoaded(false);
     setIsClosed(false);
