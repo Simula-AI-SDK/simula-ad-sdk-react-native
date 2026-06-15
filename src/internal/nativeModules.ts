@@ -43,11 +43,7 @@ export interface NativeSimulaAdsModule {
 
   // ── Imperative ads (instanceId-routed) ─────────────────────────────────
   createInterstitial(instanceId: string, adUnitId: string): void;
-  createRewarded(
-    instanceId: string,
-    adUnitId: string,
-    options: Record<string, unknown>,
-  ): void;
+  createRewarded(instanceId: string, adUnitId: string): void;
   loadAd(instanceId: string, options: Record<string, unknown>): void;
   showAd(instanceId: string): void;
   showAdPreview(instanceId: string, options: Record<string, unknown>): void;

@@ -127,10 +127,8 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun createRewarded(instanceId: String, adUnitId: String, options: ReadableMap) {
+    fun createRewarded(instanceId: String, adUnitId: String) {
         val ad = SimulaRewardedAd(adUnitId)
-        val threshold = options.getDoubleOrNull("minPlayThresholdSeconds") ?: 0.0
-        if (threshold > 0) ad.minPlayThreshold = threshold.toInt()
         ad.listener = rewardedListener(instanceId)
         entries[instanceId] = AdEntry(adType = "rewarded", rewarded = ad)
     }
@@ -391,9 +389,6 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
 
     private fun ReadableMap.getIntOrNull(key: String): Int? =
         if (hasKey(key) && !isNull(key)) getInt(key) else null
-
-    private fun ReadableMap.getDoubleOrNull(key: String): Double? =
-        if (hasKey(key) && !isNull(key)) getDouble(key) else null
 
     // ── NativeEventEmitter required methods ─────────────────────────────────────
 
