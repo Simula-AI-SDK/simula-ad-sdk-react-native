@@ -719,7 +719,11 @@ class SimulaMiniGameModule: RCTEventEmitter {
         )
 
         let hostingVC = UIHostingController(rootView: view)
-        hostingVC.view.backgroundColor = .clear
+        // Opaque selector background (not .clear) so the host app never shows through during
+        // the SwiftUI opacity fade-in: this is an .overFullScreen modal, so the host stays
+        // mounted behind it, and a clear hosting view leaves a transparent gap until the fade
+        // completes. Matches the Swift SDK's RewardedPresenter (opaque-window) rationale.
+        hostingVC.view.backgroundColor = UIColor(Color(hex: theme.resolvedBackgroundColor))
         hostingVC.modalPresentationStyle = .overFullScreen
         hostingVC.modalTransitionStyle = .crossDissolve
 
