@@ -8,14 +8,12 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { NativeModules, NativeEventEmitter } from 'react-native';
+import { NativeModules } from 'react-native';
 import { MiniGameMenuProps } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
+import { miniGameEmitter as emitter, warnIfDuplicateSurface } from '../../internal/emitter';
 
 const { SimulaMiniGameModule } = NativeModules;
-const emitter = SimulaMiniGameModule
-  ? new NativeEventEmitter(SimulaMiniGameModule)
-  : null;
 
 export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   isOpen,
@@ -50,6 +48,8 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
         maxGamesToShow: maxGamesToShow ?? null,
         theme,
         delegateChar,
+      }).catch((error: any) => {
+        console.error('[SimulaMiniGame] showMiniGameMenu failed:', error?.message || error);
       });
     } else if (!isOpen && wasOpenRef.current) {
       SimulaMiniGameModule.hideMiniGameMenu();
@@ -58,15 +58,34 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
     wasOpenRef.current = isOpen;
   }, [isOpen]);
 
-  // Listen for native close event
+  // Keep the latest onClose in a ref so the native listener subscribes once.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  // Listen for native close event (subscribe once)
   useEffect(() => {
     if (!emitter) return;
     const subscription = emitter.addListener('onMiniGameMenuClose', () => {
       wasOpenRef.current = false;
-      onClose();
+      onCloseRef.current();
     });
     return () => subscription.remove();
-  }, [onClose]);
+  }, []);
+
+  // If React unmounts while the native menu is still open, tear it down.
+  useEffect(() => {
+    return () => {
+      if (wasOpenRef.current) {
+        SimulaMiniGameModule?.hideMiniGameMenu();
+        wasOpenRef.current = false;
+      }
+    };
+  }, []);
+
+  // Dev-only guard: this surface is a singleton natively.
+  useEffect(() => warnIfDuplicateSurface('MiniGameMenu'), []);
 
   // Native handles all rendering
   return null;

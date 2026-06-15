@@ -6,6 +6,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
@@ -13,10 +15,14 @@ import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import ad.simula.ad.sdk.ads.SimulaAds
+import ad.simula.ad.sdk.character.CharacterSelector
 import ad.simula.ad.sdk.minigame.MiniGameMenu
 import ad.simula.ad.sdk.minigame.MiniGameButton
 import ad.simula.ad.sdk.minigame.MiniGameInvitation
 import ad.simula.ad.sdk.minigame.MiniGameInterstitial
+import ad.simula.ad.sdk.model.CharacterData
+import ad.simula.ad.sdk.model.CharacterSelectorTheme
 import ad.simula.ad.sdk.model.Message
 import ad.simula.ad.sdk.model.MiniGameTheme
 import ad.simula.ad.sdk.model.MiniGameButtonTheme
@@ -26,7 +32,14 @@ import ad.simula.ad.sdk.model.MiniGameInterstitialTheme
 import ad.simula.ad.sdk.provider.SimulaProvider
 
 class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
-    ReactContextBaseJavaModule(reactContext) {
+    ReactContextBaseJavaModule(reactContext), LifecycleEventListener {
+
+    init {
+        // The module is a singleton that can outlive the host Activity
+        // (rotation, recreation). Listen for host destroy so we can detach
+        // every overlay and release its Activity context.
+        reactContext.addLifecycleEventListener(this)
+    }
 
     override fun getName(): String = "SimulaMiniGameModule"
 
@@ -44,6 +57,9 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
     // ── Interstitial state ──────────────────────────────────────────────
     private var interstitialComposeView: ComposeView? = null
     private var isInterstitialOpen by mutableStateOf(false)
+
+    private var characterSelectorComposeView: ComposeView? = null
+    private var isCharacterSelectorOpen by mutableStateOf(false)
 
     // ═══════════════════════════════════════════════════════════════════
     // MiniGameMenu
@@ -71,8 +87,15 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
             props.getBoolean("hasPrivacyConsent") else true
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
         val primaryUserID = props.getStringOrNull("primaryUserID")
-        val maxGamesToShow = if (props.hasKey("maxGamesToShow") && !props.isNull("maxGamesToShow"))
-            props.getInt("maxGamesToShow") else 6
+        // Coerce to one of the supported values (parity with iOS convertMaxGamesToShow).
+        val maxGamesToShow = when (
+            if (props.hasKey("maxGamesToShow") && !props.isNull("maxGamesToShow"))
+                props.getInt("maxGamesToShow") else 6
+        ) {
+            3 -> 3
+            9 -> 9
+            else -> 6
+        }
 
         val messages = if (props.hasKey("messages") && !props.isNull("messages"))
             convertMessages(props.getArray("messages")) else emptyList()
@@ -120,8 +143,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun hideMiniGameMenu() {
-        isMenuOpen = false
         reactApplicationContext.currentActivity?.runOnUiThread {
+            isMenuOpen = false
             removeComposeView(menuComposeView)
             menuComposeView = null
         }
@@ -283,8 +306,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun hideMiniGameInvitation() {
-        isInvitationOpen = false
         reactApplicationContext.currentActivity?.runOnUiThread {
+            isInvitationOpen = false
             removeComposeView(invitationComposeView)
             invitationComposeView = null
         }
@@ -367,16 +390,135 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun hideMiniGameInterstitial() {
-        isInterstitialOpen = false
         reactApplicationContext.currentActivity?.runOnUiThread {
+            isInterstitialOpen = false
             removeComposeView(interstitialComposeView)
             interstitialComposeView = null
         }
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // Preload
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * Warms ad delivery ahead of the first show by initializing the imperative SDK
+     * (idempotent — the first valid call wins). This warms the shared server session
+     * off the critical path, attaches IAB consent auto-read, installs telemetry, and
+     * drains any pending reward verifications. Safe to call repeatedly.
+     */
+    @ReactMethod
+    fun preload(props: ReadableMap, promise: Promise) {
+        val apiKey = props.getString("apiKey")
+        if (apiKey.isNullOrBlank()) {
+            promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
+            return
+        }
+        val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
+        val primaryUserID = props.getStringOrNull("primaryUserID")
+        val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
+            props.getBoolean("hasPrivacyConsent") else true
+
+        SimulaAds.initialize(
+            context = reactApplicationContext,
+            apiKey = apiKey,
+            devMode = devMode,
+            primaryUserID = primaryUserID,
+            hasPrivacyConsent = hasPrivacyConsent,
+        )
+        promise.resolve(null)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // Shared helpers
     // ═══════════════════════════════════════════════════════════════════
+
+    // ═══════════════════════════════════════════════════════════════════
+    // CharacterSelector
+    // ═══════════════════════════════════════════════════════════════════
+
+    @ReactMethod
+    fun showCharacterSelector(props: ReadableMap, promise: Promise) {
+        val activity = reactApplicationContext.currentActivity
+        if (activity == null) {
+            promise.reject("NO_ACTIVITY", "No current activity")
+            return
+        }
+        val apiKey = props.getString("apiKey")
+        if (apiKey == null) {
+            promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
+            return
+        }
+        val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
+            props.getBoolean("hasPrivacyConsent") else true
+        val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
+        val primaryUserID = props.getStringOrNull("primaryUserID")
+        val title = props.getStringOrNull("title") ?: "Select Your Game Partner"
+        val ctaText = props.getStringOrNull("ctaText") ?: "🚀 Launch Game"
+        val characters = convertCharacters(
+            if (props.hasKey("characters") && !props.isNull("characters"))
+                props.getArray("characters") else null,
+        )
+        val theme = if (props.hasKey("theme") && !props.isNull("theme"))
+            convertCharacterSelectorTheme(props.getMap("theme")) else CharacterSelectorTheme()
+
+        activity.runOnUiThread {
+            removeComposeView(characterSelectorComposeView)
+            isCharacterSelectorOpen = true
+
+            val view = ComposeView(activity).apply {
+                setContent {
+                    SimulaProvider(
+                        apiKey = apiKey,
+                        hasPrivacyConsent = hasPrivacyConsent,
+                        devMode = devMode,
+                        primaryUserID = primaryUserID,
+                    ) {
+                        CharacterSelector(
+                            isOpen = isCharacterSelectorOpen,
+                            onClose = {
+                                isCharacterSelectorOpen = false
+                                activity.runOnUiThread {
+                                    removeComposeView(characterSelectorComposeView)
+                                    characterSelectorComposeView = null
+                                }
+                                sendEvent("onCharacterSelectorClose", null)
+                            },
+                            onCharacterSelected = { character ->
+                                // Selection closes the selector.
+                                isCharacterSelectorOpen = false
+                                activity.runOnUiThread {
+                                    removeComposeView(characterSelectorComposeView)
+                                    characterSelectorComposeView = null
+                                }
+                                sendEvent("onCharacterSelectorSelect", characterToMap(character))
+                            },
+                            onCharacterPreview = { character ->
+                                sendEvent("onCharacterSelectorPreview", characterToMap(character))
+                            },
+                            title = title,
+                            ctaText = ctaText,
+                            characters = characters,
+                            theme = theme,
+                        )
+                    }
+                }
+            }
+
+            characterSelectorComposeView = view
+            addOverlay(activity, view)
+            promise.resolve(null)
+        }
+    }
+
+    @ReactMethod
+    fun hideCharacterSelector() {
+        reactApplicationContext.currentActivity?.runOnUiThread {
+            isCharacterSelectorOpen = false
+            removeComposeView(characterSelectorComposeView)
+            characterSelectorComposeView = null
+        }
+    }
 
     private fun addOverlay(activity: android.app.Activity, view: ComposeView) {
         val rootView = activity.findViewById<ViewGroup>(android.R.id.content)
@@ -391,17 +533,63 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     private fun removeComposeView(view: ComposeView?) {
         view?.let { v ->
+            // Detach via the view's own parent (works even when currentActivity
+            // is already gone) and dispose the composition to release it.
             (v.parent as? ViewGroup)?.removeView(v)
+            v.disposeComposition()
         }
     }
 
     private fun sendEvent(eventName: String, params: Any?) {
+        // Bridge may be tearing down (reload / host destroy) — getJSModule would
+        // throw if there's no active instance.
+        if (!reactApplicationContext.hasActiveReactInstance()) return
         reactApplicationContext
             .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit(eventName, params)
     }
 
     // ── Message conversion ──────────────────────────────────────────────
+
+    private fun convertCharacters(array: ReadableArray?): List<CharacterData>? {
+        if (array == null) return null
+        val characters = mutableListOf<CharacterData>()
+        for (i in 0 until array.size()) {
+            val map = array.getMap(i) ?: continue
+            val id = map.getString("id") ?: continue
+            val name = map.getString("name") ?: continue
+            val imageUrl = map.getString("imageUrl") ?: continue
+            val description = map.getString("description") ?: continue
+            characters.add(
+                CharacterData(id = id, name = name, imageUrl = imageUrl, description = description),
+            )
+        }
+        return characters.ifEmpty { null }
+    }
+
+    private fun convertCharacterSelectorTheme(map: ReadableMap?): CharacterSelectorTheme {
+        if (map == null) return CharacterSelectorTheme()
+        return CharacterSelectorTheme(
+            backgroundColor = map.getStringOrNull("backgroundColor"),
+            titleFontColor = map.getStringOrNull("titleFontColor"),
+            secondaryFontColor = map.getStringOrNull("secondaryFontColor"),
+            accentColor = map.getStringOrNull("accentColor"),
+            ctaFontColor = map.getStringOrNull("ctaFontColor"),
+            cardBackgroundColor = map.getStringOrNull("cardBackgroundColor"),
+            cardBorderColor = map.getStringOrNull("cardBorderColor"),
+            cardCornerRadius = if (map.hasKey("cardCornerRadius") && !map.isNull("cardCornerRadius"))
+                map.getInt("cardCornerRadius") else null,
+            fontFamily = map.getStringOrNull("fontFamily"),
+        )
+    }
+
+    private fun characterToMap(character: CharacterData) =
+        Arguments.createMap().apply {
+            putString("id", character.id)
+            putString("name", character.name)
+            putString("imageUrl", character.imageUrl)
+            putString("description", character.description)
+        }
 
     private fun convertMessages(array: ReadableArray?): List<Message> {
         if (array == null) return emptyList()
@@ -509,6 +697,53 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         } catch (_: Exception) {
             try { getString(key) } catch (_: Exception) { null }
         }
+    }
+
+    // ── LifecycleEventListener ──────────────────────────────────────────
+
+    override fun onHostResume() {}
+
+    override fun onHostPause() {}
+
+    override fun onHostDestroy() {
+        // Delivered on the main thread. Detach and dispose every overlay so we
+        // never leak the destroyed Activity's context through a retained
+        // ComposeView.
+        detachAllOverlays()
+    }
+
+    /**
+     * Detaches and disposes every overlay and clears its open-state. Main thread
+     * only (snapshot-state writes + view removal). `removeComposeView` detaches via
+     * each view's own parent, so this works even when `currentActivity` is null.
+     * Idempotent — safe to run from both onHostDestroy and invalidate.
+     */
+    private fun detachAllOverlays() {
+        isMenuOpen = false
+        isInvitationOpen = false
+        isInterstitialOpen = false
+        isCharacterSelectorOpen = false
+        removeComposeView(menuComposeView)
+        removeComposeView(buttonComposeView)
+        removeComposeView(invitationComposeView)
+        removeComposeView(interstitialComposeView)
+        removeComposeView(characterSelectorComposeView)
+        menuComposeView = null
+        buttonComposeView = null
+        invitationComposeView = null
+        interstitialComposeView = null
+        characterSelectorComposeView = null
+    }
+
+    override fun invalidate() {
+        // A JS-only reload destroys the React instance WITHOUT destroying the
+        // Activity, so onHostDestroy never fires — the old ComposeViews would stay
+        // attached to android.R.id.content with their compositions undisposed,
+        // leaking across every reload. Detach on the main thread, and stop leaking
+        // this module through the reactContext's lifecycle-listener list.
+        reactApplicationContext.removeLifecycleEventListener(this)
+        android.os.Handler(android.os.Looper.getMainLooper()).post { detachAllOverlays() }
+        super.invalidate()
     }
 
     // ── NativeEventEmitter required methods ─────────────────────────────

@@ -7,14 +7,12 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { NativeModules, NativeEventEmitter } from 'react-native';
+import { NativeModules } from 'react-native';
 import { MiniGameInvitationProps } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
+import { miniGameEmitter as emitter, warnIfDuplicateSurface } from '../../internal/emitter';
 
 const { SimulaMiniGameModule } = NativeModules;
-const emitter = SimulaMiniGameModule
-  ? new NativeEventEmitter(SimulaMiniGameModule)
-  : null;
 
 export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
   titleText,
@@ -63,31 +61,46 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
     wasOpenRef.current = isOpen;
   }, [isOpen]);
 
-  // Listen for native click event
+  // Keep the latest callbacks in refs so native listeners subscribe once.
+  const onClickRef = useRef(onClick);
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
-    if (!emitter) return;
-    const subscription = emitter.addListener(
-      'onMiniGameInvitationClick',
-      () => {
-        onClick();
-      },
-    );
-    return () => subscription.remove();
-  }, [onClick]);
+    onClickRef.current = onClick;
+    onCloseRef.current = onClose;
+  }, [onClick, onClose]);
 
-  // Listen for native close event
+  // Listen for native click event (subscribe once)
   useEffect(() => {
     if (!emitter) return;
-    const subscription = emitter.addListener(
-      'onMiniGameInvitationClose',
-      () => {
-        wasOpenRef.current = false;
-        SimulaMiniGameModule.hideMiniGameInvitation();
-        onClose?.();
-      },
-    );
+    const subscription = emitter.addListener('onMiniGameInvitationClick', () => {
+      onClickRef.current();
+    });
     return () => subscription.remove();
-  }, [onClose]);
+  }, []);
+
+  // Listen for native close event (subscribe once)
+  useEffect(() => {
+    if (!emitter) return;
+    const subscription = emitter.addListener('onMiniGameInvitationClose', () => {
+      wasOpenRef.current = false;
+      SimulaMiniGameModule.hideMiniGameInvitation();
+      onCloseRef.current?.();
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // If React unmounts while the native invitation is still open, tear it down.
+  useEffect(() => {
+    return () => {
+      if (wasOpenRef.current) {
+        SimulaMiniGameModule?.hideMiniGameInvitation();
+        wasOpenRef.current = false;
+      }
+    };
+  }, []);
+
+  // Dev-only guard: this surface is a singleton natively.
+  useEffect(() => warnIfDuplicateSurface('MiniGameInvitation'), []);
 
   // Native handles all rendering
   return null;

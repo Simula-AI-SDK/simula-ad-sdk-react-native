@@ -6,9 +6,6 @@ module.exports = {
         packageImportPath: 'import com.simulaads.reactnative.SimulaMiniGamePackage;',
         packageInstance: 'new SimulaMiniGamePackage()',
       },
-      ios: {
-        podspecPath: './simula-ads-react-native.podspec',
-      },
     },
   },
 };

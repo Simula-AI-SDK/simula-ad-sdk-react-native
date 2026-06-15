@@ -14,14 +14,30 @@ class SimulaMiniGameModule: RCTEventEmitter {
     // and presents SKStoreProductViewController / SFSafariViewController from
     // it — all within the main window (no secondary window to conflict with
     // SKStoreProductViewController's own system-level window).
-    private var menuHostingController: UIHostingController<AnyView>?
-    private var interstitialHostingController: UIHostingController<AnyView>?
+    //
+    // Each hosting controller is specialized to its concrete root-view type
+    // (no AnyView): keeping the UIHostingController non-erased lets SwiftUI
+    // diff the root view tree instead of re-evaluating it through a type-erased
+    // boundary on every state change.
+    private var menuHostingController: UIHostingController<MiniGameMenuWrapper>?
+    private var interstitialHostingController: UIHostingController<MiniGameInterstitialWrapper>?
 
     // Invitation/Button use subview approach (needs touch passthrough)
-    private var buttonHostingController: UIHostingController<AnyView>?
-    private var invitationHostingController: UIHostingController<AnyView>?
+    private var buttonHostingController: UIHostingController<MiniGameButtonWrapper>?
+    private var invitationHostingController: UIHostingController<MiniGameInvitationWrapper>?
 
-    private var provider: SimulaProvider?
+    // Character selector — a full-screen modal like the menu, but with no game
+    // WebView, so it's presented plainly (no WebView-scan timer / link interceptor).
+    private var characterSelectorHostingController: UIHostingController<CharacterSelectorWrapper>?
+
+    // A single SimulaProvider is cached and reused across re-shows so the SDK's
+    // per-provider session cache actually applies — without this, a fresh
+    // provider every show forces a new createSession() round-trip on the ad
+    // path. Keyed by the full config; a config change replaces the previous one.
+    // The SDK is built around one shared provider, so every minigame surface
+    // (menu/button/invitation/interstitial) reuses it.
+    private var cachedProvider: SimulaProvider?
+    private var cachedProviderKey: String?
     private var hasListeners = false
 
     // MARK: - UIApplication.open() interceptor
@@ -31,7 +47,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
     // present SKStoreProductViewController ourselves instead of letting the system
     // open the App Store externally. This is both a diagnostic and a fix.
 
-    static weak var activeHostingController: UIHostingController<AnyView>?
+    static weak var activeHostingController: UIViewController?
 
     private static let installInterceptor: Void = {
         let cls: AnyClass = UIApplication.self
@@ -63,6 +79,15 @@ class SimulaMiniGameModule: RCTEventEmitter {
         _ = SimulaMiniGameModule.installInterceptor
     }
 
+    // All exported methods run on the main thread, so their bodies present
+    // view controllers, mutate the status bar, and add/remove overlays
+    // directly — no nested DispatchQueue.main.async hop is needed.
+    // requiresMainQueueSetup stays false so the module still initializes
+    // lazily off the main thread and adds nothing to app-startup time.
+    override var methodQueue: DispatchQueue {
+        return DispatchQueue.main
+    }
+
     override static func requiresMainQueueSetup() -> Bool {
         return false
     }
@@ -75,6 +100,21 @@ class SimulaMiniGameModule: RCTEventEmitter {
         hasListeners = false
     }
 
+    // Bridge teardown (dev reload / app shutdown) can land while an overlay is
+    // still up. Without this, the repeating `webViewScanTimer` is retained by the
+    // run loop and keeps firing every second forever, the presented overlay VCs
+    // and the cached provider/session leak, and a hidden status bar stays hidden.
+    // Mirrors `SimulaAdsModule.invalidate()`: tear everything down on the main
+    // thread. (UI teardown — Timer.invalidate, view removal — must run on main.)
+    override func invalidate() {
+        super.invalidate()
+        if Thread.isMainThread {
+            teardownAllOverlays()
+        } else {
+            DispatchQueue.main.async { [self] in teardownAllOverlays() }
+        }
+    }
+
     override func supportedEvents() -> [String]! {
         return [
             "onMiniGameMenuClose",
@@ -83,6 +123,9 @@ class SimulaMiniGameModule: RCTEventEmitter {
             "onMiniGameInvitationClose",
             "onMiniGameInterstitialClick",
             "onMiniGameInterstitialClose",
+            "onCharacterSelectorSelect",
+            "onCharacterSelectorPreview",
+            "onCharacterSelectorClose",
         ]
     }
 
@@ -129,7 +172,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
     // SFSafariVC from it — everything stays in the main window, so
     // SKStoreProductViewController's system-level window renders correctly.
 
-    private func addFullscreenOverlay(hostingVC: UIHostingController<AnyView>) -> Bool {
+    private func addFullscreenOverlay<Content: View>(hostingVC: UIHostingController<Content>) -> Bool {
         guard let topVC = currentTopPresentedViewController() else { return false }
 
         hostingVC.view.backgroundColor = .clear
@@ -146,14 +189,12 @@ class SimulaMiniGameModule: RCTEventEmitter {
         return true
     }
 
-    private func removeFullscreenOverlay(_ hostingVC: inout UIHostingController<AnyView>?) {
+    private func removeFullscreenOverlay<Content: View>(_ hostingVC: inout UIHostingController<Content>?) {
         guard let vc = hostingVC else { return }
         // Stop scanning and clean up proxies
         stopWebViewScanning()
         // Reset global proxy state
-        WKNavigationDelegateProxy.isHandlingExternalLink = false
-        WKNavigationDelegateProxy.isResolving = false
-        WKNavigationDelegateProxy.activeSession = nil
+        WKNavigationDelegateProxy.resetLinkHandlingState()
         // Disable interceptor if this is the active overlay
         if SimulaMiniGameModule.activeHostingController === vc {
             SimulaMiniGameModule.activeHostingController = nil
@@ -174,7 +215,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
     private var webViewScanTimer: Timer?
     private var installedProxies: [WKNavigationDelegateProxy] = []
 
-    private func startWebViewScanning(in hostingVC: UIHostingController<AnyView>) {
+    private func startWebViewScanning<Content: View>(in hostingVC: UIHostingController<Content>) {
         stopWebViewScanning()
         // Scan periodically — SwiftUI creates WKWebViews lazily as views appear
         webViewScanTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self, weak hostingVC] _ in
@@ -208,7 +249,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
 
     // MARK: - Subview overlay (invitation, button)
 
-    private func addSubviewOverlay(hostingVC: UIHostingController<AnyView>) -> Bool {
+    private func addSubviewOverlay<Content: View>(hostingVC: UIHostingController<Content>) -> Bool {
         guard let scene = currentWindowScene(),
               let rootVC = scene.windows.first(where: \.isKeyWindow)?.rootViewController else { return false }
 
@@ -234,7 +275,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
         return true
     }
 
-    private func removeSubviewOverlay(_ hostingVC: inout UIHostingController<AnyView>?) {
+    private func removeSubviewOverlay<Content: View>(_ hostingVC: inout UIHostingController<Content>?) {
         guard let vc = hostingVC else { return }
         vc.willMove(toParent: nil)
         if let container = vc.view.superview, container is PassthroughView {
@@ -244,6 +285,65 @@ class SimulaMiniGameModule: RCTEventEmitter {
         }
         vc.removeFromParent()
         hostingVC = nil
+    }
+
+    /// Tears down every overlay, the scan timer, the cached provider, and any
+    /// shared link-handling / status-bar state. Main thread only (called from
+    /// `invalidate()` and any future host-teardown hook).
+    private func teardownAllOverlays() {
+        stopWebViewScanning()
+        WKNavigationDelegateProxy.resetLinkHandlingState()
+        SimulaMiniGameModule.activeHostingController = nil
+        removeFullscreenOverlay(&menuHostingController)
+        removeFullscreenOverlay(&interstitialHostingController)
+        removeSubviewOverlay(&buttonHostingController)
+        removeSubviewOverlay(&invitationHostingController)
+        removeCharacterSelectorOverlay()
+        UIApplication.shared.isStatusBarHidden = false
+        cachedProvider = nil
+        cachedProviderKey = nil
+    }
+
+    // MARK: - Provider reuse
+
+    /// Returns a SimulaProvider for the given config, reusing the cached instance
+    /// when the config is unchanged so its warm session survives across re-shows.
+    ///
+    /// Prefers the imperative SDK's shared provider (`SimulaAds.shared`) when its
+    /// config matches, so the imperative and declarative paths share one warm
+    /// session (mirrors the SDK's own `SimulaProviderView`). Falls back to a
+    /// locally-cached provider, then to a freshly created one.
+    private func reusableProvider(apiKey: String,
+                                  devMode: Bool,
+                                  primaryUserID: String?,
+                                  hasPrivacyConsent: Bool) -> SimulaProvider {
+        let key = "\(apiKey)|\(devMode)|\(primaryUserID ?? "")|\(hasPrivacyConsent)"
+
+        // `SimulaAds` is @MainActor; we're on methodQueue = .main, so this read is
+        // safe. When the host called SimulaAds.initialize (e.g. via SimulaProvider's
+        // initializeOnMount or preload), reuse that already-warm session.
+        if let shared = MainActor.assumeIsolated({ SimulaAds.shared }),
+           shared.apiKey == apiKey,
+           shared.devMode == devMode,
+           (shared.primaryUserID ?? "") == (primaryUserID ?? ""),
+           shared.hasPrivacyConsent == hasPrivacyConsent {
+            cachedProvider = shared
+            cachedProviderKey = key
+            return shared
+        }
+
+        if let cached = cachedProvider, cachedProviderKey == key {
+            return cached
+        }
+        let provider = SimulaProvider(
+            apiKey: apiKey,
+            devMode: devMode,
+            primaryUserID: primaryUserID,
+            hasPrivacyConsent: hasPrivacyConsent
+        )
+        cachedProvider = provider
+        cachedProviderKey = key
+        return provider
     }
 
     // MARK: - MiniGameMenu
@@ -272,70 +372,56 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let messages = convertMessages(props["messages"])
         let theme = convertTheme(props["theme"])
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                reject("INTERNAL_ERROR", "Module deallocated", nil)
-                return
+        self.removeFullscreenOverlay(&self.menuHostingController)
+
+        let provider = self.reusableProvider(
+            apiKey: apiKey,
+            devMode: devMode,
+            primaryUserID: primaryUserID,
+            hasPrivacyConsent: hasPrivacyConsent
+        )
+
+        let menuView = MiniGameMenuWrapper(
+            provider: provider,
+            charName: charName,
+            charID: charID,
+            charImage: charImage,
+            messages: messages,
+            charDesc: charDesc,
+            maxGamesToShow: maxGamesToShow,
+            theme: theme,
+            delegateChar: delegateChar,
+            onClose: { [weak self] in
+                // Don't destroy — game/ad may still render in the ZStack
+                self?.sendEvent(withName: "onMiniGameMenuClose", body: nil)
+            },
+            onFullyDone: { [weak self] in
+                // Tap catcher fired — ZStack is empty, safe to destroy
+                guard let self = self else { return }
+                self.removeFullscreenOverlay(&self.menuHostingController)
+                self.sendEvent(withName: "onMiniGameMenuClose", body: nil)
             }
+        )
 
-            self.removeFullscreenOverlay(&self.menuHostingController)
-            self.provider = nil
+        let hostingVC = UIHostingController(rootView: menuView)
+        hostingVC.view.backgroundColor = .clear
 
-            let provider = SimulaProvider(
-                apiKey: apiKey,
-                devMode: devMode,
-                primaryUserID: primaryUserID,
-                hasPrivacyConsent: hasPrivacyConsent
-            )
-            self.provider = provider
-
-            let menuView = MiniGameMenuWrapper(
-                provider: provider,
-                charName: charName,
-                charID: charID,
-                charImage: charImage,
-                messages: messages,
-                charDesc: charDesc,
-                maxGamesToShow: maxGamesToShow,
-                theme: theme,
-                delegateChar: delegateChar,
-                onClose: { [weak self] in
-                    // Don't destroy — game/ad may still render in the ZStack
-                    self?.sendEvent(withName: "onMiniGameMenuClose", body: nil)
-                },
-                onFullyDone: { [weak self] in
-                    // Tap catcher fired — ZStack is empty, safe to destroy
-                    guard let self = self else { return }
-                    self.removeFullscreenOverlay(&self.menuHostingController)
-                    self.provider = nil
-                    self.sendEvent(withName: "onMiniGameMenuClose", body: nil)
-                }
-            )
-
-            let hostingVC = UIHostingController(rootView: AnyView(menuView))
-            hostingVC.view.backgroundColor = .clear
-
-            guard self.addFullscreenOverlay(hostingVC: hostingVC) else {
-                reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
-                return
-            }
-            self.menuHostingController = hostingVC
-
-            Task {
-                await provider.createSession()
-            }
-
-            resolve(nil)
+        guard self.addFullscreenOverlay(hostingVC: hostingVC) else {
+            reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
+            return
         }
+        self.menuHostingController = hostingVC
+
+        Task {
+            await provider.createSession()
+        }
+
+        resolve(nil)
     }
 
     @objc
     func hideMiniGameMenu() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.removeFullscreenOverlay(&self.menuHostingController)
-            self.provider = nil
-        }
+        self.removeFullscreenOverlay(&self.menuHostingController)
     }
 
     // MARK: - MiniGameButton (subview — needs touch passthrough)
@@ -358,50 +444,40 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let theme = convertButtonTheme(props["theme"])
         let width = convertDimension(props["width"])
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                reject("INTERNAL_ERROR", "Module deallocated", nil)
-                return
+        self.removeSubviewOverlay(&self.buttonHostingController)
+
+        let provider = self.reusableProvider(
+            apiKey: apiKey,
+            devMode: devMode,
+            primaryUserID: primaryUserID,
+            hasPrivacyConsent: hasPrivacyConsent
+        )
+
+        let buttonView = MiniGameButtonWrapper(
+            provider: provider,
+            text: text,
+            showPulsate: showPulsate,
+            showBadge: showBadge,
+            theme: theme,
+            width: width,
+            onClick: { [weak self] in
+                self?.sendEvent(withName: "onMiniGameButtonClick", body: nil)
             }
+        )
 
-            self.removeSubviewOverlay(&self.buttonHostingController)
+        let hostingVC = UIHostingController(rootView: buttonView)
 
-            let provider = SimulaProvider(
-                apiKey: apiKey,
-                devMode: devMode,
-                primaryUserID: primaryUserID,
-                hasPrivacyConsent: hasPrivacyConsent
-            )
-
-            let buttonView = MiniGameButtonWrapper(
-                provider: provider,
-                text: text,
-                showPulsate: showPulsate,
-                showBadge: showBadge,
-                theme: theme,
-                width: width,
-                onClick: { [weak self] in
-                    self?.sendEvent(withName: "onMiniGameButtonClick", body: nil)
-                }
-            )
-
-            let hostingVC = UIHostingController(rootView: AnyView(buttonView))
-
-            guard self.addSubviewOverlay(hostingVC: hostingVC) else {
-                reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
-                return
-            }
-            self.buttonHostingController = hostingVC
-            resolve(nil)
+        guard self.addSubviewOverlay(hostingVC: hostingVC) else {
+            reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
+            return
         }
+        self.buttonHostingController = hostingVC
+        resolve(nil)
     }
 
     @objc
     func hideMiniGameButton() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.removeSubviewOverlay(&self.buttonHostingController)
-        }
+        self.removeSubviewOverlay(&self.buttonHostingController)
     }
 
     // MARK: - MiniGameInvitation (subview — needs touch passthrough)
@@ -428,63 +504,54 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let width = props["width"]
         let top = props["top"]
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                reject("INTERNAL_ERROR", "Module deallocated", nil)
-                return
+        self.removeSubviewOverlay(&self.invitationHostingController)
+
+        let provider = self.reusableProvider(
+            apiKey: apiKey,
+            devMode: devMode,
+            primaryUserID: primaryUserID,
+            hasPrivacyConsent: hasPrivacyConsent
+        )
+
+        let invitationView = MiniGameInvitationWrapper(
+            provider: provider,
+            titleText: titleText,
+            subText: subText,
+            ctaText: ctaText,
+            charImage: charImage,
+            animation: animation,
+            theme: theme,
+            autoCloseDuration: autoCloseDuration,
+            width: convertDimension(width),
+            top: convertDimension(top),
+            onClick: { [weak self] in
+                self?.sendEvent(withName: "onMiniGameInvitationClick", body: nil)
+            },
+            onClose: { [weak self] in
+                guard let self = self else { return }
+                self.removeSubviewOverlay(&self.invitationHostingController)
+                self.sendEvent(withName: "onMiniGameInvitationClose", body: nil)
             }
+        )
 
-            self.removeSubviewOverlay(&self.invitationHostingController)
+        let hostingVC = UIHostingController(rootView: invitationView)
 
-            let provider = SimulaProvider(
-                apiKey: apiKey,
-                devMode: devMode,
-                primaryUserID: primaryUserID,
-                hasPrivacyConsent: hasPrivacyConsent
-            )
-
-            let invitationView = MiniGameInvitationWrapper(
-                provider: provider,
-                titleText: titleText,
-                subText: subText,
-                ctaText: ctaText,
-                charImage: charImage,
-                animation: animation,
-                theme: theme,
-                autoCloseDuration: autoCloseDuration,
-                width: convertDimension(width),
-                top: convertDimension(top),
-                onClick: { [weak self] in
-                    self?.sendEvent(withName: "onMiniGameInvitationClick", body: nil)
-                },
-                onClose: { [weak self] in
-                    self?.removeSubviewOverlay(&self!.invitationHostingController)
-                    self?.sendEvent(withName: "onMiniGameInvitationClose", body: nil)
-                }
-            )
-
-            let hostingVC = UIHostingController(rootView: AnyView(invitationView))
-
-            guard self.addSubviewOverlay(hostingVC: hostingVC) else {
-                reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
-                return
-            }
-            self.invitationHostingController = hostingVC
-
-            Task {
-                await provider.createSession()
-            }
-
-            resolve(nil)
+        guard self.addSubviewOverlay(hostingVC: hostingVC) else {
+            reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
+            return
         }
+        self.invitationHostingController = hostingVC
+
+        Task {
+            await provider.createSession()
+        }
+
+        resolve(nil)
     }
 
     @objc
     func hideMiniGameInvitation() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.removeSubviewOverlay(&self.invitationHostingController)
-        }
+        self.removeSubviewOverlay(&self.invitationHostingController)
     }
 
     // MARK: - MiniGameInterstitial
@@ -507,66 +574,214 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let backgroundImage = props["backgroundImage"] as? String
         let theme = convertInterstitialTheme(props["theme"])
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                reject("INTERNAL_ERROR", "Module deallocated", nil)
-                return
+        self.removeFullscreenOverlay(&self.interstitialHostingController)
+
+        let provider = self.reusableProvider(
+            apiKey: apiKey,
+            devMode: devMode,
+            primaryUserID: primaryUserID,
+            hasPrivacyConsent: hasPrivacyConsent
+        )
+
+        let interstitialView = MiniGameInterstitialWrapper(
+            provider: provider,
+            charImage: charImage,
+            invitationText: invitationText,
+            ctaText: ctaText,
+            backgroundImage: backgroundImage,
+            theme: theme,
+            onClick: { [weak self] in
+                self?.sendEvent(withName: "onMiniGameInterstitialClick", body: nil)
+            },
+            onClose: { [weak self] in
+                guard let self = self else { return }
+                self.removeFullscreenOverlay(&self.interstitialHostingController)
+                UIApplication.shared.isStatusBarHidden = false
+                self.sendEvent(withName: "onMiniGameInterstitialClose", body: nil)
             }
+        )
 
-            self.removeFullscreenOverlay(&self.interstitialHostingController)
+        let hostingVC = UIHostingController(rootView: interstitialView)
+        hostingVC.view.backgroundColor = .clear
 
-            let provider = SimulaProvider(
+        guard self.addFullscreenOverlay(hostingVC: hostingVC) else {
+            reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
+            return
+        }
+        self.interstitialHostingController = hostingVC
+
+        // Hide status bar (UIViewControllerBasedStatusBarAppearance=false, so use UIApplication)
+        UIApplication.shared.isStatusBarHidden = true
+
+        Task {
+            await provider.createSession()
+        }
+
+        resolve(nil)
+    }
+
+    @objc
+    func hideMiniGameInterstitial() {
+        self.removeFullscreenOverlay(&self.interstitialHostingController)
+        UIApplication.shared.isStatusBarHidden = false
+    }
+
+    // MARK: - Preload
+
+    @objc
+    func preload(_ props: NSDictionary,
+                 resolve: @escaping RCTPromiseResolveBlock,
+                 reject: @escaping RCTPromiseRejectBlock) {
+        guard let apiKey = props["apiKey"] as? String else {
+            reject("INVALID_PROPS", "Missing required prop: apiKey", nil)
+            return
+        }
+        let devMode = props["devMode"] as? Bool ?? false
+        let primaryUserID = props["primaryUserID"] as? String
+        let hasPrivacyConsent = props["hasPrivacyConsent"] as? Bool ?? true
+
+        // Initialize the imperative SDK (idempotent) so its shared session warms and
+        // is reused by every declarative surface via reusableProvider — unifying the
+        // imperative + declarative session. SimulaAds is @MainActor; methodQueue is
+        // .main, so this is safe.
+        MainActor.assumeIsolated {
+            SimulaAds.initialize(
                 apiKey: apiKey,
                 devMode: devMode,
                 primaryUserID: primaryUserID,
                 hasPrivacyConsent: hasPrivacyConsent
             )
+        }
 
-            let interstitialView = MiniGameInterstitialWrapper(
-                provider: provider,
-                charImage: charImage,
-                invitationText: invitationText,
-                ctaText: ctaText,
-                backgroundImage: backgroundImage,
-                theme: theme,
-                onClick: { [weak self] in
-                    self?.sendEvent(withName: "onMiniGameInterstitialClick", body: nil)
-                },
-                onClose: { [weak self] in
-                    guard let self = self else { return }
-                    self.removeFullscreenOverlay(&self.interstitialHostingController)
-                    UIApplication.shared.isStatusBarHidden = false
-                    self.sendEvent(withName: "onMiniGameInterstitialClose", body: nil)
-                }
-            )
-
-            let hostingVC = UIHostingController(rootView: AnyView(interstitialView))
-            hostingVC.view.backgroundColor = .clear
-
-            guard self.addFullscreenOverlay(hostingVC: hostingVC) else {
-                reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
-                return
-            }
-            self.interstitialHostingController = hostingVC
-
-            // Hide status bar (UIViewControllerBasedStatusBarAppearance=false, so use UIApplication)
-            UIApplication.shared.isStatusBarHidden = true
-
-            Task {
-                await provider.createSession()
-            }
-
+        // Warm (and cache) the provider so the first real show reuses a live
+        // session instead of paying the createSession() round-trip on the ad path.
+        let provider = self.reusableProvider(
+            apiKey: apiKey,
+            devMode: devMode,
+            primaryUserID: primaryUserID,
+            hasPrivacyConsent: hasPrivacyConsent
+        )
+        Task {
+            await provider.createSession()
             resolve(nil)
         }
     }
 
+    // MARK: - CharacterSelector
+
     @objc
-    func hideMiniGameInterstitial() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.removeFullscreenOverlay(&self.interstitialHostingController)
-            UIApplication.shared.isStatusBarHidden = false
+    func showCharacterSelector(_ props: NSDictionary,
+                               resolve: @escaping RCTPromiseResolveBlock,
+                               reject: @escaping RCTPromiseRejectBlock) {
+        guard let apiKey = props["apiKey"] as? String else {
+            reject("INVALID_PROPS", "Missing required prop: apiKey", nil)
+            return
         }
+
+        let hasPrivacyConsent = props["hasPrivacyConsent"] as? Bool ?? true
+        let devMode = props["devMode"] as? Bool ?? false
+        let primaryUserID = props["primaryUserID"] as? String
+        let title = props["title"] as? String ?? "Select Your Game Partner"
+        let ctaText = props["ctaText"] as? String ?? "🚀 Launch Game"
+        let characters = convertCharacters(props["characters"])
+        let theme = convertCharacterSelectorTheme(props["theme"])
+
+        self.removeCharacterSelectorOverlay()
+
+        let provider = self.reusableProvider(
+            apiKey: apiKey,
+            devMode: devMode,
+            primaryUserID: primaryUserID,
+            hasPrivacyConsent: hasPrivacyConsent
+        )
+
+        let view = CharacterSelectorWrapper(
+            provider: provider,
+            title: title,
+            ctaText: ctaText,
+            characters: characters,
+            theme: theme,
+            onSelected: { [weak self] character in
+                guard let self = self else { return }
+                self.removeCharacterSelectorOverlay()
+                self.sendEvent(withName: "onCharacterSelectorSelect",
+                               body: SimulaMiniGameModule.characterBody(character))
+            },
+            onPreview: { [weak self] character in
+                self?.sendEvent(withName: "onCharacterSelectorPreview",
+                                body: SimulaMiniGameModule.characterBody(character))
+            },
+            onClose: { [weak self] in
+                guard let self = self else { return }
+                self.removeCharacterSelectorOverlay()
+                self.sendEvent(withName: "onCharacterSelectorClose", body: nil)
+            }
+        )
+
+        let hostingVC = UIHostingController(rootView: view)
+        hostingVC.view.backgroundColor = .clear
+        hostingVC.modalPresentationStyle = .overFullScreen
+        hostingVC.modalTransitionStyle = .crossDissolve
+
+        guard let topVC = currentTopPresentedViewController() else {
+            reject("NO_VIEW_CONTROLLER", "Could not find root view controller", nil)
+            return
+        }
+        topVC.present(hostingVC, animated: false)
+        self.characterSelectorHostingController = hostingVC
+
+        Task {
+            await provider.createSession()
+        }
+
+        resolve(nil)
+    }
+
+    @objc
+    func hideCharacterSelector() {
+        self.removeCharacterSelectorOverlay()
+    }
+
+    private func removeCharacterSelectorOverlay() {
+        guard let vc = characterSelectorHostingController else { return }
+        vc.presentingViewController?.dismiss(animated: false)
+        characterSelectorHostingController = nil
+    }
+
+    private static func characterBody(_ character: CharacterData) -> [String: Any] {
+        [
+            "id": character.id,
+            "name": character.name,
+            "imageUrl": character.imageUrl,
+            "description": character.description,
+        ]
+    }
+
+    private func convertCharacters(_ raw: Any?) -> [CharacterData]? {
+        guard let array = raw as? [[String: Any]] else { return nil }
+        let characters = array.compactMap { dict -> CharacterData? in
+            guard let id = dict["id"] as? String,
+                  let name = dict["name"] as? String,
+                  let imageUrl = dict["imageUrl"] as? String,
+                  let description = dict["description"] as? String else { return nil }
+            return CharacterData(id: id, name: name, imageUrl: imageUrl, description: description)
+        }
+        return characters.isEmpty ? nil : characters
+    }
+
+    private func convertCharacterSelectorTheme(_ raw: Any?) -> CharacterSelectorTheme {
+        guard let dict = raw as? [String: Any] else { return CharacterSelectorTheme() }
+        var theme = CharacterSelectorTheme()
+        theme.backgroundColor = dict["backgroundColor"] as? String
+        theme.titleFontColor = dict["titleFontColor"] as? String
+        theme.secondaryFontColor = dict["secondaryFontColor"] as? String
+        theme.accentColor = dict["accentColor"] as? String
+        theme.ctaFontColor = dict["ctaFontColor"] as? String
+        theme.cardBackgroundColor = dict["cardBackgroundColor"] as? String
+        theme.cardBorderColor = dict["cardBorderColor"] as? String
+        theme.cardCornerRadius = dict["cardCornerRadius"] as? CGFloat
+        theme.fontFamily = dict["fontFamily"] as? String
+        return theme
     }
 
     // MARK: - Type Conversion
@@ -830,6 +1045,41 @@ private struct MiniGameInterstitialWrapper: View {
     }
 }
 
+private struct CharacterSelectorWrapper: View {
+    @StateObject var provider: SimulaProvider
+    let title: String
+    let ctaText: String
+    let characters: [CharacterData]?
+    let theme: CharacterSelectorTheme
+    let onSelected: (CharacterData) -> Void
+    let onPreview: (CharacterData) -> Void
+    let onClose: () -> Void
+
+    @State private var isOpen = true
+
+    var body: some View {
+        CharacterSelector(
+            isOpen: isOpen,
+            onClose: {
+                isOpen = false
+                onClose()
+            },
+            onCharacterSelected: { character in
+                isOpen = false
+                onSelected(character)
+            },
+            onCharacterPreview: { character in
+                onPreview(character)
+            },
+            title: title,
+            ctaText: ctaText,
+            characters: characters,
+            theme: theme
+        )
+        .environmentObject(provider)
+    }
+}
+
 // MARK: - WKNavigationDelegateProxy
 //
 // Wraps the Swift SDK's coordinator as the WKWebView's navigation/UI delegate.
@@ -842,9 +1092,65 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
 
     private let internalSchemes: Set<String> = ["about", "data", "blob"]
 
-    static var isHandlingExternalLink = false
-    static var isResolving = false
-    static var activeSession: URLSession?
+    // Coordinates in-app external-link handling across every proxy instance.
+    // These are normally driven from the main thread (WebKit delegate callbacks
+    // run on main, the module's show/hide run on methodQueue=.main, and the
+    // RedirectResolver completion re-dispatches to main), but they are
+    // process-wide `static` state with check-then-set semantics. A lock makes
+    // "claim a slot" atomic — correct even if a caller is ever off the main
+    // thread, and robust against a future change in the delegate callback queue.
+    private static let stateLock = NSLock()
+    private static var _isHandlingExternalLink = false
+    private static var _isResolving = false
+    private static var _activeSession: URLSession?
+
+    /// True while an external link is being presented or a redirect chain is
+    /// being resolved.
+    private static func isBusy() -> Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return _isHandlingExternalLink || _isResolving
+    }
+
+    /// Atomically claims the external-link slot. Returns false if already taken.
+    private static func beginHandlingExternalLink() -> Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        if _isHandlingExternalLink { return false }
+        _isHandlingExternalLink = true
+        return true
+    }
+
+    private static func endHandlingExternalLink() {
+        stateLock.lock(); defer { stateLock.unlock() }
+        _isHandlingExternalLink = false
+    }
+
+    /// Atomically claims the resolving slot, but only if nothing is in flight.
+    private static func beginResolving() -> Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        if _isResolving || _isHandlingExternalLink { return false }
+        _isResolving = true
+        return true
+    }
+
+    /// Ends a resolve and releases the retained session.
+    private static func endResolving() {
+        stateLock.lock(); defer { stateLock.unlock() }
+        _isResolving = false
+        _activeSession = nil
+    }
+
+    private static func setActiveSession(_ session: URLSession?) {
+        stateLock.lock(); defer { stateLock.unlock() }
+        _activeSession = session
+    }
+
+    /// Clears all link-handling state when an overlay is torn down.
+    static func resetLinkHandlingState() {
+        stateLock.lock(); defer { stateLock.unlock() }
+        _isHandlingExternalLink = false
+        _isResolving = false
+        _activeSession = nil
+    }
 
     init(original: WKNavigationDelegate?) {
         self.original = original
@@ -861,8 +1167,7 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
     }
 
     private func presentStoreProduct(appID: String) {
-        guard !WKNavigationDelegateProxy.isHandlingExternalLink else { return }
-        WKNavigationDelegateProxy.isHandlingExternalLink = true
+        guard WKNavigationDelegateProxy.beginHandlingExternalLink() else { return }
 
         let storeVC = SKStoreProductViewController()
         storeVC.delegate = self
@@ -873,17 +1178,16 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
     }
 
     func productViewControllerDidFinish(_ viewController: SKStoreProductViewController) {
-        WKNavigationDelegateProxy.isHandlingExternalLink = false
+        WKNavigationDelegateProxy.endHandlingExternalLink()
         viewController.dismiss(animated: true)
     }
 
     func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
-        WKNavigationDelegateProxy.isHandlingExternalLink = false
+        WKNavigationDelegateProxy.endHandlingExternalLink()
     }
 
     private func presentSafari(url: URL) {
-        guard !WKNavigationDelegateProxy.isHandlingExternalLink else { return }
-        WKNavigationDelegateProxy.isHandlingExternalLink = true
+        guard WKNavigationDelegateProxy.beginHandlingExternalLink() else { return }
 
         let safariVC = SFSafariViewController(url: url)
         safariVC.delegate = self
@@ -891,21 +1195,19 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
     }
 
     private func resolveAndRoute(url: URL) {
-        guard !WKNavigationDelegateProxy.isResolving,
-              !WKNavigationDelegateProxy.isHandlingExternalLink else { return }
+        guard !WKNavigationDelegateProxy.isBusy() else { return }
 
         if let appID = SimulaMiniGameModule.appStoreID(from: url) {
             presentStoreProduct(appID: appID)
             return
         }
 
-        WKNavigationDelegateProxy.isResolving = true
+        guard WKNavigationDelegateProxy.beginResolving() else { return }
 
         let proxy = self
         let resolver = RedirectResolver { finalURL in
             DispatchQueue.main.async {
-                WKNavigationDelegateProxy.isResolving = false
-                WKNavigationDelegateProxy.activeSession = nil
+                WKNavigationDelegateProxy.endResolving()
 
                 if let appID = SimulaMiniGameModule.appStoreID(from: finalURL) {
                     proxy.presentStoreProduct(appID: appID)
@@ -918,7 +1220,7 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
         // Use .ephemeral to bypass React Native's custom URLProtocols
         let config = URLSessionConfiguration.ephemeral
         let session = URLSession(configuration: config, delegate: resolver, delegateQueue: nil)
-        WKNavigationDelegateProxy.activeSession = session  // Retain session
+        WKNavigationDelegateProxy.setActiveSession(session)  // Retain session
         session.dataTask(with: URLRequest(url: url)).resume()
     }
 

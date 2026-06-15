@@ -44,6 +44,16 @@ function App() {
 }
 ```
 
+By default the provider eagerly initializes the native SDK on mount
+(`initializeOnMount`, default `true`), warming the server session off the first
+ad's critical path. Additional optional props:
+
+| Prop | Type | Default | Description |
+|---|---|---|---|
+| `privacy` | `SimulaPrivacyConfig` | — | Granular consent (TCF/CCPA/GPP/COPPA + IDFA opt-in). Takes precedence over `hasPrivacyConsent`. |
+| `telemetryEnabled` | `boolean` | `true` | Opt out of in-house SDK telemetry. |
+| `initializeOnMount` | `boolean` | `true` | Warm the native session on mount. Set `false` if you call `SimulaAds.initialize` yourself. |
+
 ### 2. MiniGame Menu Integration
 
 Add the `MiniGameMenu` component to your chat interface:
@@ -192,6 +202,122 @@ function ChatScreen() {
   );
 }
 ```
+
+## Imperative Ads (Interstitial & Rewarded)
+
+In addition to the declarative mini-game surfaces, the SDK exposes an imperative,
+preloadable full-screen ad API modeled on AdMob. The native SDKs own all of the
+logic — dedup, 1-hour staleness, the load/show state machine, auto-preload on
+close, and durable server-side reward verification. The wrapper is a thin
+pass-through: outcomes are delivered as events.
+
+Initialization happens automatically when a `SimulaProvider` is mounted. To use
+the imperative API outside a provider tree, initialize once at startup:
+
+```typescript
+import { SimulaAds } from "@simula/ads-react-native";
+
+await SimulaAds.initialize({ apiKey: "YOUR_API_KEY" });
+```
+
+### Interstitial
+
+```typescript
+import { SimulaInterstitialAd, SimulaAdEventType } from "@simula/ads-react-native";
+
+const ad = SimulaInterstitialAd.create("home_interstitial");
+
+const off = ad.addAdEventListener(SimulaAdEventType.LOADED, () => ad.show());
+ad.addAdEventListener(SimulaAdEventType.LOAD_FAILED, ({ error }) =>
+  console.warn(error?.code, error?.message),
+);
+
+ad.load({ charId, charName });
+
+// when done (e.g. component unmount):
+ad.destroy();
+```
+
+Or use the hook (creates on mount, destroys on unmount):
+
+```typescript
+import { useInterstitialAd } from "@simula/ads-react-native";
+
+function Screen() {
+  const { isLoaded, load, show, error } = useInterstitialAd("home_interstitial");
+  useEffect(() => { load(); }, [load]);
+  return <Button title="Show" disabled={!isLoaded} onPress={show} />;
+}
+```
+
+### Rewarded
+
+```typescript
+import { useRewardedAd } from "@simula/ads-react-native";
+
+function Screen() {
+  const { isLoaded, load, show, rewardToken } = useRewardedAd("reward_slot", {
+    minPlayThresholdSeconds: 5,
+  });
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (rewardToken !== undefined) grantReward(rewardToken); // null = idempotent re-verify
+  }, [rewardToken]);
+  return <Button title="Earn reward" disabled={!isLoaded} onPress={show} />;
+}
+```
+
+Reward verification is durable and server-side: `REWARD_VERIFIED` may arrive long
+after close — even after an app relaunch (the native queue drains on init). The
+hook only reflects events while mounted; persist the token yourself if you need it
+across launches.
+
+### Events
+
+All events share the canonical cross-platform names. Errors carry a stable `code`
+(`SimulaAdError.code`):
+
+| Event | When |
+|---|---|
+| `LOADED` / `LOAD_FAILED` | `load()` resolved / failed |
+| `DISPLAYED` / `DISPLAY_FAILED` | `show()` presented / failed |
+| `CLICKED` | CTA tapped |
+| `CLOSED` | Ad dismissed (next ad auto-preloads) |
+| `EARNED_REWARD` | (Rewarded) played past the threshold |
+| `REWARD_VERIFIED` | (Rewarded) server verified; `rewardToken` provided |
+| `REWARD_VERIFICATION_FAILED` | (Rewarded) verification failed (may retry in background) |
+
+Error codes: `not_initialized`, `no_session`, `no_fill`, `not_ready`, `stale`,
+`duplicate_request` (carries `retryInSeconds`), `already_showing`,
+`no_presentation_context`, `network`, `unsupported_platform` (iOS), and
+`verification_failed`.
+
+## Privacy & Consent
+
+Pass a `privacy` config to `SimulaProvider`/`SimulaAds.initialize`, or update it at
+runtime. The native SDKs auto-read IAB CMP keys, merge explicit overrides, and
+re-sync the session — the wrapper only forwards values.
+
+```typescript
+import { SimulaPrivacy } from "@simula/ads-react-native";
+
+SimulaPrivacy.update({ tcString, gdprApplies: true });
+SimulaPrivacy.clearConsent({ tcString: true });
+
+// iOS App Tracking Transparency (requires NSUserTrackingUsageDescription in
+// Info.plist). On Android this resolves "unavailable".
+const status = await SimulaPrivacy.requestTrackingAuthorization();
+```
+
+## Performance Tips
+
+- **Memoize `theme` objects.** An inline `theme={{...}}` is a new object every
+  render; wrap it in `useMemo` so re-renders don't re-issue native show calls.
+- **Keep one instance per surface.** Each declarative component (`MiniGameMenu`,
+  etc.) is a singleton natively — mount only one at a time (a `__DEV__` warning
+  fires otherwise).
+- **`useMiniGamePreload` is deprecated** in favor of `initializeOnMount` (default)
+  or `SimulaAds.initialize`; it now delegates to the same native init path.
 
 ## Theming Reference
 
