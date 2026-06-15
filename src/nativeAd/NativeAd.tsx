@@ -15,8 +15,12 @@ import {
   Platform,
   type HostComponent,
 } from "react-native";
-import type { NativeAdProps, NativeAdViewProps, NativeAdData } from "./types";
-import type { SimulaAdError } from "../ads/types";
+import type {
+  NativeAdProps,
+  NativeAdViewProps,
+  NativeAdData,
+  NativeAdError,
+} from "./types";
 
 const COMPONENT_NAME = "SimulaNativeAdView";
 
@@ -72,7 +76,7 @@ export function NativeAd({
   );
 
   const handleError = useCallback(
-    (event: { nativeEvent: SimulaAdError }) => {
+    (event: { nativeEvent: NativeAdError }) => {
       onError?.(event.nativeEvent);
     },
     [onError],

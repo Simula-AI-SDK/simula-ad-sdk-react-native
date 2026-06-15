@@ -57,6 +57,8 @@ export type {
   NativeAdProps,
   NativeAdData,
   SimulaNativeAdTheme,
+  NativeAdError,
+  NativeAdErrorCode,
 } from "./nativeAd/types";
 export type {
   SimulaAdType,

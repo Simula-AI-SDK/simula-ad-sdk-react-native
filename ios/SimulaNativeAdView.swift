@@ -148,27 +148,27 @@ class SimulaNativeAdHostView: UIView {
         ])
     }
 
-    private func emitError(_ error: SimulaAdError) {
-        let (code, message, retry) = SimulaNativeAdHostView.describe(error)
-        var body: [String: Any] = ["code": code, "message": message]
-        if let retry { body["retryInSeconds"] = retry }
-        onAdError?(body)
+    private func emitError(_ error: NativeAdError) {
+        onAdError?(["code": Self.code(error), "message": Self.message(error)])
     }
 
-    /// Maps `SimulaAdError` to the same stable JS shape the imperative module emits.
-    private static func describe(_ error: SimulaAdError) -> (code: String, message: String, retry: Int?) {
-        let message = error.errorDescription ?? ""
+    /// The native enum carries no message (pure enum), so the bridge maps each case to the stable JS
+    /// code + a human-readable description (mirrors the native SDKs' SimulaAdError copy).
+    private static func code(_ error: NativeAdError) -> String {
         switch error {
-        case .notInitialized: return ("not_initialized", message, nil)
-        case .noSession: return ("no_session", message, nil)
-        case .noFill: return ("no_fill", message, nil)
-        case .notReady: return ("not_ready", message, nil)
-        case .stale: return ("stale", message, nil)
-        case .duplicateRequest(let retryInSeconds): return ("duplicate_request", message, retryInSeconds)
-        case .alreadyShowing: return ("already_showing", message, nil)
-        case .noPresentationContext: return ("no_presentation_context", message, nil)
-        case .unsupportedPlatform: return ("unsupported_platform", message, nil)
-        case .network: return ("network", message, nil)
+        case .notInitialized: return "not_initialized"
+        case .noSession: return "no_session"
+        case .noFill: return "no_fill"
+        case .network: return "network"
+        }
+    }
+
+    private static func message(_ error: NativeAdError) -> String {
+        switch error {
+        case .notInitialized: return "SimulaAds is not initialized — call SimulaAds.initialize() first."
+        case .noSession: return "Could not create a session. Check the API key and network connection."
+        case .noFill: return "No ad available to show right now (no fill)."
+        case .network: return "Network error while loading the ad — check the connection and try again."
         }
     }
 }
@@ -184,7 +184,7 @@ private struct SimulaNativeAdRoot: View {
     let previewHTML: String?
     let onHeight: (CGFloat) -> Void
     let onImpression: (NativeAdData) -> Void
-    let onError: (SimulaAdError) -> Void
+    let onError: (NativeAdError) -> Void
 
     var body: some View {
         NativeAdSlot(

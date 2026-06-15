@@ -1,5 +1,4 @@
 import type { DimensionValue, StyleProp, ViewStyle } from "react-native";
-import type { SimulaAdError } from "../ads/types";
 
 /**
  * Creative color theme for a native ad.
@@ -8,6 +7,27 @@ import type { SimulaAdError } from "../ads/types";
  * Omitted → backend default (currently light).
  */
 export type SimulaNativeAdTheme = "dark" | "light" | "system";
+
+/**
+ * Stable error codes a native ad can surface — a scoped subset of the imperative
+ * `SimulaAdErrorCode` (only these four can occur for an inline slot). Mirrors the native
+ * SDKs' `NativeAdError` (Kotlin / Swift enum).
+ */
+export type NativeAdErrorCode =
+  | "not_initialized"
+  | "no_session"
+  | "no_fill"
+  | "network";
+
+/**
+ * A failure surfaced on a native ad's `onError`. The slot collapses to zero height. Note
+ * `no_fill` is a normal outcome (no ad available), not a hard error — branch on `code`.
+ */
+export interface NativeAdError {
+  code: NativeAdErrorCode;
+  /** Human-readable description (synthesized by the native bridge). */
+  message: string;
+}
 
 /**
  * Payload delivered to a `NativeAd`'s `onImpression` when the viewability threshold
@@ -42,8 +62,11 @@ export interface NativeAdProps {
   previewHtml?: string;
   /** Fired once when the viewability threshold is met. */
   onImpression?: (data: NativeAdData) => void;
-  /** Fired on a load/render failure (network, bad session). Not fired on a no-fill. */
-  onError?: (error: SimulaAdError) => void;
+  /**
+   * Fired with a `NativeAdError` on a load/render failure (`not_initialized`, `no_session`,
+   * `network`) and on a no-fill (`no_fill`). The card collapses to zero height either way.
+   */
+  onError?: (error: NativeAdError) => void;
   /**
    * Card width (min 300; defaults to fill the parent), mirroring the `width` on the
    * Kotlin/Swift slots. Height is managed automatically — the card grows to its
@@ -64,6 +87,6 @@ export interface NativeAdViewProps {
     nativeEvent: { height: number };
   }) => void;
   onAdImpression?: (event: { nativeEvent: NativeAdData }) => void;
-  onAdError?: (event: { nativeEvent: SimulaAdError }) => void;
+  onAdError?: (event: { nativeEvent: NativeAdError }) => void;
   style?: StyleProp<ViewStyle>;
 }
