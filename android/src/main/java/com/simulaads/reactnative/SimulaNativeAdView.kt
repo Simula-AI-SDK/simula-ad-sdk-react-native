@@ -187,6 +187,7 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
         NativeAdError.NoSession -> "no_session"
         NativeAdError.NoFill -> "no_fill"
         NativeAdError.Network -> "network"
+        NativeAdError.AdUnitNotFound -> "ad_unit_not_found"
     }
 
     private fun errorMessage(error: NativeAdError): String = when (error) {
@@ -194,5 +195,6 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
         NativeAdError.NoSession -> "Could not create a session. Check the API key and network connection."
         NativeAdError.NoFill -> "No ad available to show right now (no fill)."
         NativeAdError.Network -> "Network error while loading the ad — check the connection and try again."
+        NativeAdError.AdUnitNotFound -> "Ad unit id is not registered for this app — check the ad unit id in your Simula dashboard."
     }
 }

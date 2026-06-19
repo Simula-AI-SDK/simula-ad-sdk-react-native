@@ -43,7 +43,8 @@ export type SimulaAnyAdEventType = SimulaAdEventType | SimulaRewardedAdEventType
 /**
  * Stable error codes mapped from the native `SimulaAdError`. Mirrors the Kotlin
  * `telemetryCode()` / Swift `telemetryCode` naming. `unsupported_platform` is
- * iOS-only; `verification_failed` is rewarded-only.
+ * iOS-only; `verification_failed` is rewarded-only. `ad_unit_not_found` is a
+ * non-retryable misconfiguration (the ad unit id isn't registered for this app).
  */
 export type SimulaAdErrorCode =
   | "not_initialized"
@@ -55,6 +56,7 @@ export type SimulaAdErrorCode =
   | "already_showing"
   | "no_presentation_context"
   | "network"
+  | "ad_unit_not_found"
   | "unsupported_platform"
   | "verification_failed";
 

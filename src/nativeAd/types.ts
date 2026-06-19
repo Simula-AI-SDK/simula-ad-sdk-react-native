@@ -11,14 +11,16 @@ export type SimulaNativeAdTheme = "dark" | "light" | "system";
 
 /**
  * Stable error codes a native ad can surface — a scoped subset of the imperative
- * `SimulaAdErrorCode` (only these four can occur for an inline slot). Mirrors the native
- * SDKs' `NativeAdError` (Kotlin / Swift enum).
+ * `SimulaAdErrorCode`. Mirrors the native SDKs' `NativeAdError` (Kotlin / Swift enum).
+ * `ad_unit_not_found` is a non-retryable misconfiguration (the ad unit id isn't
+ * registered for this app).
  */
 export type NativeAdErrorCode =
   | "not_initialized"
   | "no_session"
   | "no_fill"
-  | "network";
+  | "network"
+  | "ad_unit_not_found";
 
 /**
  * A failure surfaced on a native ad's `onError`. The slot collapses to zero height. Note

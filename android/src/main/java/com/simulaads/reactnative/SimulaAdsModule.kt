@@ -375,6 +375,7 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
         is SimulaAdError.AlreadyShowing -> "already_showing" to null
         is SimulaAdError.NoPresentationContext -> "no_presentation_context" to null
         is SimulaAdError.Network -> "network" to null
+        SimulaAdError.AdUnitNotFound -> "ad_unit_not_found" to null
     }
 
     // ── Privacy conversion ──────────────────────────────────────────────────────

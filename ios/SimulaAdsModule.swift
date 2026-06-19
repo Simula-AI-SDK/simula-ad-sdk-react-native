@@ -404,6 +404,7 @@ class SimulaAdsModule: RCTEventEmitter {
         case .noPresentationContext: return ("no_presentation_context", message, nil)
         case .unsupportedPlatform: return ("unsupported_platform", message, nil)
         case .network: return ("network", message, nil)
+        case .adUnitNotFound: return ("ad_unit_not_found", message, nil)
         }
     }
 
