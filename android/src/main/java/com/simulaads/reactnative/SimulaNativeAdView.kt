@@ -13,6 +13,7 @@ import com.facebook.react.bridge.WritableMap
 import com.facebook.react.uimanager.ThemedReactContext
 import com.facebook.react.uimanager.events.RCTEventEmitter
 import ad.simula.ad.sdk.ads.SimulaAds
+import ad.simula.ad.sdk.model.AdValue
 import ad.simula.ad.sdk.model.NativeAdData
 import ad.simula.ad.sdk.nativead.NativeAdError
 import ad.simula.ad.sdk.nativead.NativeAdSlot
@@ -81,7 +82,9 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
                         preloadedAdId = preloadedAdId,
                         previewHtml = previewHtml,
                         onImpression = { emitImpression(it) },
+                        onPaid = { emitPaid(it) },
                         onError = { emitError(it) },
+                        onClick = { emitClick() },
                     )
                 }
             }
@@ -149,6 +152,21 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
         emit("onAdImpression", payload)
     }
 
+    private fun emitClick() {
+        emit("onAdClick", Arguments.createMap())
+    }
+
+    private fun emitPaid(value: AdValue) {
+        val payload = Arguments.createMap().apply {
+            putDouble("valueMicros", value.valueMicros.toDouble())
+            putString("currencyCode", value.currencyCode)
+            putString("precisionType", value.precisionType.name)
+            putDouble("expectedCpm", value.expectedCpm)
+            putDouble("expectedRevenue", value.expectedRevenue)
+        }
+        emit("onAdPaid", payload)
+    }
+
     private fun emitError(error: NativeAdError) {
         val payload = Arguments.createMap().apply {
             putString("code", errorCode(error))
@@ -169,6 +187,7 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
         NativeAdError.NoSession -> "no_session"
         NativeAdError.NoFill -> "no_fill"
         NativeAdError.Network -> "network"
+        NativeAdError.AdUnitNotFound -> "ad_unit_not_found"
     }
 
     private fun errorMessage(error: NativeAdError): String = when (error) {
@@ -176,5 +195,6 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
         NativeAdError.NoSession -> "Could not create a session. Check the API key and network connection."
         NativeAdError.NoFill -> "No ad available to show right now (no fill)."
         NativeAdError.Network -> "Network error while loading the ad — check the connection and try again."
+        NativeAdError.AdUnitNotFound -> "Ad unit id is not registered for this app — check the ad unit id in your Simula dashboard."
     }
 }

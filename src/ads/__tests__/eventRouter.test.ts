@@ -60,6 +60,51 @@ describe("eventRouter", () => {
     off();
   });
 
+  it("assembles adValue from the flat PAID payload", () => {
+    let received: SimulaAdEvent | undefined;
+    const off = registerInstance("int_paid", (e) => {
+      if (e.type === "PAID") received = e;
+    });
+
+    __emit(AD_EVENT_NAME, {
+      instanceId: "int_paid",
+      adType: "interstitial",
+      type: "PAID",
+      valueMicros: 5000,
+      currencyCode: "USD",
+      precisionType: "ESTIMATED",
+      expectedCpm: 5,
+      expectedRevenue: 0.005,
+    });
+
+    expect(received?.adValue).toEqual({
+      valueMicros: 5000,
+      currencyCode: "USD",
+      precisionType: "ESTIMATED",
+      expectedCpm: 5,
+      expectedRevenue: 0.005,
+    });
+    off();
+  });
+
+  it("routes IMPRESSION without an error or adValue", () => {
+    let received: SimulaAdEvent | undefined;
+    const off = registerInstance("rew_imp", (e) => {
+      if (e.type === "IMPRESSION") received = e;
+    });
+
+    __emit(AD_EVENT_NAME, {
+      instanceId: "rew_imp",
+      adType: "rewarded",
+      type: "IMPRESSION",
+    });
+
+    expect(received).toBeDefined();
+    expect(received?.error).toBeUndefined();
+    expect(received?.adValue).toBeUndefined();
+    off();
+  });
+
   it("preserves an explicit null reward token (idempotent re-verify)", () => {
     let received: SimulaAdEvent | undefined;
     const off = registerInstance("rew_1", (e) => {

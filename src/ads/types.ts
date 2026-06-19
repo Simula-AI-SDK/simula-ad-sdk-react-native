@@ -18,8 +18,12 @@ export enum SimulaAdEventType {
   LOADED = "LOADED",
   LOAD_FAILED = "LOAD_FAILED",
   DISPLAYED = "DISPLAYED",
+  /** The impression was recorded (fires the server impression beacon). */
+  IMPRESSION = "IMPRESSION",
   DISPLAY_FAILED = "DISPLAY_FAILED",
   CLICKED = "CLICKED",
+  /** Estimated per-impression revenue is available — carries `adValue`. */
+  PAID = "PAID",
   CLOSED = "CLOSED",
 }
 
@@ -39,7 +43,8 @@ export type SimulaAnyAdEventType = SimulaAdEventType | SimulaRewardedAdEventType
 /**
  * Stable error codes mapped from the native `SimulaAdError`. Mirrors the Kotlin
  * `telemetryCode()` / Swift `telemetryCode` naming. `unsupported_platform` is
- * iOS-only; `verification_failed` is rewarded-only.
+ * iOS-only; `verification_failed` is rewarded-only. `ad_unit_not_found` is a
+ * non-retryable misconfiguration (the ad unit id isn't registered for this app).
  */
 export type SimulaAdErrorCode =
   | "not_initialized"
@@ -51,8 +56,36 @@ export type SimulaAdErrorCode =
   | "already_showing"
   | "no_presentation_context"
   | "network"
+  | "ad_unit_not_found"
   | "unsupported_platform"
   | "verification_failed";
+
+/**
+ * Estimate quality of an {@link AdValue}. Currently the native SDKs only ever
+ * report `"ESTIMATED"`; the type stays open (the `(string & {})` widening keeps
+ * literal autocomplete) so a future precision case won't be a breaking change.
+ */
+export type AdValuePrecision = "ESTIMATED" | (string & {});
+
+/**
+ * Estimated per-impression revenue for a served ad, in a standard `AdValue` shape
+ * (drop-in for an analytics / MMP pipeline). Surfaced on the `PAID` event — and on
+ * `<NativeAd onPaid>` — at the moment the impression fires, never at load. Mirrors
+ * the native SDKs' `AdValue`; all figures are serve-time estimates derived from the
+ * backend-provided floor CPM (no extra network call).
+ */
+export interface AdValue {
+  /** Per-impression revenue in micros of `currencyCode`. `5000` = $0.005. */
+  valueMicros: number;
+  /** ISO-4217 currency code, e.g. `"USD"`. */
+  currencyCode: string;
+  /** Estimate quality — currently always `"ESTIMATED"`. */
+  precisionType: AdValuePrecision;
+  /** Estimated CPM = `valueMicros` / 1_000. */
+  expectedCpm: number;
+  /** Estimated per-impression revenue = `valueMicros` / 1_000_000. */
+  expectedRevenue: number;
+}
 
 /** A failure surfaced on a `*_FAILED` event. */
 export interface SimulaAdError {
@@ -80,6 +113,8 @@ export interface SimulaAdEvent {
   type: SimulaAnyAdEventType;
   /** Present on LOAD_FAILED / DISPLAY_FAILED / REWARD_VERIFICATION_FAILED. */
   error?: SimulaAdError;
+  /** Present on PAID only: the estimated per-impression revenue. */
+  adValue?: AdValue;
   /**
    * Present on REWARD_VERIFIED only. `null` when the call was an idempotent
    * re-verification of an already-claimed reward.

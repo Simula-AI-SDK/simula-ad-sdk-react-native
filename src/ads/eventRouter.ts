@@ -14,6 +14,7 @@
 import { EmitterSubscription } from "react-native";
 import { getAdsEmitter, AD_EVENT_NAME } from "../internal/nativeModules";
 import {
+  AdValue,
   SimulaAdEvent,
   SimulaAdError,
   SimulaAdErrorCode,
@@ -29,6 +30,12 @@ interface RawAdEvent {
   message?: string;
   retryInSeconds?: number;
   token?: string | null;
+  // AdValue fields, flattened onto the event by both native bridges (PAID only).
+  valueMicros?: number;
+  currencyCode?: string;
+  precisionType?: string;
+  expectedCpm?: number;
+  expectedRevenue?: number;
 }
 
 type InstanceHandler = (event: SimulaAdEvent) => void;
@@ -55,6 +62,16 @@ function toAdEvent(raw: RawAdEvent): SimulaAdEvent {
       error.retryInSeconds = raw.retryInSeconds;
     }
     event.error = error;
+  }
+
+  if (raw.type === "PAID") {
+    event.adValue = {
+      valueMicros: raw.valueMicros ?? 0,
+      currencyCode: raw.currencyCode ?? "",
+      precisionType: (raw.precisionType ?? "ESTIMATED") as AdValue["precisionType"],
+      expectedCpm: raw.expectedCpm ?? 0,
+      expectedRevenue: raw.expectedRevenue ?? 0,
+    };
   }
 
   if (raw.type === "REWARD_VERIFIED") {

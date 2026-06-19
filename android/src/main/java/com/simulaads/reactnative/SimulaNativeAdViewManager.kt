@@ -52,6 +52,8 @@ class SimulaNativeAdViewManager : SimpleViewManager<SimulaNativeAdView>() {
         mutableMapOf(
             "onAdSizeChange" to mapOf("registrationName" to "onAdSizeChange"),
             "onAdImpression" to mapOf("registrationName" to "onAdImpression"),
+            "onAdClick" to mapOf("registrationName" to "onAdClick"),
+            "onAdPaid" to mapOf("registrationName" to "onAdPaid"),
             "onAdError" to mapOf("registrationName" to "onAdError"),
         )
 }

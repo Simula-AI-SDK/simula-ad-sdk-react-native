@@ -85,6 +85,17 @@ export const SimulaAds = {
   },
 
   /**
+   * Update the primary user identifier at runtime (e.g. after login/logout). The
+   * new value is carried by the next session and patched onto a live session
+   * server-side. Pass `null`/empty (or omit) to clear it (logout). No-op before
+   * `initialize`. Suppressed without consent / under COPPA, like the init value.
+   */
+  updatePrimaryUserID(id?: string | null): void {
+    if (!isAdsModuleAvailable()) return warnAdsUnavailable("updatePrimaryUserID");
+    NativeAds!.updatePrimaryUserID(id ?? null);
+  },
+
+  /**
    * Imperatively preload one native ad before its slot scrolls into view. Fires a
    * single native-ad request using the current targeting context, caches it, and
    * resolves a `preloadedAdId` to pass to a `<NativeAd preloadedAdId={...}>` (which
@@ -127,5 +138,24 @@ export const SimulaAds = {
   invalidateNativeAds(): void {
     if (!isAdsModuleAvailable()) return warnAdsUnavailable("invalidateNativeAds");
     NativeAds!.invalidateNativeAds();
+  },
+
+  /**
+   * The custom User-Agent the SDK stamps on its requests (for server-side
+   * logging / debugging). Resolves `null` before `initialize` or when the native
+   * module isn't linked.
+   */
+  async userAgent(): Promise<string | null> {
+    if (!isAdsModuleAvailable()) return null;
+    return NativeAds!.getUserAgent();
+  },
+
+  /**
+   * The SDK's device identifier (`X-Device-Id`). Resolves `null` before
+   * `initialize` or when the native module isn't linked.
+   */
+  async deviceId(): Promise<string | null> {
+    if (!isAdsModuleAvailable()) return null;
+    return NativeAds!.getDeviceId();
   },
 };

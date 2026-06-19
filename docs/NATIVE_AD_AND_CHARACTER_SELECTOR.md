@@ -3,6 +3,12 @@
 Added in `@simula/ads-react-native` 1.3.0 (matches native SDK 1.1.0). These wrap the
 native SDKs' newest surfaces; everything renders natively (Swift / Kotlin Compose).
 
+> **1.3.1** adds revenue + lifecycle parity with the native SDKs: a `PAID` event
+> carrying an `AdValue` and an `IMPRESSION` event on interstitial/rewarded ads,
+> `onClick`/`onPaid` on `<NativeAd>`, a runtime `SimulaAds.updatePrimaryUserID()`
+> (PPID), and `SimulaAds.userAgent()` / `SimulaAds.deviceId()` getters. See
+> [Revenue & lifecycle events](#revenue--lifecycle-events-131) below.
+
 ## Ad targeting context
 
 Native ads are contextually targeted. Provide a `SimulaAdContext` on the provider (or
@@ -49,6 +55,8 @@ import { NativeAd } from '@simula/ads-react-native';
     theme="system"            // "dark" | "light" | "system"
     width="100%"              // optional; defaults to fill the parent (min 300pt)
     onImpression={(d) => console.log('impression', d.impressionId)}
+    onClick={() => console.log('native ad clicked')}
+    onPaid={(v) => console.log('native ad revenue', v.expectedRevenue, v.currencyCode)}
     onError={(e) => console.log('native ad error', e.code)}
   />
 </View>;
@@ -58,6 +66,8 @@ import { NativeAd } from '@simula/ads-react-native';
   shares the warmed session, so a feed of N cards uses **one** session, not N.
 - Impression fires once at the viewability threshold (≥50% visible ≥1s), handled
   natively. A no-fill does **not** call `onError`.
+- `onClick` fires on a real CTA tap that navigates out (the click-through is handled
+  natively); `onPaid` delivers the estimated revenue, co-timed with `onImpression`.
 - Width defaults to fill the parent (min 300pt); height is managed for you.
 
 ### Preloading
@@ -106,3 +116,50 @@ import { CharacterSelector } from '@simula/ads-react-native';
 
 `onClose` / `onCharacterSelected` should set `isOpen` to false (controlled component,
 same contract as `MiniGameMenu`).
+
+## Revenue & lifecycle events (1.3.1)
+
+The imperative interstitial/rewarded ads now also emit `IMPRESSION` (the server
+impression was recorded) and `PAID` (estimated revenue available). `PAID` carries an
+`AdValue`; both are additive — existing listeners are unaffected.
+
+```ts
+import { SimulaAdEventType } from '@simula/ads-react-native';
+
+ad.addAdEventsListener((event) => {
+  if (event.type === SimulaAdEventType.IMPRESSION) {
+    // impression recorded
+  }
+  if (event.type === SimulaAdEventType.PAID && event.adValue) {
+    const { valueMicros, currencyCode, expectedCpm, expectedRevenue } = event.adValue;
+    // forward to your analytics / MMP
+  }
+});
+```
+
+The hooks surface the same: `useInterstitialAd` / `useRewardedAd` now return
+`impressionRecorded: boolean` and `adValue: AdValue | null`. Rewarded ads also emit
+`CLICKED` now (parity with interstitial).
+
+`AdValue`: `{ valueMicros, currencyCode, precisionType, expectedCpm, expectedRevenue }`
+— serve-time estimates derived from the floor CPM (`valueMicros` is micros, `5000` =
+$0.005). `precisionType` is currently always `"ESTIMATED"`.
+
+### Primary user ID (PPID)
+
+Set the identifier at init (`primaryUserID` on `SimulaProvider` / `SimulaAds.initialize`)
+and update it at runtime on login/logout:
+
+```ts
+SimulaAds.updatePrimaryUserID('user-123'); // login
+SimulaAds.updatePrimaryUserID(null);       // logout / clear
+```
+
+`<SimulaProvider primaryUserID={...}>` does this automatically when the prop changes.
+The id is consent/COPPA-gated natively, same as at init.
+
+### Diagnostics
+
+`SimulaAds.userAgent()` and `SimulaAds.deviceId()` resolve the SDK's request
+User-Agent and device id (or `null` before `initialize`) — useful for server-side
+debugging / allowlisting.

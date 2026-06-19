@@ -10,6 +10,8 @@ RCT_EXPORT_VIEW_PROPERTY(previewHtml, NSString)
 
 RCT_EXPORT_VIEW_PROPERTY(onAdSizeChange, RCTDirectEventBlock)
 RCT_EXPORT_VIEW_PROPERTY(onAdImpression, RCTDirectEventBlock)
+RCT_EXPORT_VIEW_PROPERTY(onAdClick, RCTDirectEventBlock)
+RCT_EXPORT_VIEW_PROPERTY(onAdPaid, RCTDirectEventBlock)
 RCT_EXPORT_VIEW_PROPERTY(onAdError, RCTDirectEventBlock)
 
 @end

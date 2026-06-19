@@ -14,6 +14,7 @@ import ad.simula.ad.sdk.ads.SimulaInterstitialAd
 import ad.simula.ad.sdk.ads.SimulaInterstitialAdListener
 import ad.simula.ad.sdk.ads.SimulaRewardedAd
 import ad.simula.ad.sdk.ads.SimulaRewardedAdListener
+import ad.simula.ad.sdk.model.AdValue
 import ad.simula.ad.sdk.model.SimulaAdContext
 import ad.simula.ad.sdk.privacy.SimulaPrivacy
 import ad.simula.ad.sdk.privacy.SimulaPrivacyConfig
@@ -93,6 +94,25 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun updateContext(context: ReadableMap) {
         SimulaAds.updateContext(convertAdContext(context))
+    }
+
+    /**
+     * Update the primary user identifier at runtime (login/logout). A null/blank id
+     * clears it natively. No-op before initialize.
+     */
+    @ReactMethod
+    fun updatePrimaryUserID(id: String?) {
+        SimulaAds.updatePrimaryUserID(id?.takeIf { it.isNotBlank() })
+    }
+
+    @ReactMethod
+    fun getUserAgent(promise: Promise) {
+        promise.resolve(SimulaAds.userAgent)
+    }
+
+    @ReactMethod
+    fun getDeviceId(promise: Promise) {
+        promise.resolve(SimulaAds.deviceId)
     }
 
     // ── Native ad (imperative) ────────────────────────────────────────────────
@@ -244,6 +264,10 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
                 emitError(instanceId, "interstitial", "LOAD_FAILED", error)
             override fun onAdDisplayed(ad: SimulaInterstitialAd) =
                 emitSimple(instanceId, "interstitial", "DISPLAYED")
+            override fun onAdImpression(ad: SimulaInterstitialAd) =
+                emitSimple(instanceId, "interstitial", "IMPRESSION")
+            override fun onAdPaid(ad: SimulaInterstitialAd, adValue: AdValue) =
+                emitPaid(instanceId, "interstitial", adValue)
             override fun onAdFailedToDisplay(ad: SimulaInterstitialAd, error: SimulaAdError) =
                 emitError(instanceId, "interstitial", "DISPLAY_FAILED", error)
             override fun onAdClicked(ad: SimulaInterstitialAd) =
@@ -260,8 +284,14 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
                 emitError(instanceId, "rewarded", "LOAD_FAILED", error)
             override fun onAdDisplayed(ad: SimulaRewardedAd) =
                 emitSimple(instanceId, "rewarded", "DISPLAYED")
+            override fun onAdImpression(ad: SimulaRewardedAd) =
+                emitSimple(instanceId, "rewarded", "IMPRESSION")
+            override fun onAdPaid(ad: SimulaRewardedAd, adValue: AdValue) =
+                emitPaid(instanceId, "rewarded", adValue)
             override fun onAdFailedToDisplay(ad: SimulaRewardedAd, error: SimulaAdError) =
                 emitError(instanceId, "rewarded", "DISPLAY_FAILED", error)
+            override fun onAdClicked(ad: SimulaRewardedAd) =
+                emitSimple(instanceId, "rewarded", "CLICKED")
             override fun onAdEarnedReward(ad: SimulaRewardedAd) =
                 emitSimple(instanceId, "rewarded", "EARNED_REWARD")
             override fun onAdRewardVerified(ad: SimulaRewardedAd, token: String?) =
@@ -307,6 +337,17 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
         sendEvent(map)
     }
 
+    /** PAID event — flattens the [AdValue] estimate onto the wire (see `eventRouter`). */
+    private fun emitPaid(instanceId: String, adType: String, value: AdValue) {
+        val map = baseEvent(instanceId, adType, "PAID")
+        map.putDouble("valueMicros", value.valueMicros.toDouble())
+        map.putString("currencyCode", value.currencyCode)
+        map.putString("precisionType", value.precisionType.name)
+        map.putDouble("expectedCpm", value.expectedCpm)
+        map.putDouble("expectedRevenue", value.expectedRevenue)
+        sendEvent(map)
+    }
+
     private fun sendEvent(params: WritableMap) {
         // Bridge may be tearing down (reload / host destroy).
         if (!reactApplicationContext.hasActiveReactInstance()) return
@@ -334,6 +375,7 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
         is SimulaAdError.AlreadyShowing -> "already_showing" to null
         is SimulaAdError.NoPresentationContext -> "no_presentation_context" to null
         is SimulaAdError.Network -> "network" to null
+        SimulaAdError.AdUnitNotFound -> "ad_unit_not_found" to null
     }
 
     // ── Privacy conversion ──────────────────────────────────────────────────────
