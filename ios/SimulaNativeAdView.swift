@@ -40,6 +40,8 @@ class SimulaNativeAdHostView: UIView {
 
     @objc var onAdSizeChange: RCTDirectEventBlock?
     @objc var onAdImpression: RCTDirectEventBlock?
+    @objc var onAdClick: RCTDirectEventBlock?
+    @objc var onAdPaid: RCTDirectEventBlock?
     @objc var onAdError: RCTDirectEventBlock?
 
     // MARK: State
@@ -104,6 +106,8 @@ class SimulaNativeAdHostView: UIView {
             previewHTML: previewHtml as String?,
             onHeight: { [weak self] height in self?.reportHeight(height) },
             onImpression: { [weak self] data in self?.emitImpression(data) },
+            onClick: { [weak self] in self?.emitClick() },
+            onPaid: { [weak self] value in self?.emitPaid(value) },
             onError: { [weak self] error in self?.emitError(error) }
         )
 
@@ -148,6 +152,20 @@ class SimulaNativeAdHostView: UIView {
         ])
     }
 
+    private func emitClick() {
+        onAdClick?([:])
+    }
+
+    private func emitPaid(_ value: AdValue) {
+        onAdPaid?([
+            "valueMicros": value.valueMicros,
+            "currencyCode": value.currencyCode,
+            "precisionType": value.precisionType.rawValue,
+            "expectedCpm": value.expectedCpm,
+            "expectedRevenue": value.expectedRevenue,
+        ])
+    }
+
     private func emitError(_ error: NativeAdError) {
         onAdError?(["code": Self.code(error), "message": Self.message(error)])
     }
@@ -184,6 +202,8 @@ private struct SimulaNativeAdRoot: View {
     let previewHTML: String?
     let onHeight: (CGFloat) -> Void
     let onImpression: (NativeAdData) -> Void
+    let onClick: () -> Void
+    let onPaid: (AdValue) -> Void
     let onError: (NativeAdError) -> Void
 
     var body: some View {
@@ -193,7 +213,9 @@ private struct SimulaNativeAdRoot: View {
             theme: theme,
             preloadedAdId: preloadedAdId,
             onImpression: onImpression,
+            onPaid: onPaid,
             onError: onError,
+            onClick: onClick,
             previewHTML: previewHTML
         )
         // Fill the host width; height stays content-driven.

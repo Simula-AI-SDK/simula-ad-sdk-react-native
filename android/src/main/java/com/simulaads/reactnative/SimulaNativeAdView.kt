@@ -13,6 +13,7 @@ import com.facebook.react.bridge.WritableMap
 import com.facebook.react.uimanager.ThemedReactContext
 import com.facebook.react.uimanager.events.RCTEventEmitter
 import ad.simula.ad.sdk.ads.SimulaAds
+import ad.simula.ad.sdk.model.AdValue
 import ad.simula.ad.sdk.model.NativeAdData
 import ad.simula.ad.sdk.nativead.NativeAdError
 import ad.simula.ad.sdk.nativead.NativeAdSlot
@@ -81,7 +82,9 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
                         preloadedAdId = preloadedAdId,
                         previewHtml = previewHtml,
                         onImpression = { emitImpression(it) },
+                        onPaid = { emitPaid(it) },
                         onError = { emitError(it) },
+                        onClick = { emitClick() },
                     )
                 }
             }
@@ -147,6 +150,21 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
             if (data.adUnitId != null) putString("adUnitId", data.adUnitId) else putNull("adUnitId")
         }
         emit("onAdImpression", payload)
+    }
+
+    private fun emitClick() {
+        emit("onAdClick", Arguments.createMap())
+    }
+
+    private fun emitPaid(value: AdValue) {
+        val payload = Arguments.createMap().apply {
+            putDouble("valueMicros", value.valueMicros.toDouble())
+            putString("currencyCode", value.currencyCode)
+            putString("precisionType", value.precisionType.name)
+            putDouble("expectedCpm", value.expectedCpm)
+            putDouble("expectedRevenue", value.expectedRevenue)
+        }
+        emit("onAdPaid", payload)
     }
 
     private fun emitError(error: NativeAdError) {

@@ -21,6 +21,7 @@ import type {
   NativeAdData,
   NativeAdError,
 } from "./types";
+import type { AdValue } from "../ads/types";
 
 const COMPONENT_NAME = "SimulaNativeAdView";
 
@@ -52,6 +53,8 @@ export function NativeAd({
   preloadedAdId,
   previewHtml,
   onImpression,
+  onClick,
+  onPaid,
   onError,
   width,
 }: NativeAdProps): React.JSX.Element | null {
@@ -73,6 +76,17 @@ export function NativeAd({
       onImpression?.(event.nativeEvent);
     },
     [onImpression],
+  );
+
+  const handleClick = useCallback(() => {
+    onClick?.();
+  }, [onClick]);
+
+  const handlePaid = useCallback(
+    (event: { nativeEvent: AdValue }) => {
+      onPaid?.(event.nativeEvent);
+    },
+    [onPaid],
   );
 
   const handleError = useCallback(
@@ -101,6 +115,8 @@ export function NativeAd({
       previewHtml={previewHtml}
       onAdSizeChange={handleSize}
       onAdImpression={handleImpression}
+      onAdClick={handleClick}
+      onAdPaid={handlePaid}
       onAdError={handleError}
       style={containerStyle}
     />

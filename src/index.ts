@@ -67,6 +67,8 @@ export type {
   SimulaAdError,
   SimulaAdLoadOptions,
   SimulaAdEvent,
+  AdValue,
+  AdValuePrecision,
   SimulaUnsubscribe,
   InterstitialPreviewOptions,
   RewardedPreviewOptions,

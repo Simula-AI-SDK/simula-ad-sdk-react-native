@@ -121,6 +121,15 @@ class SimulaAdsModule: RCTEventEmitter {
         }
     }
 
+    @objc
+    func updatePrimaryUserID(_ id: NSString?) {
+        let userID = id as String?
+        MainActor.assumeIsolated {
+            // Empty/nil clears the PPID natively (logout).
+            SimulaAds.updatePrimaryUserID(userID?.isEmpty == true ? nil : userID)
+        }
+    }
+
     // MARK: - Native ad (imperative)
 
     @objc
@@ -165,6 +174,22 @@ class SimulaAdsModule: RCTEventEmitter {
                        reject: @escaping RCTPromiseRejectBlock) {
         MainActor.assumeIsolated {
             resolve(SimulaAds.isInitialized)
+        }
+    }
+
+    @objc
+    func getUserAgent(_ resolve: @escaping RCTPromiseResolveBlock,
+                      reject: @escaping RCTPromiseRejectBlock) {
+        MainActor.assumeIsolated {
+            resolve(SimulaAds.userAgent)
+        }
+    }
+
+    @objc
+    func getDeviceId(_ resolve: @escaping RCTPromiseResolveBlock,
+                     reject: @escaping RCTPromiseRejectBlock) {
+        MainActor.assumeIsolated {
+            resolve(SimulaAds.deviceId as Any? ?? NSNull())
         }
     }
 
@@ -349,6 +374,19 @@ class SimulaAdsModule: RCTEventEmitter {
         ])
     }
 
+    /// PAID event — flattens the `AdValue` estimate onto the wire (see `eventRouter`).
+    fileprivate func emitPaid(_ instanceId: String, _ adType: String, _ value: AdValue) {
+        guard hasListeners else { return }
+        sendEvent(withName: SimulaAdsModule.eventName, body: [
+            "instanceId": instanceId, "adType": adType, "type": "PAID",
+            "valueMicros": value.valueMicros,
+            "currencyCode": value.currencyCode,
+            "precisionType": value.precisionType.rawValue,
+            "expectedCpm": value.expectedCpm,
+            "expectedRevenue": value.expectedRevenue,
+        ])
+    }
+
     // MARK: - Helpers
 
     /// Maps `SimulaAdError` to a stable JS code, message, and (for duplicate_request)
@@ -467,6 +505,12 @@ private final class InterstitialDelegateProxy: NSObject, SimulaInterstitialAdDel
     func interstitialDidDisplay(_ ad: SimulaInterstitialAd) {
         module?.emitSimple(instanceId, "interstitial", "DISPLAYED")
     }
+    func interstitialDidRecordImpression(_ ad: SimulaInterstitialAd) {
+        module?.emitSimple(instanceId, "interstitial", "IMPRESSION")
+    }
+    func interstitialDidPay(_ ad: SimulaInterstitialAd, value: AdValue) {
+        module?.emitPaid(instanceId, "interstitial", value)
+    }
     func interstitialDidFailToDisplay(_ ad: SimulaInterstitialAd, error: SimulaAdError) {
         module?.emitError(instanceId, "interstitial", "DISPLAY_FAILED", error)
     }
@@ -496,8 +540,17 @@ private final class RewardedDelegateProxy: NSObject, SimulaRewardedAdDelegate {
     func rewardedDidDisplay(_ ad: SimulaRewardedAd) {
         module?.emitSimple(instanceId, "rewarded", "DISPLAYED")
     }
+    func rewardedDidRecordImpression(_ ad: SimulaRewardedAd) {
+        module?.emitSimple(instanceId, "rewarded", "IMPRESSION")
+    }
+    func rewardedDidPay(_ ad: SimulaRewardedAd, value: AdValue) {
+        module?.emitPaid(instanceId, "rewarded", value)
+    }
     func rewardedDidFailToDisplay(_ ad: SimulaRewardedAd, error: SimulaAdError) {
         module?.emitError(instanceId, "rewarded", "DISPLAY_FAILED", error)
+    }
+    func rewardedDidClick(_ ad: SimulaRewardedAd) {
+        module?.emitSimple(instanceId, "rewarded", "CLICKED")
     }
     func rewardedDidEarnReward(_ ad: SimulaRewardedAd) {
         module?.emitSimple(instanceId, "rewarded", "EARNED_REWARD")

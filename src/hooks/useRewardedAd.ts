@@ -10,7 +10,7 @@
  */
 import { useEffect, useRef, useState, useCallback } from "react";
 import { SimulaRewardedAd } from "../ads/SimulaRewardedAd";
-import { SimulaAdLoadOptions, SimulaAdError } from "../ads/types";
+import { SimulaAdLoadOptions, SimulaAdError, AdValue } from "../ads/types";
 
 export interface UseRewardedAd {
   isLoaded: boolean;
@@ -18,6 +18,10 @@ export interface UseRewardedAd {
   earnedReward: boolean;
   rewardVerified: boolean;
   rewardToken: string | null | undefined;
+  /** True once the impression was recorded for the current show. */
+  impressionRecorded: boolean;
+  /** Estimated per-impression revenue (set on the PAID event), else null. */
+  adValue: AdValue | null;
   error: SimulaAdError | undefined;
   load: (options?: SimulaAdLoadOptions) => void;
   show: () => void;
@@ -32,6 +36,8 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
   const [rewardToken, setRewardToken] = useState<string | null | undefined>(
     undefined,
   );
+  const [impressionRecorded, setImpressionRecorded] = useState(false);
+  const [adValue, setAdValue] = useState<AdValue | null>(null);
   const [error, setError] = useState<SimulaAdError | undefined>(undefined);
 
   useEffect(() => {
@@ -42,6 +48,8 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
     setEarnedReward(false);
     setRewardVerified(false);
     setRewardToken(undefined);
+    setImpressionRecorded(false);
+    setAdValue(null);
     setError(undefined);
 
     const off = ad.addAdEventsListener((event) => {
@@ -56,6 +64,14 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
           setEarnedReward(false);
           setRewardVerified(false);
           setRewardToken(undefined);
+          setImpressionRecorded(false);
+          setAdValue(null);
+          break;
+        case "IMPRESSION":
+          setImpressionRecorded(true);
+          break;
+        case "PAID":
+          if (event.adValue) setAdValue(event.adValue);
           break;
         case "CLOSED":
           setIsLoaded(false);
@@ -102,6 +118,8 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
     earnedReward,
     rewardVerified,
     rewardToken,
+    impressionRecorded,
+    adValue,
     error,
     load,
     show,

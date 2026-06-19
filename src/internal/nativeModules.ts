@@ -30,6 +30,9 @@ export interface NativeSimulaAdsModule {
   initialize(config: Record<string, unknown>): Promise<void>;
   isInitialized(): Promise<boolean>;
   updateContext(context: Record<string, unknown>): void;
+  updatePrimaryUserID(id: string | null): void;
+  getUserAgent(): Promise<string | null>;
+  getDeviceId(): Promise<string | null>;
 
   // ── Native ad (imperative) ─────────────────────────────────────────────
   preloadNativeAd(

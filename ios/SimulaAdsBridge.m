@@ -10,6 +10,11 @@ RCT_EXTERN_METHOD(initialize:(NSDictionary *)config
 RCT_EXTERN_METHOD(isInitialized:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(updateContext:(NSDictionary *)context)
+RCT_EXTERN_METHOD(updatePrimaryUserID:(NSString *)id)
+RCT_EXTERN_METHOD(getUserAgent:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(getDeviceId:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
 
 // ── Native ad (imperative) ────────────────────────────────────────────────────
 RCT_EXTERN_METHOD(preloadNativeAd:(NSString *)adUnitId

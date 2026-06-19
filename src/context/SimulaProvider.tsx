@@ -103,6 +103,18 @@ export function SimulaProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adContextKey]);
 
+  // Runtime primaryUserID changes after mount (login/logout) → patch the native PPID
+  // (init is idempotent, so it wouldn't re-apply a changed id on its own). Skipped on
+  // the first run since initialize already carried the initial value.
+  const didMountPpid = useRef(false);
+  useEffect(() => {
+    if (!didMountPpid.current) {
+      didMountPpid.current = true;
+      return;
+    }
+    SimulaAds.updatePrimaryUserID(primaryUserID ?? null);
+  }, [primaryUserID]);
+
   return (
     <SimulaContext.Provider value={contextValue}>
       {children}

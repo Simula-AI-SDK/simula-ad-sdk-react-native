@@ -112,3 +112,26 @@ describe("SimulaAds.isInitialized", () => {
     await expect(SimulaAds.isInitialized()).resolves.toBe(true);
   });
 });
+
+describe("SimulaAds.updatePrimaryUserID", () => {
+  it("passes the id through to native", () => {
+    SimulaAds.updatePrimaryUserID("user-123");
+    expect(native.updatePrimaryUserID).toHaveBeenCalledWith("user-123");
+  });
+
+  it("maps undefined / empty to null (clear)", () => {
+    SimulaAds.updatePrimaryUserID();
+    SimulaAds.updatePrimaryUserID(null);
+    expect(native.updatePrimaryUserID).toHaveBeenNthCalledWith(1, null);
+    expect(native.updatePrimaryUserID).toHaveBeenNthCalledWith(2, null);
+  });
+});
+
+describe("SimulaAds diagnostics", () => {
+  it("userAgent / deviceId resolve the native values", async () => {
+    native.getUserAgent.mockResolvedValueOnce("UA/9");
+    native.getDeviceId.mockResolvedValueOnce("dev-9");
+    await expect(SimulaAds.userAgent()).resolves.toBe("UA/9");
+    await expect(SimulaAds.deviceId()).resolves.toBe("dev-9");
+  });
+});

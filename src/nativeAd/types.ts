@@ -1,4 +1,5 @@
 import type { DimensionValue, StyleProp, ViewStyle } from "react-native";
+import type { AdValue } from "../ads/types";
 
 /**
  * Creative color theme for a native ad.
@@ -63,6 +64,17 @@ export interface NativeAdProps {
   /** Fired once when the viewability threshold is met. */
   onImpression?: (data: NativeAdData) => void;
   /**
+   * Fired when the user taps the creative's CTA and it navigates out (a real
+   * gesture-initiated click — not auto-redirects/pixels). The click-through itself
+   * is handled natively; this is a signal for your own analytics.
+   */
+  onClick?: () => void;
+  /**
+   * Fired with the estimated per-impression revenue, co-timed with `onImpression`.
+   * Mirrors the imperative ads' `PAID` event.
+   */
+  onPaid?: (adValue: AdValue) => void;
+  /**
    * Fired with a `NativeAdError` on a load/render failure (`not_initialized`, `no_session`,
    * `network`) and on a no-fill (`no_fill`). The card collapses to zero height either way.
    */
@@ -87,6 +99,8 @@ export interface NativeAdViewProps {
     nativeEvent: { height: number };
   }) => void;
   onAdImpression?: (event: { nativeEvent: NativeAdData }) => void;
+  onAdClick?: (event: { nativeEvent: Record<string, never> }) => void;
+  onAdPaid?: (event: { nativeEvent: AdValue }) => void;
   onAdError?: (event: { nativeEvent: NativeAdError }) => void;
   style?: StyleProp<ViewStyle>;
 }
