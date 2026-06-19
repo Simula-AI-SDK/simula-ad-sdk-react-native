@@ -1,13 +1,13 @@
 # Native Ads, Character Selector & Ad Targeting
 
-Added in `@simula/ads-react-native` 1.3.0 (matches native SDK 1.1.0). These wrap the
+Added in `@simula/ads-react-native` 1.3.0 (matches native SDK 1.1.1). These wrap the
 native SDKs' newest surfaces; everything renders natively (Swift / Kotlin Compose).
 
-> **1.3.1** adds revenue + lifecycle parity with the native SDKs: a `PAID` event
+> **1.3.2** adds revenue + lifecycle parity with the native SDKs: a `PAID` event
 > carrying an `AdValue` and an `IMPRESSION` event on interstitial/rewarded ads,
 > `onClick`/`onPaid` on `<NativeAd>`, a runtime `SimulaAds.updatePrimaryUserID()`
 > (PPID), and `SimulaAds.userAgent()` / `SimulaAds.deviceId()` getters. See
-> [Revenue & lifecycle events](#revenue--lifecycle-events-131) below.
+> [Revenue & lifecycle events](#revenue--lifecycle-events-132) below.
 
 ## Ad targeting context
 
@@ -117,7 +117,7 @@ import { CharacterSelector } from '@simula/ads-react-native';
 `onClose` / `onCharacterSelected` should set `isOpen` to false (controlled component,
 same contract as `MiniGameMenu`).
 
-## Revenue & lifecycle events (1.3.1)
+## Revenue & lifecycle events (1.3.2)
 
 The imperative interstitial/rewarded ads now also emit `IMPRESSION` (the server
 impression was recorded) and `PAID` (estimated revenue available). `PAID` carries an
