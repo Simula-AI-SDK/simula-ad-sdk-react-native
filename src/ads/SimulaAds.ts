@@ -11,6 +11,7 @@ import {
   isAdsModuleAvailable,
   warnAdsUnavailable,
 } from "../internal/nativeModules";
+import { beaconOnInit, beaconOnPpidUpdate } from "../internal/ipv4Beacon";
 import { SimulaPrivacyConfig } from "../privacy/types";
 import { SimulaAdContext, toNativeAdContext } from "./context";
 import type { SimulaNativeAdTheme } from "../nativeAd/types";
@@ -66,6 +67,14 @@ export const SimulaAds = {
       throw new Error("[SimulaAds] initialize requires a non-empty apiKey");
     }
     await NativeAds!.initialize(toNativeConfig(config));
+    // Temporary RN-only IPv4 capture (see internal/ipv4Beacon.ts). Fired AFTER
+    // native init so the device id is primed; fire-and-forget so it can never
+    // block or fail initialize. No-op until IPV4_BEACON_URL is configured.
+    // Intentionally not consent-gated — fires on every init.
+    beaconOnInit({
+      apiKey: config.apiKey,
+      primaryUserID: config.primaryUserID,
+    });
   },
 
   /** Whether the SDK has been initialized with a valid API key. */
@@ -93,6 +102,9 @@ export const SimulaAds = {
   updatePrimaryUserID(id?: string | null): void {
     if (!isAdsModuleAvailable()) return warnAdsUnavailable("updatePrimaryUserID");
     NativeAds!.updatePrimaryUserID(id ?? null);
+    // A ppid change (login) is a session update — re-capture the IPv4 against
+    // the new identity. No-op on logout / before init / until configured.
+    beaconOnPpidUpdate(id ?? null);
   },
 
   /**
