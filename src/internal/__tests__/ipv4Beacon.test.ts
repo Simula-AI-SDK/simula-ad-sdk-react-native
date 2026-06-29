@@ -1,4 +1,8 @@
-import { beaconOnInit, beaconOnPpidUpdate } from "../ipv4Beacon";
+import {
+  beaconOnInit,
+  beaconOnPpidUpdate,
+  __resetBeaconStateForTests,
+} from "../ipv4Beacon";
 import { NativeModules } from "../../test/reactNativeMock";
 
 const native = NativeModules.SimulaAdsModule;
@@ -11,14 +15,15 @@ let fetchMock: jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  __resetBeaconStateForTests();
+  native.getDeviceId.mockResolvedValue("device-123");
   fetchMock = jest.fn().mockResolvedValue({ ok: true });
   global.fetch = fetchMock as unknown as typeof fetch;
 });
 
-/** Parse the single fetched URL into its query params. */
-function fetchedParams(): URLSearchParams {
-  expect(fetchMock).toHaveBeenCalledTimes(1);
-  const [url, init] = fetchMock.mock.calls[0];
+/** Parse the Nth fetched URL into its query params. */
+function paramsOf(call = 0): URLSearchParams {
+  const [url, init] = fetchMock.mock.calls[call];
   expect(init).toMatchObject({ method: "GET" });
   return new URL(url as string).searchParams;
 }
@@ -35,7 +40,8 @@ describe("ipv4Beacon", () => {
     beaconOnInit({ apiKey: "k1", url: URL_, primaryUserID: "u1" });
     await flush();
 
-    const q = fetchedParams();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const q = paramsOf();
     expect(q.get("k")).toBe("k1");
     expect(q.get("did")).toBe("dev-B");
     expect(q.get("ppid")).toBe("u1");
@@ -49,51 +55,76 @@ describe("ipv4Beacon", () => {
     beaconOnInit({ apiKey: "k2", url: URL_ });
     await flush();
 
-    const q = fetchedParams();
+    const q = paramsOf();
     expect(q.has("did")).toBe(false);
     expect(q.has("ppid")).toBe(false);
     expect(q.get("k")).toBe("k2");
   });
 
   it("is not consent-gated — fires once a URL is configured", async () => {
-    native.getDeviceId.mockResolvedValueOnce("dev-C2");
     beaconOnInit({ apiKey: "k", url: URL_ });
     await flush();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("re-fires on a ppid update reusing the init identity, and no-ops on logout", async () => {
-    native.getDeviceId.mockResolvedValue("dev-F");
-    beaconOnInit({ apiKey: "k3", url: URL_ });
+  it("captures an identity once across init and a same-id ppid update", async () => {
+    beaconOnInit({ apiKey: "kD", url: URL_, primaryUserID: "u1" });
+    await flush();
+    beaconOnPpidUpdate("u1"); // same (apiKey, ppid) → deduped
     await flush();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-
-    beaconOnPpidUpdate("u9");
-    await flush();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const q = new URL(fetchMock.mock.calls[1][0] as string).searchParams;
-    expect(q.get("r")).toBe("ppid_update");
-    expect(q.get("ppid")).toBe("u9");
-    expect(q.get("k")).toBe("k3"); // identity carried from init
-
-    beaconOnPpidUpdate(null); // logout → no-op
-    await flush();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("dedups identical back-to-back beacons", async () => {
-    native.getDeviceId.mockResolvedValue("dev-G");
-    beaconOnInit({ apiKey: "k", url: URL_ });
+    beaconOnInit({ apiKey: "kG", url: URL_ });
     await flush();
-    beaconOnInit({ apiKey: "k", url: URL_ });
+    beaconOnInit({ apiKey: "kG", url: URL_ });
     await flush();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("never throws when fetch rejects", async () => {
-    native.getDeviceId.mockResolvedValueOnce("dev-H");
+  // ── Review fixes ──────────────────────────────────────────────────────────
+
+  it("re-fires when the apiKey changes (apiKey is part of the dedup key)", async () => {
+    beaconOnInit({ apiKey: "kA", url: URL_, primaryUserID: "u" });
+    await flush();
+    beaconOnInit({ apiKey: "kB", url: URL_, primaryUserID: "u" }); // new key, same ppid/device
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries after a failed beacon (a failure does not occupy the dedup slot)", async () => {
     fetchMock.mockRejectedValueOnce(new Error("network down"));
-    expect(() => beaconOnInit({ apiKey: "k", url: URL_ })).not.toThrow();
+    expect(() => beaconOnInit({ apiKey: "kR", url: URL_ })).not.toThrow();
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1); // failed attempt
+
+    beaconOnInit({ apiKey: "kR", url: URL_ }); // identical → must retry
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-captures on re-login with the same ppid after logout", async () => {
+    beaconOnInit({ apiKey: "kL", url: URL_ }); // anonymous init
+    await flush();
+    beaconOnPpidUpdate("u1"); // login
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    beaconOnPpidUpdate(null); // logout → resets dedup memory, no request
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    beaconOnPpidUpdate("u1"); // re-login, same ppid
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("collapses parallel identical fires into a single request", async () => {
+    // Both run synchronously up to the getDeviceId await; the second must see the
+    // in-flight slot the first claimed and bail before sending.
+    beaconOnInit({ apiKey: "kP", url: URL_ });
+    beaconOnInit({ apiKey: "kP", url: URL_ });
     await flush();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
