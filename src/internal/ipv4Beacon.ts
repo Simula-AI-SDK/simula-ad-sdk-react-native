@@ -122,6 +122,25 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 /**
+ * Best-effort device id lookup. `did` is documented as "omitted if
+ * unavailable" — so any failure here (including the native method being
+ * missing/non-callable, e.g. an app built against an older native binary)
+ * must degrade to `null`, never throw. Calling `getDeviceId()` is wrapped in
+ * its own try/catch because a non-function throws SYNCHRONOUSLY, before a
+ * `.catch()` on the (non-existent) returned promise could ever attach —
+ * letting that escape would abort the whole beacon instead of just the `did`.
+ */
+async function safeGetDeviceId(): Promise<string | null> {
+  try {
+    return await withTimeout(NativeAds!.getDeviceId(), DEVICE_ID_TIMEOUT_MS);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log("getDeviceId unavailable — continuing without did", { error: message });
+    return null;
+  }
+}
+
+/**
  * Fire the init beacon and remember the identity for subsequent session-update
  * beacons. Call once native `initialize` has resolved (so the device id is
  * primed). Fire-and-forget — do not await.
@@ -208,9 +227,7 @@ async function fire(
 
     log("fetching device id…", { reason: ctx.reason, ppid: ctx.primaryUserID ?? null });
 
-    const deviceId = await withTimeout(NativeAds!.getDeviceId(), DEVICE_ID_TIMEOUT_MS).catch(
-      () => null,
-    );
+    const deviceId = await safeGetDeviceId();
     // A logout while we awaited the device id already cleared this key's
     // bookkeeping; bail instead of resurrecting a stale in-flight/captured entry.
     if (gen !== generation) {

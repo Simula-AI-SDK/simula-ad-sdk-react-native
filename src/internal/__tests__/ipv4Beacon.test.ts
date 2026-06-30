@@ -70,6 +70,22 @@ describe("ipv4Beacon", () => {
     expect(q.get("k")).toBe("k2");
   });
 
+  it("still fires (without did) when getDeviceId throws synchronously instead of returning a promise", async () => {
+    // Simulates a native bridge where getDeviceId isn't callable (e.g. an app
+    // built against an older native binary) — must not abort the whole beacon.
+    native.getDeviceId.mockImplementationOnce(() => {
+      throw new TypeError("undefined is not a function");
+    });
+
+    beaconOnInit({ apiKey: "kSyncThrow", url: URL_ });
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const q = paramsOf();
+    expect(q.has("did")).toBe(false);
+    expect(q.get("k")).toBe("kSyncThrow");
+  });
+
   it("is not consent-gated — fires once a URL is configured", async () => {
     beaconOnInit({ apiKey: "k", url: URL_ });
     await flush();
