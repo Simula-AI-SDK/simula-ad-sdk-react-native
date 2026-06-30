@@ -2,6 +2,7 @@ import {
   beaconOnInit,
   beaconOnPpidUpdate,
   __resetBeaconStateForTests,
+  IPV4_BEACON_URL,
 } from "../ipv4Beacon";
 import { NativeModules } from "../../test/reactNativeMock";
 
@@ -29,8 +30,16 @@ function paramsOf(call = 0): URLSearchParams {
 }
 
 describe("ipv4Beacon", () => {
-  it("no-ops when no beacon URL is configured (default disabled)", async () => {
-    beaconOnInit({ apiKey: "k" }); // url omitted → IPV4_BEACON_URL is ""
+  it("fires against the configured default endpoint when no url override is given", async () => {
+    beaconOnInit({ apiKey: "k" }); // url omitted → falls back to IPV4_BEACON_URL
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url] = fetchMock.mock.calls[0];
+    expect(url as string).toContain(IPV4_BEACON_URL);
+  });
+
+  it("no-ops when the beacon URL is explicitly empty (disabled)", async () => {
+    beaconOnInit({ apiKey: "k", url: "" }); // explicit empty overrides the default
     await flush();
     expect(fetchMock).not.toHaveBeenCalled();
   });
