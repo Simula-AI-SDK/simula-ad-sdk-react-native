@@ -197,6 +197,31 @@ describe("ipv4Beacon", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("does not let a stale pre-logout beacon's cleanup steal the dedup slot claimed after re-login", async () => {
+    let resolveDeviceId: (id: string | null) => void;
+    native.getDeviceId.mockImplementationOnce(
+      () => new Promise((resolve) => (resolveDeviceId = resolve)),
+    );
+
+    beaconOnInit({ apiKey: "kStale", url: URL_, primaryUserID: "u1" });
+    await flush(); // stale beacon is now in-flight, awaiting getDeviceId
+
+    beaconOnPpidUpdate(null); // logout: clears inFlight, bumps generation
+    beaconOnPpidUpdate("u1"); // re-login with the SAME ppid: claims a fresh slot for the same key
+
+    // The stale pre-logout call's getDeviceId now resolves and its `finally`
+    // runs — it must NOT delete the slot the re-login just claimed.
+    resolveDeviceId!("device-123");
+    await flush();
+
+    // A third fire for the same identity should be deduped against the
+    // re-login's still-in-flight (or by-now captured) slot, not start a 3rd request.
+    beaconOnInit({ apiKey: "kStale", url: URL_, primaryUserID: "u1" });
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1); // only the re-login's beacon fired
+  });
+
   it("bounds a hung getDeviceId call so it doesn't block the dedup slot forever", async () => {
     jest.useFakeTimers();
     try {

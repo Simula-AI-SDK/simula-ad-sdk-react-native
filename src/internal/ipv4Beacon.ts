@@ -66,8 +66,14 @@ let lastIdentity: BeaconIdentity | null = null;
  * of being skipped by a stale in-flight/captured entry.
  */
 let generation = 0;
-/** Keys with a beacon in flight — claimed synchronously so parallel calls can't race. */
-const inFlight = new Set<string>();
+/**
+ * Keys with a beacon in flight, mapped to the generation that claimed the
+ * slot — claimed synchronously so parallel calls can't race. The generation
+ * lets a `finally` only release the slot it actually owns (see `fire`),
+ * otherwise a stale call's cleanup could delete a slot a newer call (post
+ * re-login) has since claimed for the same key.
+ */
+const inFlight = new Map<string, number>();
 /** Keys whose beacon has already SUCCESSFULLY fired this process (failures stay retryable). */
 const captured = new Set<string>();
 /** Live abort controllers for in-flight fetches, keyed by dedup key — aborted en masse on logout. */
@@ -153,10 +159,11 @@ async function fire(
   // overlapping fires for the same identity collapse to a single request.
   const key = dedupKey(ctx.apiKey, ctx.primaryUserID);
   if (inFlight.has(key) || captured.has(key)) return;
-  inFlight.add(key);
   // Snapshot the generation so a logout that happens while this call is
-  // in-flight can be detected after each await (see `beaconOnPpidUpdate`).
+  // in-flight can be detected after each await (see `beaconOnPpidUpdate`), and
+  // so this call's `finally` can tell whether it still owns the slot below.
   const gen = generation;
+  inFlight.set(key, gen);
 
   try {
     if (!isAdsModuleAvailable()) return; // need the native bridge for the device id
@@ -203,7 +210,9 @@ async function fire(
     // Best-effort measurement — swallow everything (DNS failure on an
     // IPv6-only network, timeout, offline, …). Not recorded → stays retryable.
   } finally {
-    inFlight.delete(key);
+    // Only release our own claim — a logout may have already cleared the map
+    // and a newer call (post re-login) may have since claimed this same key.
+    if (inFlight.get(key) === gen) inFlight.delete(key);
   }
 }
 
