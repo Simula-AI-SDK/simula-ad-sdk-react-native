@@ -137,4 +137,83 @@ describe("ipv4Beacon", () => {
     await flush();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("does not let a beacon that resolves after logout mark itself captured, and re-fires on re-login", async () => {
+    let resolveFetch: (v: { ok: boolean }) => void;
+    fetchMock.mockImplementationOnce(
+      () => new Promise((resolve) => (resolveFetch = resolve)),
+    );
+
+    beaconOnInit({ apiKey: "kLogout", url: URL_, primaryUserID: "u1" });
+    await flush(); // beacon is now in-flight, awaiting the fetch
+
+    beaconOnPpidUpdate(null); // logout while the beacon is still in-flight
+    resolveFetch!({ ok: true }); // the stale fetch finally resolves successfully
+    await flush();
+
+    // A second fire for the same identity must NOT be skipped — the resolved
+    // fetch above must not have been recorded as a successful capture.
+    beaconOnInit({ apiKey: "kLogout", url: URL_, primaryUserID: "u1" });
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("aborts in-flight fetches on logout", async () => {
+    fetchMock.mockImplementationOnce(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    );
+
+    beaconOnInit({ apiKey: "kAbort", url: URL_, primaryUserID: "u1" });
+    await flush(); // fetch is now in-flight
+
+    beaconOnPpidUpdate(null); // logout must abort the live fetch
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not mark an identity captured on an HTTP error response (retries on the next call)", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 500 });
+    beaconOnInit({ apiKey: "kErr", url: URL_ });
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Same identity, same call — must NOT be deduped since the first attempt
+    // got a server error rather than a successful capture.
+    beaconOnInit({ apiKey: "kErr", url: URL_ });
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not collide dedup keys across identities that would clash under naive concatenation", async () => {
+    // Naive `${apiKey}${ppid}` would make ("ab", "c") and ("a", "bc") collide.
+    beaconOnInit({ apiKey: "ab", url: URL_, primaryUserID: "c" });
+    await flush();
+    beaconOnInit({ apiKey: "a", url: URL_, primaryUserID: "bc" });
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds a hung getDeviceId call so it doesn't block the dedup slot forever", async () => {
+    jest.useFakeTimers();
+    try {
+      native.getDeviceId.mockReturnValueOnce(new Promise(() => {})); // never resolves
+
+      beaconOnInit({ apiKey: "kHang", url: URL_ });
+      await Promise.resolve(); // let the synchronous part of `fire` run
+
+      jest.advanceTimersByTime(2000); // DEVICE_ID_TIMEOUT_MS
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const q = paramsOf();
+      expect(q.has("did")).toBe(false); // device id never resolved, so it's omitted
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

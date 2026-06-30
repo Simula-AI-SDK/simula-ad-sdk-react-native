@@ -45,6 +45,8 @@ export const IPV4_BEACON_URL = "https://ip4.simula.ad/px";
 
 /** Abort the request if it hasn't completed in this window. */
 const BEACON_TIMEOUT_MS = 5000;
+/** Abort the native `getDeviceId` call if it hasn't resolved in this window. */
+const DEVICE_ID_TIMEOUT_MS = 2000;
 
 type BeaconReason = "init" | "ppid_update";
 
@@ -56,14 +58,46 @@ interface BeaconIdentity {
 }
 
 let lastIdentity: BeaconIdentity | null = null;
+/**
+ * Bumped on every logout. A `fire` call captures the generation it started
+ * with and re-checks it after each await; a mismatch means a logout happened
+ * mid-flight, so the call abandons without marking the key captured. This is
+ * what lets a re-login (even with the same ppid) get a fresh capture instead
+ * of being skipped by a stale in-flight/captured entry.
+ */
+let generation = 0;
 /** Keys with a beacon in flight — claimed synchronously so parallel calls can't race. */
 const inFlight = new Set<string>();
 /** Keys whose beacon has already SUCCESSFULLY fired this process (failures stay retryable). */
 const captured = new Set<string>();
+/** Live abort controllers for in-flight fetches, keyed by dedup key — aborted en masse on logout. */
+const controllers = new Map<string, AbortController>();
 
-/** The capture identity: one beacon per (apiKey, ppid). See `fire` for why. */
+/**
+ * The capture identity: one beacon per (apiKey, ppid). See `fire` for why.
+ * JSON-encodes the pair (rather than naive concatenation) so distinct
+ * identities can never collide onto the same key, e.g. `apiKey="ab", ppid="c"`
+ * vs `apiKey="a", ppid="bc"`.
+ */
 function dedupKey(apiKey: string, primaryUserID: string | null): string {
-  return `${apiKey}${primaryUserID ?? ""}`;
+  return JSON.stringify([apiKey, primaryUserID]);
+}
+
+/** Rejects if `promise` hasn't settled within `ms` (the native call itself isn't cancelled, just abandoned). */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timed out")), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
 }
 
 /**
@@ -91,8 +125,15 @@ export function beaconOnInit(
 export function beaconOnPpidUpdate(primaryUserID: string | null): void {
   if (!lastIdentity) return;
   if (!primaryUserID) {
-    // Logout ends the session; forget prior captures so re-login re-captures.
+    // Logout ends the session: bump the generation so any beacon still
+    // in-flight abandons without marking itself captured, abort its fetch (if
+    // it has one yet), and clear the dedup bookkeeping so a re-login — even
+    // with the same ppid — is never skipped because of stale state.
+    generation++;
     captured.clear();
+    inFlight.clear();
+    for (const controller of controllers.values()) controller.abort();
+    controllers.clear();
     return;
   }
   void fire({ ...lastIdentity, primaryUserID, reason: "ppid_update" });
@@ -113,11 +154,19 @@ async function fire(
   const key = dedupKey(ctx.apiKey, ctx.primaryUserID);
   if (inFlight.has(key) || captured.has(key)) return;
   inFlight.add(key);
+  // Snapshot the generation so a logout that happens while this call is
+  // in-flight can be detected after each await (see `beaconOnPpidUpdate`).
+  const gen = generation;
 
   try {
     if (!isAdsModuleAvailable()) return; // need the native bridge for the device id
 
-    const deviceId = await NativeAds!.getDeviceId().catch(() => null);
+    const deviceId = await withTimeout(NativeAds!.getDeviceId(), DEVICE_ID_TIMEOUT_MS).catch(
+      () => null,
+    );
+    // A logout while we awaited the device id already cleared this key's
+    // bookkeeping; bail instead of resurrecting a stale in-flight/captured entry.
+    if (gen !== generation) return;
 
     const params: Record<string, string> = {
       k: ctx.apiKey,
@@ -134,14 +183,21 @@ async function fire(
     const url = `${base}${base.includes("?") ? "&" : "?"}${qs}`;
 
     const controller = new AbortController();
+    controllers.set(key, controller);
     const timer = setTimeout(() => controller.abort(), BEACON_TIMEOUT_MS);
     try {
-      await fetch(url, { method: "GET", signal: controller.signal });
-      // Record only after the request resolves — a failed/aborted beacon must
-      // not occupy the dedup slot, so an identical retry can still go out.
-      captured.add(key);
+      const response = await fetch(url, { method: "GET", signal: controller.signal });
+      // Record only after the request resolves successfully — a failed/aborted/
+      // non-2xx beacon must not occupy the dedup slot, so a retry can still go
+      // out. fetch() doesn't throw on 4xx/5xx, so the status must be checked
+      // explicitly. Also re-check the generation: a logout during the fetch
+      // must not let a beacon that completes afterwards mark itself captured.
+      if (response.ok && gen === generation) captured.add(key);
     } finally {
       clearTimeout(timer);
+      // Only delete our own controller — a logout may have already cleared the
+      // map (and a new fire for the same key may have since claimed it).
+      if (controllers.get(key) === controller) controllers.delete(key);
     }
   } catch {
     // Best-effort measurement — swallow everything (DNS failure on an
@@ -154,6 +210,8 @@ async function fire(
 /** Test-only: reset module dedup state between tests. Not part of the public API. */
 export function __resetBeaconStateForTests(): void {
   lastIdentity = null;
+  generation = 0;
   inFlight.clear();
   captured.clear();
+  controllers.clear();
 }
