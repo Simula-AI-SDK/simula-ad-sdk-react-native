@@ -48,21 +48,6 @@ const BEACON_TIMEOUT_MS = 5000;
 /** Abort the native `getDeviceId` call if it hasn't resolved in this window. */
 const DEVICE_ID_TIMEOUT_MS = 2000;
 
-const LOG_TAG = "[SimulaAds][IPv4]";
-
-/** Dev-only diagnostic logging — visible in Metro / Xcode when `__DEV__` is true. */
-function log(message: string, detail?: Record<string, unknown>): void {
-  if (!__DEV__) return;
-  if (detail) console.log(LOG_TAG, message, detail);
-  else console.log(LOG_TAG, message);
-}
-
-/** Redact apiKey for logs (keep a short prefix so you can tell which key fired). */
-function redactApiKey(apiKey: string): string {
-  if (apiKey.length <= 8) return "***";
-  return `${apiKey.slice(0, 8)}…`;
-}
-
 type BeaconReason = "init" | "ppid_update";
 
 /** Identity captured at init so a later ppid-update beacon can reuse it. */
@@ -133,9 +118,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 async function safeGetDeviceId(): Promise<string | null> {
   try {
     return await withTimeout(NativeAds!.getDeviceId(), DEVICE_ID_TIMEOUT_MS);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    log("getDeviceId unavailable — continuing without did", { error: message });
+  } catch {
     return null;
   }
 }
@@ -149,11 +132,6 @@ export function beaconOnInit(
   identity: BeaconIdentity & { primaryUserID?: string | null },
 ): void {
   lastIdentity = { apiKey: identity.apiKey, url: identity.url };
-  log("beaconOnInit", {
-    apiKey: redactApiKey(identity.apiKey),
-    ppid: identity.primaryUserID ?? null,
-    url: (identity.url ?? IPV4_BEACON_URL) || "(disabled)",
-  });
   void fire({
     ...lastIdentity,
     primaryUserID: identity.primaryUserID ?? null,
@@ -175,17 +153,12 @@ export function beaconOnPpidUpdate(primaryUserID: string | null): void {
     // it has one yet), and clear the dedup bookkeeping so a re-login — even
     // with the same ppid — is never skipped because of stale state.
     generation++;
-    log("beaconOnPpidUpdate logout — reset dedup state", { generation });
     captured.clear();
     inFlight.clear();
     for (const controller of controllers.values()) controller.abort();
     controllers.clear();
     return;
   }
-  log("beaconOnPpidUpdate login", {
-    apiKey: redactApiKey(lastIdentity.apiKey),
-    ppid: primaryUserID,
-  });
   void fire({ ...lastIdentity, primaryUserID, reason: "ppid_update" });
 }
 
@@ -193,10 +166,7 @@ async function fire(
   ctx: BeaconIdentity & { primaryUserID: string | null; reason: BeaconReason },
 ): Promise<void> {
   const base = (ctx.url ?? IPV4_BEACON_URL).trim();
-  if (!base) {
-    log("skipped — beacon URL not configured");
-    return; // not provisioned → no-op
-  }
+  if (!base) return; // not provisioned → no-op
 
   // We capture one IPv4 per (apiKey, ppid) identity. The key deliberately omits:
   //   • the device id — invariant within a process, so it adds nothing AND would
@@ -205,14 +175,7 @@ async function fire(
   // Computing it synchronously lets us claim the slot before any await, so two
   // overlapping fires for the same identity collapse to a single request.
   const key = dedupKey(ctx.apiKey, ctx.primaryUserID);
-  if (inFlight.has(key)) {
-    log("skipped — already in flight", { reason: ctx.reason, ppid: ctx.primaryUserID });
-    return;
-  }
-  if (captured.has(key)) {
-    log("skipped — already captured this session", { reason: ctx.reason, ppid: ctx.primaryUserID });
-    return;
-  }
+  if (inFlight.has(key) || captured.has(key)) return;
   // Snapshot the generation so a logout that happens while this call is
   // in-flight can be detected after each await (see `beaconOnPpidUpdate`), and
   // so this call's `finally` can tell whether it still owns the slot below.
@@ -220,20 +183,12 @@ async function fire(
   inFlight.set(key, gen);
 
   try {
-    if (!isAdsModuleAvailable()) {
-      log("skipped — native ads module unavailable");
-      return; // need the native bridge for the device id
-    }
-
-    log("fetching device id…", { reason: ctx.reason, ppid: ctx.primaryUserID ?? null });
+    if (!isAdsModuleAvailable()) return; // need the native bridge for the device id
 
     const deviceId = await safeGetDeviceId();
     // A logout while we awaited the device id already cleared this key's
     // bookkeeping; bail instead of resurrecting a stale in-flight/captured entry.
-    if (gen !== generation) {
-      log("abandoned — session changed during getDeviceId()", { reason: ctx.reason });
-      return;
-    }
+    if (gen !== generation) return;
 
     const params: Record<string, string> = {
       k: ctx.apiKey,
@@ -249,14 +204,7 @@ async function fire(
       .join("&");
     const url = `${base}${base.includes("?") ? "&" : "?"}${qs}`;
 
-    log("firing GET", {
-      reason: ctx.reason,
-      apiKey: redactApiKey(ctx.apiKey),
-      ppid: ctx.primaryUserID,
-      did: deviceId ?? null,
-      platform: Platform.OS,
-      url,
-    });
+    if (__DEV__) console.log("[SimulaAds][IPv4] firing GET", url);
 
     const controller = new AbortController();
     controllers.set(key, controller);
@@ -268,28 +216,16 @@ async function fire(
       // out. fetch() doesn't throw on 4xx/5xx, so the status must be checked
       // explicitly. Also re-check the generation: a logout during the fetch
       // must not let a beacon that completes afterwards mark itself captured.
-      if (response.ok && gen === generation) {
-        captured.add(key);
-        log("capture OK", { status: response.status, reason: ctx.reason, ppid: ctx.primaryUserID });
-      } else if (!response.ok) {
-        log("capture failed — HTTP error (will retry)", {
-          status: response.status,
-          reason: ctx.reason,
-        });
-      } else {
-        log("abandoned — session changed during fetch (not recorded)", { reason: ctx.reason });
-      }
+      if (response.ok && gen === generation) captured.add(key);
     } finally {
       clearTimeout(timer);
       // Only delete our own controller — a logout may have already cleared the
       // map (and a new fire for the same key may have since claimed it).
       if (controllers.get(key) === controller) controllers.delete(key);
     }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+  } catch {
     // Best-effort measurement — swallow everything (DNS failure on an
     // IPv6-only network, timeout, offline, …). Not recorded → stays retryable.
-    log("capture failed — request error (will retry)", { reason: ctx.reason, error: message });
   } finally {
     // Only release our own claim — a logout may have already cleared the map
     // and a newer call (post re-login) may have since claimed this same key.
