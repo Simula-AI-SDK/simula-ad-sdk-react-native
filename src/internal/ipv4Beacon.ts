@@ -57,16 +57,24 @@ interface BeaconIdentity {
   url?: string;
 }
 
+/**
+ * The native-applied identity (apiKey + optional url override). Established by
+ * the FIRST `beaconArmInit` and never overwritten by a later one — mirroring the
+ * native SDK, whose `initialize` is idempotent (first valid call wins), so a
+ * second/overlapping `initialize` never changes the applied apiKey.
+ */
 let lastIdentity: BeaconIdentity | null = null;
 /**
  * The ppid the SDK currently intends to beacon for — the single source of truth
- * for the *pending* init beacon's identity. Set synchronously by `beaconArmInit`
- * (at the START of `initialize`, before native init is awaited) and by every
- * `beaconOnPpidUpdate`. This is what lets a ppid update (login/logout) that lands
- * WHILE native init is still in flight take effect, and it's the value
- * `beaconFireInit` fires with — so the init beacon reflects the ppid that is
- * current when native init *resolves*, not the (possibly superseded) value
- * `initialize()` happened to be called with.
+ * for the (possibly still-pending) init beacon's identity. Established by the
+ * FIRST `beaconArmInit` (see its first-wins guard) and thereafter changed ONLY
+ * by `beaconOnPpidUpdate` — mirroring the native SDK, where the initial ppid
+ * comes from the first `initialize` and every later change comes from
+ * `updatePrimaryUserID` (a second `initialize` is a native no-op). This is what
+ * lets a login/logout that lands WHILE native init is still in flight take
+ * effect, and it's the value `beaconFireInit` fires with — so the init beacon
+ * reflects the ppid native actually has when init resolves, never the value
+ * `initialize()` happened to be called with, and never a *concurrent* init's.
  */
 let currentPpid: string | null = null;
 /**
@@ -166,18 +174,26 @@ async function safeGetDeviceId(): Promise<string | null> {
 
 /**
  * Record the identity for an in-progress `initialize()` SYNCHRONOUSLY, before
- * native init is awaited, WITHOUT firing. This does two things a bare
+ * native init is awaited, WITHOUT firing. This does three things a bare
  * fire-after-await can't:
  *   • sets `lastIdentity` up front so a `beaconOnPpidUpdate` that races native
  *     init (see its `!lastIdentity` guard) takes effect instead of being
- *     silently dropped, and
+ *     silently dropped,
  *   • seeds `currentPpid` so `beaconFireInit` fires for the ppid that is current
- *     when native init resolves — even if a login/logout landed in between.
+ *     when native init resolves — even if a login/logout landed in between, and
+ *   • is FIRST-WINS: once an identity is armed it is NOT overwritten by a later
+ *     (e.g. overlapping) `initialize()`. Native init is idempotent (the first
+ *     valid call wins), so a second init's apiKey/ppid is never applied
+ *     natively; letting it overwrite shared state here would make whichever init
+ *     fires beacon an identity the native SDK never applied — corrupting the
+ *     backend's did/ppid join. Post-init ppid changes must come through
+ *     `beaconOnPpidUpdate` (which mirrors a native `updatePrimaryUserID`).
  * Call `beaconFireInit` once native init resolves (so the device id is primed).
  */
 export function beaconArmInit(
   identity: BeaconIdentity & { primaryUserID?: string | null },
 ): void {
+  if (lastIdentity) return; // first-wins; mirrors native init idempotency
   lastIdentity = { apiKey: identity.apiKey, url: identity.url };
   currentPpid = identity.primaryUserID ?? null;
 }
@@ -194,9 +210,11 @@ export function beaconFireInit(): void {
 
 /**
  * Arm + fire in a single call. Convenience for callers that already know native
- * init has completed (and for tests). `SimulaAds.initialize` instead uses the
- * split `beaconArmInit` / `beaconFireInit` so a ppid update can land in between
- * the (synchronous) arm and the (post-native-init) fire.
+ * init has completed (and for tests). Inherits `beaconArmInit`'s first-wins
+ * behavior — a second call won't re-establish the identity, it only fires the
+ * current one. `SimulaAds.initialize` instead uses the split `beaconArmInit` /
+ * `beaconFireInit` so a ppid update can land in between the (synchronous) arm and
+ * the (post-native-init) fire.
  */
 export function beaconOnInit(
   identity: BeaconIdentity & { primaryUserID?: string | null },

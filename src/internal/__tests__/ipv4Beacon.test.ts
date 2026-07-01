@@ -114,12 +114,18 @@ describe("ipv4Beacon", () => {
 
   // ── Review fixes ──────────────────────────────────────────────────────────
 
-  it("re-fires when the apiKey changes (apiKey is part of the dedup key)", async () => {
+  it("ignores a later init's differing apiKey (native init is first-wins)", async () => {
     beaconOnInit({ apiKey: "kA", url: URL_, primaryUserID: "u" });
     await flush();
-    beaconOnInit({ apiKey: "kB", url: URL_, primaryUserID: "u" }); // new key, same ppid/device
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(paramsOf(0).get("k")).toBe("kA");
+
+    // A second init with a different apiKey must NOT re-establish the identity:
+    // native init is idempotent (first valid call wins), so the beacon keeps kA
+    // and dedups instead of firing kB — an apiKey native never applied.
+    beaconOnInit({ apiKey: "kB", url: URL_, primaryUserID: "u" });
     await flush();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("retries after a failed beacon (a failure does not occupy the dedup slot)", async () => {
@@ -208,13 +214,22 @@ describe("ipv4Beacon", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("does not collide dedup keys across identities that would clash under naive concatenation", async () => {
-    // Naive `${apiKey}${ppid}` would make ("ab", "c") and ("a", "bc") collide.
-    beaconOnInit({ apiKey: "ab", url: URL_, primaryUserID: "c" });
+  it("keeps the first init's identity when a second init overlaps it (native init is first-wins)", async () => {
+    // Two overlapping initialize() calls: each arms BEFORE either fires (as
+    // SimulaAds does, arming synchronously before awaiting native init). The
+    // second arm must NOT clobber the shared identity, or whichever call fires
+    // could beacon an apiKey/ppid native never applied.
+    beaconArmInit({ apiKey: "kA", url: URL_, primaryUserID: "userA" });
+    beaconArmInit({ apiKey: "kB", url: URL_, primaryUserID: "userB" }); // overlapping — ignored
+
+    // Whichever init wins the caller's ordering guard and fires must send the
+    // FIRST (native-applied) identity, not the concurrent call's.
+    beaconFireInit();
     await flush();
-    beaconOnInit({ apiKey: "a", url: URL_, primaryUserID: "bc" });
-    await flush();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const q = paramsOf(0);
+    expect(q.get("k")).toBe("kA");
+    expect(q.get("ppid")).toBe("userA");
   });
 
   it("does not let a stale pre-logout beacon's cleanup steal the dedup slot claimed after re-login", async () => {

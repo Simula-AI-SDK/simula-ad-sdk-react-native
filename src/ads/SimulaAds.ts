@@ -91,7 +91,10 @@ export const SimulaAds = {
     // primaryUserID change (login/logout) which races this init isn't dropped
     // (`beaconOnPpidUpdate` no-ops until an identity is armed) and so the init
     // beacon fires for the ppid that is current when native init RESOLVES, not
-    // the possibly-superseded value captured here. See internal/ipv4Beacon.ts.
+    // the possibly-superseded value captured here. Arming is first-wins in the
+    // beacon module, so two OVERLAPPING initialize() calls can't clobber each
+    // other's shared identity (native init is idempotent — first call wins — so
+    // only the first call's config is ever applied). See internal/ipv4Beacon.ts.
     beaconArmInit({ apiKey: config.apiKey, primaryUserID: config.primaryUserID });
     await NativeAds!.initialize(toNativeConfig(config));
     // Only the newest init may drive the beacon: skip if a LATER init has
