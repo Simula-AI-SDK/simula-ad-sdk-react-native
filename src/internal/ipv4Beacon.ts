@@ -326,8 +326,6 @@ async function fire(
       .join("&");
     const url = `${base}${base.includes("?") ? "&" : "?"}${qs}`;
 
-    if (__DEV__) console.log("[SimulaAds][IPv4] firing GET", url);
-
     const controller = new AbortController();
     controllers.set(key, controller);
     const timer = setTimeout(() => controller.abort(), BEACON_TIMEOUT_MS);
