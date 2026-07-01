@@ -238,6 +238,45 @@ describe("ipv4Beacon", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1); // only the re-login's beacon fired
   });
 
+  it("re-captures a returning identity when switching ppid A→B→A without an intervening logout", async () => {
+    beaconOnInit({ apiKey: "kAcct", url: URL_, primaryUserID: "userA" });
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    beaconOnPpidUpdate("userB"); // account switch, no logout in between
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    beaconOnPpidUpdate("userA"); // switching back — must NOT be deduped against the earlier capture
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("treats a whitespace-only ppid update as a logout, not a login (matches native isNotBlank)", async () => {
+    beaconOnInit({ apiKey: "kBlank", url: URL_, primaryUserID: "user1" });
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    beaconOnPpidUpdate("   "); // whitespace-only → native clears the ppid too
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1); // no bogus "login" beacon fired for the blank id
+
+    // Dedup memory must have been reset like a real logout — a genuine
+    // re-login now runs a fresh capture instead of being silently deduped.
+    beaconOnPpidUpdate("user1");
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("treats a whitespace-only initial primaryUserID as anonymous (no ppid param)", async () => {
+    beaconOnInit({ apiKey: "kBlankInit", url: URL_, primaryUserID: "   " });
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const q = paramsOf();
+    expect(q.has("ppid")).toBe(false);
+  });
+
   it("bounds a hung getDeviceId call so it doesn't block the dedup slot forever", async () => {
     jest.useFakeTimers();
     try {

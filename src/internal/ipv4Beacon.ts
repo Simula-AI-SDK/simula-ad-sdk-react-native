@@ -59,13 +59,22 @@ interface BeaconIdentity {
 
 let lastIdentity: BeaconIdentity | null = null;
 /**
- * Bumped on every logout. A `fire` call captures the generation it started
- * with and re-checks it after each await; a mismatch means a logout happened
- * mid-flight, so the call abandons without marking the key captured. This is
- * what lets a re-login (even with the same ppid) get a fresh capture instead
- * of being skipped by a stale in-flight/captured entry.
+ * Bumped on every logout AND on every identity transition (see `fire`). A
+ * `fire` call captures the generation it started with and re-checks it after
+ * each await; a mismatch means the session moved on mid-flight, so the call
+ * abandons without marking the key captured. This is what lets a re-login
+ * (even with the same ppid) get a fresh capture instead of being skipped by a
+ * stale in-flight/captured entry.
  */
 let generation = 0;
+/**
+ * The dedup key of the currently-active (apiKey, ppid) identity, or `null`
+ * before the first beacon / after a logout. Used by `fire` to detect account
+ * switches (A→B, or A→B→A) that happen via `beaconOnPpidUpdate` WITHOUT an
+ * intervening logout — see the comment there for why that needs its own
+ * cleanup, distinct from the full reset a logout does.
+ */
+let activeKey: string | null = null;
 /**
  * Keys with a beacon in flight, mapped to the generation that claimed the
  * slot — claimed synchronously so parallel calls can't race. The generation
@@ -87,6 +96,18 @@ const controllers = new Map<string, AbortController>();
  */
 function dedupKey(apiKey: string, primaryUserID: string | null): string {
   return JSON.stringify([apiKey, primaryUserID]);
+}
+
+/**
+ * A whitespace-only id is treated as absent, matching the native side: Android's
+ * `updatePrimaryUserID` clears the PPID via `id?.takeIf { it.isNotBlank() }`, so a
+ * blank string already ends the session there. The beacon must agree — otherwise
+ * it fires a "login" capture for a bogus ppid while the native session actually
+ * went anonymous, and skips the generation/dedup reset a real logout gets.
+ */
+function normalizePpid(id: string | null | undefined): string | null {
+  if (!id || id.trim().length === 0) return null;
+  return id;
 }
 
 /** Rejects if `promise` hasn't settled within `ms` (the native call itself isn't cancelled, just abandoned). */
@@ -134,32 +155,35 @@ export function beaconOnInit(
   lastIdentity = { apiKey: identity.apiKey, url: identity.url };
   void fire({
     ...lastIdentity,
-    primaryUserID: identity.primaryUserID ?? null,
+    primaryUserID: normalizePpid(identity.primaryUserID),
     reason: "init",
   });
 }
 
 /**
  * Fire a beacon on a primary-user-id change, reusing the identity captured at
- * init. A login (non-empty id) captures the new identity. A logout (null/empty)
- * resets the dedup memory so a later re-login — even with the same ppid — runs a
- * fresh capture for the new session. No-op before `beaconOnInit`. Fire-and-forget.
+ * init. A login (non-blank id) captures the new identity. A logout (null/blank
+ * — matching the native side's blank check) resets the dedup memory so a later
+ * re-login — even with the same ppid — runs a fresh capture for the new
+ * session. No-op before `beaconOnInit`. Fire-and-forget.
  */
 export function beaconOnPpidUpdate(primaryUserID: string | null): void {
   if (!lastIdentity) return;
-  if (!primaryUserID) {
+  const normalized = normalizePpid(primaryUserID);
+  if (!normalized) {
     // Logout ends the session: bump the generation so any beacon still
     // in-flight abandons without marking itself captured, abort its fetch (if
     // it has one yet), and clear the dedup bookkeeping so a re-login — even
     // with the same ppid — is never skipped because of stale state.
     generation++;
+    activeKey = null;
     captured.clear();
     inFlight.clear();
     for (const controller of controllers.values()) controller.abort();
     controllers.clear();
     return;
   }
-  void fire({ ...lastIdentity, primaryUserID, reason: "ppid_update" });
+  void fire({ ...lastIdentity, primaryUserID: normalized, reason: "ppid_update" });
 }
 
 async function fire(
@@ -175,10 +199,38 @@ async function fire(
   // Computing it synchronously lets us claim the slot before any await, so two
   // overlapping fires for the same identity collapse to a single request.
   const key = dedupKey(ctx.apiKey, ctx.primaryUserID);
+
+  if (key !== activeKey) {
+    // An account switch (A→B) or a return to a previously-active identity
+    // (A→B→A) via `beaconOnPpidUpdate`, WITHOUT an intervening logout — a
+    // logout already gets a full reset in `beaconOnPpidUpdate`, but this path
+    // (ppid changes straight from one non-blank value to another) doesn't go
+    // through it. Both cases need a fresh capture attempt, so:
+    //   • bump the generation so anything still in-flight for the OLD
+    //     identity abandons instead of resurrecting stale state post-switch;
+    //   • end the OLD identity's bookkeeping (mirrors a logout, scoped to
+    //     just that key) so returning to it later isn't blocked by a stale
+    //     in-flight/captured entry left over from before this switch;
+    //   • clear THIS key's own stale `captured` entry (if any) from an
+    //     earlier session with the same identity — otherwise a returning
+    //     user (A→B→A) is silently deduped forever instead of recaptured.
+    generation++;
+    if (activeKey !== null) {
+      captured.delete(activeKey);
+      inFlight.delete(activeKey);
+      controllers.get(activeKey)?.abort();
+      controllers.delete(activeKey);
+    }
+    captured.delete(key);
+    inFlight.delete(key);
+    activeKey = key;
+  }
+
   if (inFlight.has(key) || captured.has(key)) return;
-  // Snapshot the generation so a logout that happens while this call is
-  // in-flight can be detected after each await (see `beaconOnPpidUpdate`), and
-  // so this call's `finally` can tell whether it still owns the slot below.
+  // Snapshot the generation so a logout/switch that happens while this call
+  // is in-flight can be detected after each await (see `beaconOnPpidUpdate`
+  // and the transition above), and so this call's `finally` can tell whether
+  // it still owns the slot below.
   const gen = generation;
   inFlight.set(key, gen);
 
@@ -237,6 +289,7 @@ async function fire(
 export function __resetBeaconStateForTests(): void {
   lastIdentity = null;
   generation = 0;
+  activeKey = null;
   inFlight.clear();
   captured.clear();
   controllers.clear();
