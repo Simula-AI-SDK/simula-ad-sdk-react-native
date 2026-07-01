@@ -4,10 +4,12 @@ import {
   __resetBeaconStateForTests,
   IPV4_BEACON_URL,
 } from "../ipv4Beacon";
-import { NativeModules } from "../../test/reactNativeMock";
+import { NativeModules, Platform } from "../../test/reactNativeMock";
 
 const native = NativeModules.SimulaAdsModule;
 const URL_ = "https://ip4.test/px";
+/** Test mock's `Platform.OS` is a readonly-typed literal at compile time only. */
+const mutablePlatform = Platform as unknown as { OS: string };
 
 /** Flush the microtask + immediate queues so the fire-and-forget beacon runs. */
 const flush = () => new Promise((r) => setImmediate(r));
@@ -252,29 +254,52 @@ describe("ipv4Beacon", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it("treats a whitespace-only ppid update as a logout, not a login (matches native isNotBlank)", async () => {
-    beaconOnInit({ apiKey: "kBlank", url: URL_, primaryUserID: "user1" });
+  it("treats a whitespace-only ppid update as a logout on Android (matches native isNotBlank)", async () => {
+    mutablePlatform.OS = "android";
+    try {
+      beaconOnInit({ apiKey: "kBlankAndroid", url: URL_, primaryUserID: "user1" });
+      await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      beaconOnPpidUpdate("   "); // whitespace-only → Android's native side clears the ppid too
+      await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(1); // no bogus "login" beacon fired for the blank id
+
+      // Dedup memory must have been reset like a real logout — a genuine
+      // re-login now runs a fresh capture instead of being silently deduped.
+      beaconOnPpidUpdate("user1");
+      await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      mutablePlatform.OS = "ios";
+    }
+  });
+
+  it("does NOT treat a whitespace-only ppid update as a logout on iOS (native only clears a literal empty string)", async () => {
+    // mutablePlatform.OS is already "ios" (the mock's default).
+    beaconOnInit({ apiKey: "kBlankIos", url: URL_, primaryUserID: "user1" });
     await flush();
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    beaconOnPpidUpdate("   "); // whitespace-only → native clears the ppid too
+    beaconOnPpidUpdate("   "); // whitespace-only → iOS's native side RETAINS it as the ppid
     await flush();
-    expect(fetchMock).toHaveBeenCalledTimes(1); // no bogus "login" beacon fired for the blank id
+    expect(fetchMock).toHaveBeenCalledTimes(2); // treated as a (weird) login, not a logout
+    expect(paramsOf(1).get("ppid")).toBe("   ");
 
-    // Dedup memory must have been reset like a real logout — a genuine
-    // re-login now runs a fresh capture instead of being silently deduped.
+    // Since it wasn't a logout, dedup memory for "user1" is untouched — switching
+    // straight back to it is still a fresh identity switch (not a dedup false-positive).
     beaconOnPpidUpdate("user1");
     await flush();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it("treats a whitespace-only initial primaryUserID as anonymous (no ppid param)", async () => {
+  it("passes a whitespace-only initial primaryUserID through as-is (native doesn't blank-filter at init)", async () => {
     beaconOnInit({ apiKey: "kBlankInit", url: URL_, primaryUserID: "   " });
     await flush();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const q = paramsOf();
-    expect(q.has("ppid")).toBe(false);
+    expect(q.get("ppid")).toBe("   ");
   });
 
   it("bounds a hung getDeviceId call so it doesn't block the dedup slot forever", async () => {

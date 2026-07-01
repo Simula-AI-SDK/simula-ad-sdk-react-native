@@ -56,6 +56,12 @@ export function toNativePrivacy(
   return out;
 }
 
+/**
+ * Bumped on every `initialize()` call, snapshotted before the native call and
+ * re-checked after it resolves — see `SimulaAds.initialize`'s beacon guard.
+ */
+let initSeq = 0;
+
 export const SimulaAds = {
   /** Initializes the SDK. Resolves once native init returns (session warms in the background). */
   async initialize(config: SimulaInitConfig): Promise<void> {
@@ -66,7 +72,17 @@ export const SimulaAds = {
     if (!config.apiKey) {
       throw new Error("[SimulaAds] initialize requires a non-empty apiKey");
     }
+    const seq = ++initSeq;
     await NativeAds!.initialize(toNativeConfig(config));
+    // If a NEWER initialize() call has started since we began awaiting native
+    // init, THIS call is stale — e.g. SimulaProvider re-running init on login
+    // while an earlier (anonymous) call is still in flight. Firing the beacon
+    // with this call's (possibly outdated) primaryUserID would incorrectly
+    // bump the beacon's generation and clear the newer identity's dedup state
+    // (see internal/ipv4Beacon.ts), even though this call's own native init
+    // did legitimately complete. Only the most-recently-started call's config
+    // is allowed to drive the beacon.
+    if (seq !== initSeq) return;
     // Temporary RN-only IPv4 capture (see internal/ipv4Beacon.ts). Fired AFTER
     // native init so the device id is primed; fire-and-forget so it can never
     // block or fail initialize. No-op until IPV4_BEACON_URL is configured.

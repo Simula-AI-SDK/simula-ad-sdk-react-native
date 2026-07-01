@@ -1,7 +1,14 @@
+jest.mock("../../internal/ipv4Beacon", () => ({
+  beaconOnInit: jest.fn(),
+  beaconOnPpidUpdate: jest.fn(),
+}));
+
 import { SimulaAds, toNativePrivacy } from "../SimulaAds";
 import { NativeModules } from "../../test/reactNativeMock";
+import { beaconOnInit } from "../../internal/ipv4Beacon";
 
 const native = NativeModules.SimulaAdsModule;
+const beaconOnInitMock = beaconOnInit as jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -20,6 +27,40 @@ describe("SimulaAds.initialize", () => {
       privacy: null,
       adContext: null,
     });
+  });
+
+  it("fires the beacon exactly once per initialize() call, using that call's own primaryUserID", async () => {
+    await SimulaAds.initialize({ apiKey: "k", primaryUserID: "user-1" });
+    expect(beaconOnInitMock).toHaveBeenCalledTimes(1);
+    expect(beaconOnInitMock).toHaveBeenLastCalledWith({
+      apiKey: "k",
+      primaryUserID: "user-1",
+    });
+  });
+
+  it("suppresses a stale initialize()'s beacon when a newer call has since started (out-of-order resolution)", async () => {
+    let resolveStale!: () => void;
+    native.initialize.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (resolveStale = resolve)),
+    );
+    // Older call: e.g. an anonymous init kicked off before login (no primaryUserID).
+    const stale = SimulaAds.initialize({ apiKey: "k" });
+
+    // Newer call starts (and fully resolves) BEFORE the older one — e.g.
+    // SimulaProvider re-running init once the real primaryUserID is known.
+    await SimulaAds.initialize({ apiKey: "k", primaryUserID: "user-2" });
+    expect(beaconOnInitMock).toHaveBeenCalledTimes(1);
+    expect(beaconOnInitMock).toHaveBeenLastCalledWith({
+      apiKey: "k",
+      primaryUserID: "user-2",
+    });
+
+    // The stale call's own native init now resolves late. Its beacon must be
+    // suppressed — firing it would incorrectly bump the beacon's generation
+    // and clear "user-2"'s freshly-claimed dedup state.
+    resolveStale();
+    await stale;
+    expect(beaconOnInitMock).toHaveBeenCalledTimes(1); // still just the "user-2" call above
   });
 
   it("passes privacy through with undefined keys dropped", async () => {

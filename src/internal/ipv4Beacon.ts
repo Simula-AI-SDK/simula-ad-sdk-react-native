@@ -99,15 +99,24 @@ function dedupKey(apiKey: string, primaryUserID: string | null): string {
 }
 
 /**
- * A whitespace-only id is treated as absent, matching the native side: Android's
- * `updatePrimaryUserID` clears the PPID via `id?.takeIf { it.isNotBlank() }`, so a
- * blank string already ends the session there. The beacon must agree — otherwise
- * it fires a "login" capture for a bogus ppid while the native session actually
- * went anonymous, and skips the generation/dedup reset a real logout gets.
+ * Mirrors the per-platform blank-check `SimulaAds.updatePrimaryUserID` triggers
+ * natively, so the beacon's session state stays in sync with what the native SDK
+ * actually did with THIS update:
+ *   • Android clears the ppid on any blank id, including whitespace-only — see
+ *     `SimulaAdsModule.kt`'s `id?.takeIf { it.isNotBlank() }`.
+ *   • iOS only clears a LITERAL empty string — see `SimulaAdsModule.swift`'s
+ *     `userID?.isEmpty == true` check — so a whitespace-only id is RETAINED as
+ *     the ppid there. Applying Android's blanker check on iOS would desync the
+ *     beacon (treats it as logout) from the native session (keeps the id),
+ *     breaking the backend's did/ppid join.
+ * Only used for ppid UPDATES (`beaconOnPpidUpdate`) — the initial `primaryUserID`
+ * passed to `initialize()` isn't blank-filtered by either native bridge, so
+ * `beaconOnInit` keeps the simpler null/undefined-only check.
  */
-function normalizePpid(id: string | null | undefined): string | null {
-  if (!id || id.trim().length === 0) return null;
-  return id;
+function normalizeUpdatedPpid(id: string | null): string | null {
+  if (!id) return null;
+  const isBlank = Platform.OS === "android" ? id.trim().length === 0 : id.length === 0;
+  return isBlank ? null : id;
 }
 
 /** Rejects if `promise` hasn't settled within `ms` (the native call itself isn't cancelled, just abandoned). */
@@ -155,21 +164,22 @@ export function beaconOnInit(
   lastIdentity = { apiKey: identity.apiKey, url: identity.url };
   void fire({
     ...lastIdentity,
-    primaryUserID: normalizePpid(identity.primaryUserID),
+    primaryUserID: identity.primaryUserID ?? null,
     reason: "init",
   });
 }
 
 /**
  * Fire a beacon on a primary-user-id change, reusing the identity captured at
- * init. A login (non-blank id) captures the new identity. A logout (null/blank
- * — matching the native side's blank check) resets the dedup memory so a later
- * re-login — even with the same ppid — runs a fresh capture for the new
- * session. No-op before `beaconOnInit`. Fire-and-forget.
+ * init. A login (an id the native side keeps — see `normalizeUpdatedPpid`)
+ * captures the new identity. A logout (null, or blank per the CURRENT
+ * platform's native check) resets the dedup memory so a later re-login — even
+ * with the same ppid — runs a fresh capture for the new session. No-op before
+ * `beaconOnInit`. Fire-and-forget.
  */
 export function beaconOnPpidUpdate(primaryUserID: string | null): void {
   if (!lastIdentity) return;
-  const normalized = normalizePpid(primaryUserID);
+  const normalized = normalizeUpdatedPpid(primaryUserID);
   if (!normalized) {
     // Logout ends the session: bump the generation so any beacon still
     // in-flight abandons without marking itself captured, abort its fetch (if
