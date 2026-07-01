@@ -59,6 +59,17 @@ interface BeaconIdentity {
 
 let lastIdentity: BeaconIdentity | null = null;
 /**
+ * The ppid the SDK currently intends to beacon for — the single source of truth
+ * for the *pending* init beacon's identity. Set synchronously by `beaconArmInit`
+ * (at the START of `initialize`, before native init is awaited) and by every
+ * `beaconOnPpidUpdate`. This is what lets a ppid update (login/logout) that lands
+ * WHILE native init is still in flight take effect, and it's the value
+ * `beaconFireInit` fires with — so the init beacon reflects the ppid that is
+ * current when native init *resolves*, not the (possibly superseded) value
+ * `initialize()` happened to be called with.
+ */
+let currentPpid: string | null = null;
+/**
  * Bumped on every logout AND on every identity transition (see `fire`). A
  * `fire` call captures the generation it started with and re-checks it after
  * each await; a mismatch means the session moved on mid-flight, so the call
@@ -111,7 +122,7 @@ function dedupKey(apiKey: string, primaryUserID: string | null): string {
  *     breaking the backend's did/ppid join.
  * Only used for ppid UPDATES (`beaconOnPpidUpdate`) — the initial `primaryUserID`
  * passed to `initialize()` isn't blank-filtered by either native bridge, so
- * `beaconOnInit` keeps the simpler null/undefined-only check.
+ * `beaconArmInit` keeps the simpler null/undefined-only check (`?? null`).
  */
 function normalizeUpdatedPpid(id: string | null): string | null {
   if (!id) return null;
@@ -154,19 +165,44 @@ async function safeGetDeviceId(): Promise<string | null> {
 }
 
 /**
- * Fire the init beacon and remember the identity for subsequent session-update
- * beacons. Call once native `initialize` has resolved (so the device id is
- * primed). Fire-and-forget — do not await.
+ * Record the identity for an in-progress `initialize()` SYNCHRONOUSLY, before
+ * native init is awaited, WITHOUT firing. This does two things a bare
+ * fire-after-await can't:
+ *   • sets `lastIdentity` up front so a `beaconOnPpidUpdate` that races native
+ *     init (see its `!lastIdentity` guard) takes effect instead of being
+ *     silently dropped, and
+ *   • seeds `currentPpid` so `beaconFireInit` fires for the ppid that is current
+ *     when native init resolves — even if a login/logout landed in between.
+ * Call `beaconFireInit` once native init resolves (so the device id is primed).
+ */
+export function beaconArmInit(
+  identity: BeaconIdentity & { primaryUserID?: string | null },
+): void {
+  lastIdentity = { apiKey: identity.apiKey, url: identity.url };
+  currentPpid = identity.primaryUserID ?? null;
+}
+
+/**
+ * Fire the init beacon for the CURRENT identity/ppid (see `currentPpid`). Call
+ * once native `initialize` has resolved and this init has won its caller's
+ * ordering guard. No-op if no init has been armed. Fire-and-forget — do not await.
+ */
+export function beaconFireInit(): void {
+  if (!lastIdentity) return;
+  void fire({ ...lastIdentity, primaryUserID: currentPpid, reason: "init" });
+}
+
+/**
+ * Arm + fire in a single call. Convenience for callers that already know native
+ * init has completed (and for tests). `SimulaAds.initialize` instead uses the
+ * split `beaconArmInit` / `beaconFireInit` so a ppid update can land in between
+ * the (synchronous) arm and the (post-native-init) fire.
  */
 export function beaconOnInit(
   identity: BeaconIdentity & { primaryUserID?: string | null },
 ): void {
-  lastIdentity = { apiKey: identity.apiKey, url: identity.url };
-  void fire({
-    ...lastIdentity,
-    primaryUserID: identity.primaryUserID ?? null,
-    reason: "init",
-  });
+  beaconArmInit(identity);
+  beaconFireInit();
 }
 
 /**
@@ -174,12 +210,18 @@ export function beaconOnInit(
  * init. A login (an id the native side keeps — see `normalizeUpdatedPpid`)
  * captures the new identity. A logout (null, or blank per the CURRENT
  * platform's native check) resets the dedup memory so a later re-login — even
- * with the same ppid — runs a fresh capture for the new session. No-op before
- * `beaconOnInit`. Fire-and-forget.
+ * with the same ppid — runs a fresh capture for the new session. No-op until an
+ * init has been armed (`beaconArmInit`/`beaconOnInit`) — but note arming happens
+ * synchronously at the START of `initialize`, so an update racing native init is
+ * honored rather than dropped. Fire-and-forget.
  */
 export function beaconOnPpidUpdate(primaryUserID: string | null): void {
   if (!lastIdentity) return;
   const normalized = normalizeUpdatedPpid(primaryUserID);
+  // Keep the single source of truth in sync so an init beacon that has been
+  // armed but not yet fired (native init still in flight) fires for THIS updated
+  // ppid instead of the value `initialize()` was originally called with.
+  currentPpid = normalized;
   if (!normalized) {
     // Logout ends the session: bump the generation so any beacon still
     // in-flight abandons without marking itself captured, abort its fetch (if
@@ -298,6 +340,7 @@ async function fire(
 /** Test-only: reset module dedup state between tests. Not part of the public API. */
 export function __resetBeaconStateForTests(): void {
   lastIdentity = null;
+  currentPpid = null;
   generation = 0;
   activeKey = null;
   inFlight.clear();

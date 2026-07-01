@@ -1,5 +1,7 @@
 import {
   beaconOnInit,
+  beaconArmInit,
+  beaconFireInit,
   beaconOnPpidUpdate,
   __resetBeaconStateForTests,
   IPV4_BEACON_URL,
@@ -300,6 +302,46 @@ describe("ipv4Beacon", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const q = paramsOf();
     expect(q.get("ppid")).toBe("   ");
+  });
+
+  // ── ppid update racing native init (armed, not yet fired) ──────────────────
+
+  it("is a no-op when a ppid update arrives before any init is armed", async () => {
+    beaconOnPpidUpdate("u1"); // nothing armed yet → nothing to beacon
+    await flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not drop a login that lands while native init is still in flight", async () => {
+    // arm = init started (anonymous), native init not resolved yet.
+    beaconArmInit({ apiKey: "kRace", url: URL_ });
+    // Login lands BEFORE the init beacon fires — must still capture it.
+    beaconOnPpidUpdate("u1");
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(paramsOf(0).get("ppid")).toBe("u1");
+
+    // Native init now resolves and fires: it must reuse the CURRENT (updated)
+    // ppid, so it dedups against the login beacon instead of firing anonymously.
+    beaconFireInit();
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires anonymously (drops the stale ppid) when a logout lands before init fires", async () => {
+    // arm = init started carrying "u1", native init not resolved yet.
+    beaconArmInit({ apiKey: "kRaceOut", url: URL_, primaryUserID: "u1" });
+    // Logout lands before the init beacon fires — resets, no request.
+    beaconOnPpidUpdate(null);
+    await flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // Native init now resolves and fires: it must NOT beacon the stale "u1"
+    // (the session is logged out) — it fires anonymously instead.
+    beaconFireInit();
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(paramsOf(0).has("ppid")).toBe(false);
   });
 
   it("bounds a hung getDeviceId call so it doesn't block the dedup slot forever", async () => {

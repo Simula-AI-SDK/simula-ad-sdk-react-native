@@ -11,7 +11,11 @@ import {
   isAdsModuleAvailable,
   warnAdsUnavailable,
 } from "../internal/nativeModules";
-import { beaconOnInit, beaconOnPpidUpdate } from "../internal/ipv4Beacon";
+import {
+  beaconArmInit,
+  beaconFireInit,
+  beaconOnPpidUpdate,
+} from "../internal/ipv4Beacon";
 import { SimulaPrivacyConfig } from "../privacy/types";
 import { SimulaAdContext, toNativeAdContext } from "./context";
 import type { SimulaNativeAdTheme } from "../nativeAd/types";
@@ -57,10 +61,20 @@ export function toNativePrivacy(
 }
 
 /**
- * Bumped on every `initialize()` call, snapshotted before the native call and
- * re-checked after it resolves — see `SimulaAds.initialize`'s beacon guard.
+ * Bumped on every `initialize()` call, snapshotted before the native call.
+ * Paired with `lastFiredInitSeq` to let only the newest init drive the beacon —
+ * see `SimulaAds.initialize`'s beacon guard.
  */
 let initSeq = 0;
+/**
+ * The highest `initSeq` that has ACTUALLY fired its IPv4 beacon. An init only
+ * fires if its own seq is greater — i.e. no newer init has beaconed yet.
+ * Crucially this keys off a beacon that *fired*, not merely a newer call having
+ * *started*: if a newer init hangs or fails before it can fire, an older but
+ * successfully-completed init still captures the session instead of it being
+ * skipped entirely.
+ */
+let lastFiredInitSeq = 0;
 
 export const SimulaAds = {
   /** Initializes the SDK. Resolves once native init returns (session warms in the background). */
@@ -73,24 +87,28 @@ export const SimulaAds = {
       throw new Error("[SimulaAds] initialize requires a non-empty apiKey");
     }
     const seq = ++initSeq;
+    // Arm the beacon SYNCHRONOUSLY, before awaiting native init, so that a
+    // primaryUserID change (login/logout) which races this init isn't dropped
+    // (`beaconOnPpidUpdate` no-ops until an identity is armed) and so the init
+    // beacon fires for the ppid that is current when native init RESOLVES, not
+    // the possibly-superseded value captured here. See internal/ipv4Beacon.ts.
+    beaconArmInit({ apiKey: config.apiKey, primaryUserID: config.primaryUserID });
     await NativeAds!.initialize(toNativeConfig(config));
-    // If a NEWER initialize() call has started since we began awaiting native
-    // init, THIS call is stale — e.g. SimulaProvider re-running init on login
-    // while an earlier (anonymous) call is still in flight. Firing the beacon
-    // with this call's (possibly outdated) primaryUserID would incorrectly
-    // bump the beacon's generation and clear the newer identity's dedup state
-    // (see internal/ipv4Beacon.ts), even though this call's own native init
-    // did legitimately complete. Only the most-recently-started call's config
-    // is allowed to drive the beacon.
-    if (seq !== initSeq) return;
+    // Only the newest init may drive the beacon: skip if a LATER init has
+    // already fired its own — e.g. SimulaProvider re-running init on login while
+    // this earlier (anonymous) call was still in flight. Firing a superseded
+    // init's beacon would bump the beacon's generation and clear the newer
+    // identity's dedup state (see internal/ipv4Beacon.ts). We gate on a beacon
+    // that actually FIRED (`lastFiredInitSeq`), not on a newer call merely
+    // having started, so a newer init that hangs or fails before firing doesn't
+    // cause THIS completed call's capture to be skipped too.
+    if (seq <= lastFiredInitSeq) return;
+    lastFiredInitSeq = seq;
     // Temporary RN-only IPv4 capture (see internal/ipv4Beacon.ts). Fired AFTER
     // native init so the device id is primed; fire-and-forget so it can never
     // block or fail initialize. No-op until IPV4_BEACON_URL is configured.
     // Intentionally not consent-gated — fires on every init.
-    beaconOnInit({
-      apiKey: config.apiKey,
-      primaryUserID: config.primaryUserID,
-    });
+    beaconFireInit();
   },
 
   /** Whether the SDK has been initialized with a valid API key. */
