@@ -1,0 +1,58 @@
+/**
+ * Codegen spec for the native view backing `<NativeAd>`.
+ *
+ * `codegenNativeComponent` generates a static Fabric component config at build time (via
+ * the `codegenConfig` in package.json) on platforms that opt in — Android only for now
+ * (`excludedPlatforms: ['iOS']`, since the iOS side is still an old-architecture-only
+ * `RCTViewManager`; see the Phase 3 iOS Fabric port). It also works with zero build-time
+ * codegen: at runtime it falls back to `requireNativeComponent`, so this is safe to import
+ * unconditionally on both architectures and both platforms.
+ */
+import type { HostComponent, ViewProps } from "react-native";
+import type {
+  DirectEventHandler,
+  Double,
+  Int32,
+  WithDefault,
+} from "react-native/Libraries/Types/CodegenTypes";
+import codegenNativeComponent from "react-native/Libraries/Utilities/codegenNativeComponent";
+
+export interface NativeAdSizeChangeEventData {
+  height: Double;
+}
+
+export interface NativeAdImpressionEventData {
+  impressionId: string;
+  adFormat: string;
+  adUnitId?: string;
+}
+
+export interface NativeAdPaidEventData {
+  valueMicros: Double;
+  currencyCode: string;
+  precisionType: string;
+  expectedCpm: Double;
+  expectedRevenue: Double;
+}
+
+export interface NativeAdErrorEventData {
+  code: string;
+  message: string;
+}
+
+export interface NativeProps extends ViewProps {
+  adUnitId?: string;
+  position?: WithDefault<Int32, 0>;
+  theme?: string;
+  preloadedAdId?: string;
+  previewHtml?: string;
+  onAdSizeChange?: DirectEventHandler<NativeAdSizeChangeEventData>;
+  onAdImpression?: DirectEventHandler<NativeAdImpressionEventData>;
+  onAdClick?: DirectEventHandler<Readonly<{}>>;
+  onAdPaid?: DirectEventHandler<NativeAdPaidEventData>;
+  onAdError?: DirectEventHandler<NativeAdErrorEventData>;
+}
+
+export default codegenNativeComponent<NativeProps>("SimulaNativeAdView", {
+  excludedPlatforms: ["iOS"],
+}) as HostComponent<NativeProps>;

@@ -7,35 +7,24 @@
  * view self-sizes to the button's content height; tapping fires `onClick`.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  requireNativeComponent,
-  UIManager,
-  Platform,
-  type HostComponent,
-  type StyleProp,
-  type ViewStyle,
-} from "react-native";
-import { MiniGameButtonProps, MiniGameButtonTheme } from "../../types";
+import { UIManager, Platform, type StyleProp, type ViewStyle } from "react-native";
+import NativeMiniGameButtonComponent, {
+  type MiniGameButtonSizeChangeEventData,
+} from "./MiniGameButtonNativeComponent";
+import { MiniGameButtonProps } from "../../types";
 
 const COMPONENT_NAME = "SimulaMiniGameButtonView";
 
-interface NativeMiniGameButtonProps {
-  text?: string | null;
-  showPulsate?: boolean;
-  showBadge?: boolean;
-  theme?: MiniGameButtonTheme;
-  onButtonPress?: (event: { nativeEvent: Record<string, never> }) => void;
-  onButtonSizeChange?: (event: { nativeEvent: { height: number } }) => void;
-  style?: StyleProp<ViewStyle>;
-}
-
-// Resolve the native view lazily and defensively: `null` when the view manager isn't
-// registered (unsupported platform, app not rebuilt, or a unit-test environment).
-const NativeMiniGameButton: HostComponent<NativeMiniGameButtonProps> | null =
+// The codegen-generated component (MiniGameButtonNativeComponent.ts) resolves to a static
+// Fabric config on Android when codegen ran at build time, or transparently falls back to
+// `requireNativeComponent` otherwise (old architecture, iOS, or codegen not wired up yet).
+// We still gate on `UIManager.getViewManagerConfig` — see NativeAd.tsx for why — to render
+// `null` with a warning instead of throwing when the view manager truly isn't registered.
+const NativeMiniGameButton =
   Platform?.OS != null &&
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (UIManager as any)?.getViewManagerConfig?.(COMPONENT_NAME) != null
-    ? requireNativeComponent<NativeMiniGameButtonProps>(COMPONENT_NAME)
+    ? NativeMiniGameButtonComponent
     : null;
 
 let warnedUnavailable = false;
@@ -62,7 +51,7 @@ export const MiniGameButton: React.FC<MiniGameButtonProps> = ({
   const [height, setHeight] = useState(48);
 
   const handleSize = useCallback(
-    (event: { nativeEvent: { height: number } }) => {
+    (event: { nativeEvent: MiniGameButtonSizeChangeEventData }) => {
       const next = event?.nativeEvent?.height ?? 0;
       // Threshold sub-pixel churn.
       setHeight((prev) => (next > 0 && Math.abs(prev - next) >= 1 ? next : prev));

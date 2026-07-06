@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Added (Android, New Architecture / Fabric)
+
+- Fabric codegen support for the custom views: `codegenConfig` in package.json plus typed
+  component specs (`src/nativeAd/NativeAdNativeComponent.ts`,
+  `src/components/miniGame/MiniGameButtonNativeComponent.ts`). On New Architecture hosts the
+  static view config is generated at build time (no more legacy `requireNativeComponent`
+  round-trip), and the Android view managers implement the codegen-generated interfaces via
+  architecture-specific `*ViewManagerSpec` base classes (`android/src/newarch` /
+  `android/src/oldarch`), so one artifact serves both architectures across RN versions.
+- The package's `react-native` entry point (top-level field and `exports` condition) now
+  points at the TypeScript source (`src/index.ts`) so Metro can run the codegen babel
+  transform; Node/tooling keep using `dist/` via `main`/`types`.
+- iOS is excluded from component codegen for now (`excludedPlatforms: ["iOS"]`) and keeps its
+  current interop path; the iOS Fabric port is tracked separately.
+
 ## 1.3.4
 
 ### Fixed (Android, New Architecture / Fabric)

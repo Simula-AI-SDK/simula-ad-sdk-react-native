@@ -1,6 +1,5 @@
 package com.simulaads.reactnative
 
-import com.facebook.react.uimanager.SimpleViewManager
 import com.facebook.react.uimanager.ThemedReactContext
 import com.facebook.react.uimanager.annotations.ReactProp
 
@@ -10,8 +9,13 @@ import com.facebook.react.uimanager.annotations.ReactProp
  * Stores props as they arrive and commits them once per transaction in
  * [onAfterUpdateTransaction], so the hosted `NativeAdSlot` re-composes only on a real
  * change. Height + viewability/error flow back to JS as direct events.
+ *
+ * Extends the architecture-specific [SimulaNativeAdViewManagerSpec] (`src/newarch` wires
+ * the Fabric codegen delegate; `src/oldarch` is a plain SimpleViewManager — see
+ * `android/build.gradle`). The `@ReactProp` annotations drive prop updates on the old
+ * architecture and are harmless redundancy on the new one.
  */
-class SimulaNativeAdViewManager : SimpleViewManager<SimulaNativeAdView>() {
+class SimulaNativeAdViewManager : SimulaNativeAdViewManagerSpec() {
 
     override fun getName(): String = "SimulaNativeAdView"
 
@@ -19,27 +23,27 @@ class SimulaNativeAdViewManager : SimpleViewManager<SimulaNativeAdView>() {
         SimulaNativeAdView(reactContext)
 
     @ReactProp(name = "adUnitId")
-    fun setAdUnitId(view: SimulaNativeAdView, value: String?) {
+    override fun setAdUnitId(view: SimulaNativeAdView, value: String?) {
         view.adUnitId = value
     }
 
     @ReactProp(name = "position", defaultInt = 0)
-    fun setPosition(view: SimulaNativeAdView, value: Int) {
+    override fun setPosition(view: SimulaNativeAdView, value: Int) {
         view.position = value
     }
 
     @ReactProp(name = "theme")
-    fun setTheme(view: SimulaNativeAdView, value: String?) {
+    override fun setTheme(view: SimulaNativeAdView, value: String?) {
         view.theme = value
     }
 
     @ReactProp(name = "preloadedAdId")
-    fun setPreloadedAdId(view: SimulaNativeAdView, value: String?) {
+    override fun setPreloadedAdId(view: SimulaNativeAdView, value: String?) {
         view.preloadedAdId = value
     }
 
     @ReactProp(name = "previewHtml")
-    fun setPreviewHtml(view: SimulaNativeAdView, value: String?) {
+    override fun setPreviewHtml(view: SimulaNativeAdView, value: String?) {
         view.previewHtml = value
     }
 

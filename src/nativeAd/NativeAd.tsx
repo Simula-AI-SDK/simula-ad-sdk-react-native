@@ -9,30 +9,31 @@
  * authoritative. Targeting context comes from `SimulaProvider` / `SimulaAds`, not props.
  */
 import React, { useCallback, useMemo, useState } from "react";
-import {
-  requireNativeComponent,
-  UIManager,
-  Platform,
-  type HostComponent,
-} from "react-native";
-import type {
-  NativeAdProps,
-  NativeAdViewProps,
-  NativeAdData,
-  NativeAdError,
-} from "./types";
+import { UIManager, Platform } from "react-native";
+import NativeAdViewComponent, {
+  type NativeAdErrorEventData,
+  type NativeAdImpressionEventData,
+  type NativeAdPaidEventData,
+  type NativeAdSizeChangeEventData,
+} from "./NativeAdNativeComponent";
+import type { NativeAdProps, NativeAdError } from "./types";
 import type { AdValue } from "../ads/types";
 
 const COMPONENT_NAME = "SimulaNativeAdView";
 
-// Resolve the native view lazily and defensively: `null` when the view manager isn't
-// registered (unsupported platform, app not rebuilt, or a unit-test environment with a
-// mocked react-native), so importing this module never throws.
-const NativeAdView: HostComponent<NativeAdViewProps> | null =
+// The codegen-generated component (NativeAdNativeComponent.ts) resolves to a static
+// Fabric config on Android when codegen ran at build time, or transparently falls back to
+// `requireNativeComponent` otherwise (old architecture, iOS, or codegen not wired up yet).
+// Either way, actually constructing the native view config is deferred until first render —
+// so we still gate on `UIManager.getViewManagerConfig` here to render `null` with a warning
+// instead of throwing when the view manager truly isn't registered (unsupported platform,
+// app not rebuilt after adding the package, or a unit-test environment with a mocked
+// react-native). This check works the same way on both architectures.
+const NativeAdView =
   Platform?.OS != null &&
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (UIManager as any)?.getViewManagerConfig?.(COMPONENT_NAME) != null
-    ? requireNativeComponent<NativeAdViewProps>(COMPONENT_NAME)
+    ? NativeAdViewComponent
     : null;
 
 let warnedUnavailable = false;
@@ -63,7 +64,7 @@ export function NativeAd({
   const [height, setHeight] = useState(0);
 
   const handleSize = useCallback(
-    (event: { nativeEvent: { height: number } }) => {
+    (event: { nativeEvent: NativeAdSizeChangeEventData }) => {
       const next = event?.nativeEvent?.height ?? 0;
       // Threshold sub-pixel churn so a measuring creative can't thrash the feed.
       setHeight((prev) => (Math.abs(prev - next) >= 1 ? next : prev));
@@ -72,7 +73,9 @@ export function NativeAd({
   );
 
   const handleImpression = useCallback(
-    (event: { nativeEvent: NativeAdData }) => {
+    (event: { nativeEvent: NativeAdImpressionEventData }) => {
+      // Structurally identical to NativeAdData; the codegen event type is the source of
+      // truth for what actually crosses the bridge.
       onImpression?.(event.nativeEvent);
     },
     [onImpression],
@@ -83,15 +86,20 @@ export function NativeAd({
   }, [onClick]);
 
   const handlePaid = useCallback(
-    (event: { nativeEvent: AdValue }) => {
-      onPaid?.(event.nativeEvent);
+    (event: { nativeEvent: NativeAdPaidEventData }) => {
+      // The codegen event type widens `precisionType` to `string` (codegen doesn't carry
+      // our string-literal union across the bridge); narrow it back for the public API,
+      // same trust boundary as the rest of the native payload.
+      onPaid?.(event.nativeEvent as AdValue);
     },
     [onPaid],
   );
 
   const handleError = useCallback(
-    (event: { nativeEvent: NativeAdError }) => {
-      onError?.(event.nativeEvent);
+    (event: { nativeEvent: NativeAdErrorEventData }) => {
+      // Same as above: the native side only ever sends one of the known NativeAdErrorCode
+      // values (see errorCode() in SimulaNativeAdView.kt / SimulaNativeAdView.swift).
+      onError?.(event.nativeEvent as NativeAdError);
     },
     [onError],
   );
