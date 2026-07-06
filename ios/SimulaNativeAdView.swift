@@ -93,8 +93,14 @@ class SimulaNativeAdHostView: UIView {
         // sibling feed rows before JS applies the reported height.
         clipsToBounds = true
 
-        // Tear down any previous hosting (prop change → different ad).
-        hostingController?.view.removeFromSuperview()
+        // Tear down any previous hosting (prop change → different ad). Proper VC
+        // containment teardown (willMove/removeFromParent) — see mount below for why
+        // this matters even though nothing presents from the ad today.
+        if let previous = hostingController {
+            previous.willMove(toParent: nil)
+            previous.view.removeFromSuperview()
+            previous.removeFromParent()
+        }
         hostingController = nil
 
         let root = SimulaNativeAdRoot(
@@ -114,6 +120,15 @@ class SimulaNativeAdHostView: UIView {
         let controller = UIHostingController(rootView: root)
         controller.view.backgroundColor = .clear
         controller.view.translatesAutoresizingMaskIntoConstraints = false
+
+        // Proper UIViewController containment (matches SimulaMiniGameModule's overlay
+        // hosting controllers): without addChild/didMove(toParent:), the hosted SwiftUI
+        // tree never receives correct trait-collection/safe-area propagation and its
+        // appearance-transition callbacks never fire — dormant today (AdChoices is an
+        // in-ZStack overlay, not a VC presentation) but would surface the moment
+        // anything here needs to present (e.g. a future sheet).
+        let parentVC = nearestViewController()
+        if let parentVC { parentVC.addChild(controller) }
         addSubview(controller.view)
 
         // Pin width to the host (RN owns width via style); leave height to the content.
@@ -129,8 +144,25 @@ class SimulaNativeAdHostView: UIView {
             height,
         ])
 
+        if let parentVC { controller.didMove(toParent: parentVC) }
+
         hostingController = controller
         heightConstraint = height
+    }
+
+    /// Walks the responder chain to find the view controller currently managing this
+    /// view's hierarchy (RN doesn't hand native views a specific "container VC" — this is
+    /// the standard way to find one for a view nested arbitrarily deep in a screen). `nil`
+    /// before the view is attached to a window; `mountIfNeeded` re-runs on `didMoveToWindow`
+    /// so a first call this early just skips containment (the hosted view still renders —
+    /// only the VC-lifecycle propagation is deferred).
+    private func nearestViewController() -> UIViewController? {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let viewController = current as? UIViewController { return viewController }
+            responder = current.next
+        }
+        return nil
     }
 
     // MARK: Height + events
