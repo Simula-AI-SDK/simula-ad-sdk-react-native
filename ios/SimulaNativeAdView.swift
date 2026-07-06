@@ -54,6 +54,12 @@ class SimulaNativeAdHostView: UIView {
     private var needsMount = true
     private var lastReportedHeight: CGFloat = -1
     private var mountRetries = 0
+    // True once the current `hostingController` has been added to a parent view controller.
+    // Deliberately independent of `needsMount`: `mountIfNeeded()` can build and show the
+    // hosting controller before a parent VC is discoverable (e.g. the first `layoutSubviews`
+    // firing pre-window-attach), which clears `needsMount` — so containment must be retried
+    // separately on later attach, not gated behind the same flag (see `attachToParentIfNeeded`).
+    private var isHostingControllerContained = false
 
     // MARK: Mounting
 
@@ -63,11 +69,15 @@ class SimulaNativeAdHostView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         mountIfNeeded()
+        attachToParentIfNeeded()
     }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        if window != nil { mountIfNeeded() }
+        if window != nil {
+            mountIfNeeded()
+            attachToParentIfNeeded()
+        }
     }
 
     private func mountIfNeeded() {
@@ -126,7 +136,10 @@ class SimulaNativeAdHostView: UIView {
         // tree never receives correct trait-collection/safe-area propagation and its
         // appearance-transition callbacks never fire — dormant today (AdChoices is an
         // in-ZStack overlay, not a VC presentation) but would surface the moment
-        // anything here needs to present (e.g. a future sheet).
+        // anything here needs to present (e.g. a future sheet). If no parent VC is
+        // discoverable yet, `attachToParentIfNeeded()` retries this independently on
+        // every later attach — see `isHostingControllerContained`.
+        isHostingControllerContained = false
         let parentVC = nearestViewController()
         if let parentVC { parentVC.addChild(controller) }
         addSubview(controller.view)
@@ -144,10 +157,25 @@ class SimulaNativeAdHostView: UIView {
             height,
         ])
 
-        if let parentVC { controller.didMove(toParent: parentVC) }
+        if let parentVC {
+            controller.didMove(toParent: parentVC)
+            isHostingControllerContained = true
+        }
 
         hostingController = controller
         heightConstraint = height
+    }
+
+    /// Retries VC containment on the *existing* hosting controller — no recomposition, no
+    /// `needsMount` involvement — for the case where `mountIfNeeded()` created it before a
+    /// parent view controller was discoverable. Idempotent no-op once containment succeeds
+    /// or if there's no hosting controller yet.
+    private func attachToParentIfNeeded() {
+        guard !isHostingControllerContained, let controller = hostingController else { return }
+        guard let parentVC = nearestViewController() else { return }
+        parentVC.addChild(controller)
+        controller.didMove(toParent: parentVC)
+        isHostingControllerContained = true
     }
 
     /// Walks the responder chain to find the view controller currently managing this
