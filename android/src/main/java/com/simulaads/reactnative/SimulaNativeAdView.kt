@@ -203,7 +203,7 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
         // is -1 on the old architecture) instead of the legacy RCTEventEmitter, which throws
         // once bridge/interop is disabled.
         // getEventDispatcherForReactTag is deprecated on newer RN (it delegates to a single-arg
-        // getEventDispatcher(context)), but that replacement does not exist on RN 0.76 — our
+        // getEventDispatcher(context)), but that replacement does not exist on RN 0.77 — our
         // declared minimum — and this library compiles against the host app's RN version.
         @Suppress("DEPRECATION")
         val dispatcher = UIManagerHelper.getEventDispatcherForReactTag(reactContext, id) ?: return

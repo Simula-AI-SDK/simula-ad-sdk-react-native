@@ -15,7 +15,7 @@ import com.facebook.react.viewmanagers.SimulaNativeAdViewManagerInterface
  * hand-vendoring generated classes — means the generated code always matches the host's
  * RN version; the generated Java shapes are NOT stable across RN releases (e.g. the
  * delegate's generics and the `ViewManagerWithGeneratedInterface` marker changed between
- * RN 0.76 and 0.85).
+ * RN 0.77 and 0.85).
  */
 abstract class SimulaNativeAdViewManagerSpec :
     SimpleViewManager<SimulaNativeAdView>(),

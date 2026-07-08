@@ -14,12 +14,12 @@ buildscript {
 }
 
 def isNewArchitectureEnabled() {
-    // The New Architecture is the default from RN 0.76 (this package's declared minimum)
+    // The New Architecture is the default from RN 0.77 (this package's declared minimum)
     // and mandatory from RN 0.82, where the React Gradle plugin ignores `newArchEnabled`
     // entirely. So default to new-arch when the property is absent — requiring
     // `newArchEnabled == "true"` would silently build the oldarch (interop-dependent)
     // variant inside a Fabric app whose gradle.properties dropped the flag. Explicit
-    // `newArchEnabled=false` (a real opt-out on RN 0.76–0.81) still selects oldarch.
+    // `newArchEnabled=false` (a real opt-out on RN 0.77–0.81) still selects oldarch.
     return !project.hasProperty("newArchEnabled") || project.newArchEnabled == "true"
 }
 
