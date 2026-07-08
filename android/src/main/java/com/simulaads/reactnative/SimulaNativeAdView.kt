@@ -38,7 +38,12 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
     FrameLayout(reactContext) {
 
     private val composeView = ComposeView(reactContext).apply {
-        // Dispose when this view leaves the RN tree (unmount); no view pooling in RN.
+        // Dispose when this view leaves the window (unmount, or clipped out by
+        // removeClippedSubviews). Disposal does NOT lose the UI across a detach/reattach
+        // cycle: ComposeView retains the content lambda set by commitProps() and
+        // recreates the composition automatically on reattach (both onAttachedToWindow
+        // and onMeasure call ensureCompositionCreated), so commitProps() skipping
+        // setContent for an unchanged propKey is safe.
         setViewCompositionStrategy(
             ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool,
         )

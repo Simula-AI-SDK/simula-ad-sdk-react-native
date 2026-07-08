@@ -27,6 +27,9 @@ class SimulaMiniGameButtonView(private val reactContext: ThemedReactContext) :
     FrameLayout(reactContext) {
 
     private val composeView = ComposeView(reactContext).apply {
+        // Disposal on detach does NOT lose the UI: ComposeView retains the content
+        // lambda from commitProps() and recreates the composition on reattach
+        // (onAttachedToWindow / onMeasure call ensureCompositionCreated).
         setViewCompositionStrategy(
             ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool,
         )
