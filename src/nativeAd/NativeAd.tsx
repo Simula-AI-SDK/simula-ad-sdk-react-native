@@ -25,14 +25,18 @@ const COMPONENT_NAME = "SimulaNativeAdView";
 // Fabric config on Android when codegen ran at build time, or transparently falls back to
 // `requireNativeComponent` otherwise (old architecture, iOS, or codegen not wired up yet).
 // Either way, actually constructing the native view config is deferred until first render —
-// so we still gate on `UIManager.getViewManagerConfig` here to render `null` with a warning
+// so we still gate on `UIManager.hasViewManagerConfig` here to render `null` with a warning
 // instead of throwing when the view manager truly isn't registered (unsupported platform,
 // app not rebuilt after adding the package, or a unit-test environment with a mocked
-// react-native). This check works the same way on both architectures.
+// react-native). `hasViewManagerConfig` — NOT `getViewManagerConfig` — is the only check
+// that works on every configuration: on Bridgeless it queries Fabric's component registry
+// directly, while `getViewManagerConfig` requires the legacy UIManager interop layer and
+// silently returns null (no ads rendered!) the moment a host app disables it.
+// On the old architecture the two are equivalent. Optional-chained for mocked-RN tests.
 const NativeAdView =
   Platform?.OS != null &&
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (UIManager as any)?.getViewManagerConfig?.(COMPONENT_NAME) != null
+  (UIManager as any)?.hasViewManagerConfig?.(COMPONENT_NAME) === true
     ? NativeAdViewComponent
     : null;
 

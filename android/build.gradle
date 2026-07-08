@@ -14,10 +14,13 @@ buildscript {
 }
 
 def isNewArchitectureEnabled() {
-    // Mirrors the convention used by RN community libraries (e.g. react-native-svg,
-    // react-native-safe-area-context): the host app's `newArchEnabled` Gradle property
-    // decides whether Fabric codegen runs for this library.
-    return project.hasProperty("newArchEnabled") && project.newArchEnabled == "true"
+    // The New Architecture is the default from RN 0.76 (this package's declared minimum)
+    // and mandatory from RN 0.82, where the React Gradle plugin ignores `newArchEnabled`
+    // entirely. So default to new-arch when the property is absent — requiring
+    // `newArchEnabled == "true"` would silently build the oldarch (interop-dependent)
+    // variant inside a Fabric app whose gradle.properties dropped the flag. Explicit
+    // `newArchEnabled=false` (a real opt-out on RN 0.76–0.81) still selects oldarch.
+    return !project.hasProperty("newArchEnabled") || project.newArchEnabled == "true"
 }
 
 // Only applied under New Architecture: this registers the generateCodegenSchemaFromJavaScript

@@ -80,6 +80,18 @@ class SimulaNativeAdHostView: UIView {
         }
     }
 
+    override func willMove(toWindow newWindow: UIWindow?) {
+        super.willMove(toWindow: newWindow)
+        // Leaving the window (unmounted by RN, or clipped out of a virtualized list):
+        // undo VC containment. The parent VC otherwise keeps a strong reference to the
+        // hosting controller in its `children` array for the life of the screen, leaking
+        // one UIHostingController + SwiftUI tree per unmounted ad. Containment only —
+        // the controller, its view, and the composed ad stay intact, so a recycled view
+        // re-entering the window re-attaches via `attachToParentIfNeeded()` with no
+        // recomposition.
+        if newWindow == nil { detachFromParentIfNeeded() }
+    }
+
     private func mountIfNeeded() {
         guard needsMount else { return }
 
@@ -176,6 +188,16 @@ class SimulaNativeAdHostView: UIView {
         parentVC.addChild(controller)
         controller.didMove(toParent: parentVC)
         isHostingControllerContained = true
+    }
+
+    /// Inverse of `attachToParentIfNeeded()`: removes the hosting controller from its
+    /// parent VC's `children` (releasing the parent's strong reference) while leaving the
+    /// controller and its view in place. Idempotent.
+    private func detachFromParentIfNeeded() {
+        guard isHostingControllerContained, let controller = hostingController else { return }
+        controller.willMove(toParent: nil)
+        controller.removeFromParent()
+        isHostingControllerContained = false
     }
 
     /// Walks the responder chain to find the view controller currently managing this

@@ -18,12 +18,13 @@ const COMPONENT_NAME = "SimulaMiniGameButtonView";
 // The codegen-generated component (MiniGameButtonNativeComponent.ts) resolves to a static
 // Fabric config on Android when codegen ran at build time, or transparently falls back to
 // `requireNativeComponent` otherwise (old architecture, iOS, or codegen not wired up yet).
-// We still gate on `UIManager.getViewManagerConfig` — see NativeAd.tsx for why — to render
-// `null` with a warning instead of throwing when the view manager truly isn't registered.
+// We still gate on `UIManager.hasViewManagerConfig` — see NativeAd.tsx for why it must be
+// `has` and not `get` — to render `null` with a warning instead of throwing when the view
+// manager truly isn't registered.
 const NativeMiniGameButton =
   Platform?.OS != null &&
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (UIManager as any)?.getViewManagerConfig?.(COMPONENT_NAME) != null
+  (UIManager as any)?.hasViewManagerConfig?.(COMPONENT_NAME) === true
     ? NativeMiniGameButtonComponent
     : null;
 
