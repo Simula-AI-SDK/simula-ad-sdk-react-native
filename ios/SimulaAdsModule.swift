@@ -138,14 +138,22 @@ class SimulaAdsModule: RCTEventEmitter {
                          theme: NSString?,
                          resolve: @escaping RCTPromiseResolveBlock,
                          reject: @escaping RCTPromiseRejectBlock) {
-        Task { @MainActor in
-            let id = await SimulaAds.preloadNativeAd(
-                adUnitId: adUnitId as String?,
-                position: position.intValue,
-                theme: theme as String?
-            )
-            resolve(id)
-        }
+        let unitId = adUnitId as String?
+        let pos = position.intValue
+        let themeName = theme as String?
+        // Single-call task closure — see .cursor/skills/swift-concurrency-task-shape/SKILL.md.
+        Task { @MainActor in await Self.runPreloadNativeAd(unitId, pos, themeName, resolve) }
+    }
+
+    /// Task body for `preloadNativeAd` (named method — see the task-shape skill).
+    @MainActor
+    private static func runPreloadNativeAd(
+        _ adUnitId: String?,
+        _ position: Int,
+        _ theme: String?,
+        _ resolve: @escaping RCTPromiseResolveBlock
+    ) async {
+        resolve(await SimulaAds.preloadNativeAd(adUnitId: adUnitId, position: position, theme: theme))
     }
 
     @objc
@@ -316,14 +324,20 @@ class SimulaAdsModule: RCTEventEmitter {
     func requestTrackingAuthorization(_ resolve: @escaping RCTPromiseResolveBlock,
                                       reject: @escaping RCTPromiseRejectBlock) {
         #if os(iOS)
-        Task { @MainActor in
-            let status = await SimulaPrivacy.shared.requestTrackingAuthorization()
-            resolve(Self.attStatusString(status))
-        }
+        // Single-call task closure — see .cursor/skills/swift-concurrency-task-shape/SKILL.md.
+        Task { @MainActor in await Self.runRequestTrackingAuthorization(resolve) }
         #else
         resolve("unavailable")
         #endif
     }
+
+    #if os(iOS)
+    /// Task body for `requestTrackingAuthorization` (named method — see the task-shape skill).
+    @MainActor
+    private static func runRequestTrackingAuthorization(_ resolve: @escaping RCTPromiseResolveBlock) async {
+        resolve(attStatusString(await SimulaPrivacy.shared.requestTrackingAuthorization()))
+    }
+    #endif
 
     @objc
     func getTrackingAuthorizationStatus(_ resolve: @escaping RCTPromiseResolveBlock,

@@ -661,10 +661,17 @@ class SimulaMiniGameModule: RCTEventEmitter {
             primaryUserID: primaryUserID,
             hasPrivacyConsent: hasPrivacyConsent
         )
-        Task {
-            await provider.createSession()
-            resolve(nil)
-        }
+        // Single-call task closure — see .cursor/skills/swift-concurrency-task-shape/SKILL.md.
+        Task { await Self.warmSessionAndResolve(provider, resolve) }
+    }
+
+    /// Task body for `initialize`'s session warm-up (named method — see the task-shape skill).
+    private static func warmSessionAndResolve(
+        _ provider: SimulaProvider,
+        _ resolve: @escaping RCTPromiseResolveBlock
+    ) async {
+        await provider.createSession()
+        resolve(nil)
     }
 
     // MARK: - CharacterSelector
