@@ -28,7 +28,9 @@ class SimulaNativeAdHostView: UIView {
     // A prop change marks the view for re-mount and schedules a layout pass, so the
     // slot re-mounts even when no size prop changed (e.g. a theme-only update).
     @objc var adUnitId: NSString? { didSet { setNeedsMount() } }
-    @objc var position: NSNumber = 0 { didSet { setNeedsMount() } }
+    // `adPosition` on the wire — `position` is a reserved RN layout prop name (crashes
+    // Android's shadow-node update; on iOS it collides with RCTShadowView's layout prop).
+    @objc var adPosition: NSNumber = 0 { didSet { setNeedsMount() } }
     @objc var theme: NSString? { didSet { setNeedsMount() } }
     @objc var preloadedAdId: NSString? { didSet { setNeedsMount() } }
     @objc var previewHtml: NSString? { didSet { setNeedsMount() } }
@@ -54,6 +56,12 @@ class SimulaNativeAdHostView: UIView {
     private var needsMount = true
     private var lastReportedHeight: CGFloat = -1
     private var mountRetries = 0
+    // True once the current `hostingController` has been added to a parent view controller.
+    // Deliberately independent of `needsMount`: `mountIfNeeded()` can build and show the
+    // hosting controller before a parent VC is discoverable (e.g. the first `layoutSubviews`
+    // firing pre-window-attach), which clears `needsMount` — so containment must be retried
+    // separately on later attach, not gated behind the same flag (see `attachToParentIfNeeded`).
+    private var isHostingControllerContained = false
 
     // MARK: Mounting
 
@@ -63,11 +71,27 @@ class SimulaNativeAdHostView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         mountIfNeeded()
+        attachToParentIfNeeded()
     }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        if window != nil { mountIfNeeded() }
+        if window != nil {
+            mountIfNeeded()
+            attachToParentIfNeeded()
+        }
+    }
+
+    override func willMove(toWindow newWindow: UIWindow?) {
+        super.willMove(toWindow: newWindow)
+        // Leaving the window (unmounted by RN, or clipped out of a virtualized list):
+        // undo VC containment. The parent VC otherwise keeps a strong reference to the
+        // hosting controller in its `children` array for the life of the screen, leaking
+        // one UIHostingController + SwiftUI tree per unmounted ad. Containment only —
+        // the controller, its view, and the composed ad stay intact, so a recycled view
+        // re-entering the window re-attaches via `attachToParentIfNeeded()` with no
+        // recomposition.
+        if newWindow == nil { detachFromParentIfNeeded() }
     }
 
     private func mountIfNeeded() {
@@ -93,14 +117,20 @@ class SimulaNativeAdHostView: UIView {
         // sibling feed rows before JS applies the reported height.
         clipsToBounds = true
 
-        // Tear down any previous hosting (prop change → different ad).
-        hostingController?.view.removeFromSuperview()
+        // Tear down any previous hosting (prop change → different ad). Proper VC
+        // containment teardown (willMove/removeFromParent) — see mount below for why
+        // this matters even though nothing presents from the ad today.
+        if let previous = hostingController {
+            previous.willMove(toParent: nil)
+            previous.view.removeFromSuperview()
+            previous.removeFromParent()
+        }
         hostingController = nil
 
         let root = SimulaNativeAdRoot(
             provider: provider,
             adUnitId: adUnitId as String?,
-            position: position.intValue,
+            position: adPosition.intValue,
             theme: theme as String?,
             preloadedAdId: preloadedAdId as String?,
             previewHTML: previewHtml as String?,
@@ -114,6 +144,18 @@ class SimulaNativeAdHostView: UIView {
         let controller = UIHostingController(rootView: root)
         controller.view.backgroundColor = .clear
         controller.view.translatesAutoresizingMaskIntoConstraints = false
+
+        // Proper UIViewController containment (matches SimulaMiniGameModule's overlay
+        // hosting controllers): without addChild/didMove(toParent:), the hosted SwiftUI
+        // tree never receives correct trait-collection/safe-area propagation and its
+        // appearance-transition callbacks never fire — dormant today (AdChoices is an
+        // in-ZStack overlay, not a VC presentation) but would surface the moment
+        // anything here needs to present (e.g. a future sheet). If no parent VC is
+        // discoverable yet, `attachToParentIfNeeded()` retries this independently on
+        // every later attach — see `isHostingControllerContained`.
+        isHostingControllerContained = false
+        let parentVC = nearestViewController()
+        if let parentVC { parentVC.addChild(controller) }
         addSubview(controller.view)
 
         // Pin width to the host (RN owns width via style); leave height to the content.
@@ -129,8 +171,50 @@ class SimulaNativeAdHostView: UIView {
             height,
         ])
 
+        if let parentVC {
+            controller.didMove(toParent: parentVC)
+            isHostingControllerContained = true
+        }
+
         hostingController = controller
         heightConstraint = height
+    }
+
+    /// Retries VC containment on the *existing* hosting controller — no recomposition, no
+    /// `needsMount` involvement — for the case where `mountIfNeeded()` created it before a
+    /// parent view controller was discoverable. Idempotent no-op once containment succeeds
+    /// or if there's no hosting controller yet.
+    private func attachToParentIfNeeded() {
+        guard !isHostingControllerContained, let controller = hostingController else { return }
+        guard let parentVC = nearestViewController() else { return }
+        parentVC.addChild(controller)
+        controller.didMove(toParent: parentVC)
+        isHostingControllerContained = true
+    }
+
+    /// Inverse of `attachToParentIfNeeded()`: removes the hosting controller from its
+    /// parent VC's `children` (releasing the parent's strong reference) while leaving the
+    /// controller and its view in place. Idempotent.
+    private func detachFromParentIfNeeded() {
+        guard isHostingControllerContained, let controller = hostingController else { return }
+        controller.willMove(toParent: nil)
+        controller.removeFromParent()
+        isHostingControllerContained = false
+    }
+
+    /// Walks the responder chain to find the view controller currently managing this
+    /// view's hierarchy (RN doesn't hand native views a specific "container VC" — this is
+    /// the standard way to find one for a view nested arbitrarily deep in a screen). `nil`
+    /// before the view is attached to a window; `mountIfNeeded` re-runs on `didMoveToWindow`
+    /// so a first call this early just skips containment (the hosted view still renders —
+    /// only the VC-lifecycle propagation is deferred).
+    private func nearestViewController() -> UIViewController? {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let viewController = current as? UIViewController { return viewController }
+            responder = current.next
+        }
+        return nil
     }
 
     // MARK: Height + events

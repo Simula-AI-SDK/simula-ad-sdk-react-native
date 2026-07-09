@@ -14,7 +14,6 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReadableMap
-import com.facebook.react.modules.core.DeviceEventManagerModule
 import ad.simula.ad.sdk.ads.SimulaAds
 import ad.simula.ad.sdk.character.CharacterSelector
 import ad.simula.ad.sdk.minigame.MiniGameMenu
@@ -541,12 +540,12 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
     }
 
     private fun sendEvent(eventName: String, params: Any?) {
-        // Bridge may be tearing down (reload / host destroy) — getJSModule would
-        // throw if there's no active instance.
+        // Bridge may be tearing down (reload / host destroy) — emitDeviceEvent would
+        // throw if there's no active instance. emitDeviceEvent routes through the
+        // legacy RCTDeviceEventEmitter under the old architecture and the Bridgeless
+        // event emitter under the new one, so this works on both.
         if (!reactApplicationContext.hasActiveReactInstance()) return
-        reactApplicationContext
-            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            .emit(eventName, params)
+        reactApplicationContext.emitDeviceEvent(eventName, params)
     }
 
     // ── Message conversion ──────────────────────────────────────────────

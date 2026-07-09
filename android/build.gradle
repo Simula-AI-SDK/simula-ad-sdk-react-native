@@ -13,6 +13,23 @@ buildscript {
     }
 }
 
+def isNewArchitectureEnabled() {
+    // The New Architecture is the default from RN 0.77 (this package's declared minimum)
+    // and mandatory from RN 0.82, where the React Gradle plugin ignores `newArchEnabled`
+    // entirely. So default to new-arch when the property is absent — requiring
+    // `newArchEnabled == "true"` would silently build the oldarch (interop-dependent)
+    // variant inside a Fabric app whose gradle.properties dropped the flag. Explicit
+    // `newArchEnabled=false` (a real opt-out on RN 0.77–0.81) still selects oldarch.
+    return !project.hasProperty("newArchEnabled") || project.newArchEnabled == "true"
+}
+
+// Only applied under New Architecture: this registers the generateCodegenSchemaFromJavaScript
+// / generateCodegenArtifactsFromSchema tasks (driven by package.json's `codegenConfig`) and
+// wires their output into the main source set automatically.
+if (isNewArchitectureEnabled()) {
+    apply plugin: "com.facebook.react"
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 apply plugin: 'org.jetbrains.kotlin.plugin.compose'
@@ -51,7 +68,20 @@ android {
 
     sourceSets {
         main {
-            java.srcDirs = ['src/main/java']
+            // `+=` (not `=`) so it doesn't clobber the generated codegen source dir that the
+            // `com.facebook.react` plugin adds when New Architecture is enabled.
+            java.srcDirs += ['src/main/java']
+            // Architecture-specific *ViewManagerSpec base classes: the newarch variant
+            // references the codegen-generated ManagerInterface/ManagerDelegate classes
+            // (which only exist when the `com.facebook.react` plugin ran codegen, and whose
+            // generated shape varies across RN versions); the oldarch variant is a plain
+            // SimpleViewManager relying on @ReactProp. This is the RN-documented
+            // backward-compatible library pattern.
+            if (isNewArchitectureEnabled()) {
+                java.srcDirs += ['src/newarch/java']
+            } else {
+                java.srcDirs += ['src/oldarch/java']
+            }
         }
     }
 }

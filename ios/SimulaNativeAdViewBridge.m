@@ -3,7 +3,7 @@
 @interface RCT_EXTERN_MODULE(SimulaNativeAdViewManager, RCTViewManager)
 
 RCT_EXPORT_VIEW_PROPERTY(adUnitId, NSString)
-RCT_EXPORT_VIEW_PROPERTY(position, NSNumber)
+RCT_EXPORT_VIEW_PROPERTY(adPosition, NSNumber)
 RCT_EXPORT_VIEW_PROPERTY(theme, NSString)
 RCT_EXPORT_VIEW_PROPERTY(preloadedAdId, NSString)
 RCT_EXPORT_VIEW_PROPERTY(previewHtml, NSString)

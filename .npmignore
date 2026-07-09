@@ -1,26 +1,24 @@
-# Ignore source files
-/src/
-*.ts
-*.tsx
-!*.d.ts
+# NOTE: `src/` MUST ship in the tarball. The package's Metro entry
+# ("react-native": "src/index.ts") resolves to TypeScript source, and React Native
+# codegen reads the *NativeComponent.ts specs from `src` (codegenConfig.jsSrcsDir)
+# inside the installed package. Do not re-add blanket /src/, *.ts or *.tsx excludes.
+
+# Ignore test files and test-only helpers
+**/*.test.*
+**/*.spec.*
+**/__tests__/
+src/test/
 
 # Ignore development files
 tsconfig.json
+jest.config.js
 *.md
 !README.md
-
-# Ignore test files
-**/*.test.*
-**/*.spec.*
 
 # Ignore build tools
 node_modules/
 .git/
 .gitignore
-
-# Ignore React if accidentally installed
-node_modules/react/
-node_modules/@types/react/
 
 # Ignore packed tarball files
 *.tgz

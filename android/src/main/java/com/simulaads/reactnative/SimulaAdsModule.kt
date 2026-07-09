@@ -7,7 +7,6 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
-import com.facebook.react.modules.core.DeviceEventManagerModule
 import ad.simula.ad.sdk.ads.SimulaAds
 import ad.simula.ad.sdk.ads.SimulaAdError
 import ad.simula.ad.sdk.ads.SimulaInterstitialAd
@@ -349,11 +348,11 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
     }
 
     private fun sendEvent(params: WritableMap) {
-        // Bridge may be tearing down (reload / host destroy).
+        // Bridge may be tearing down (reload / host destroy). emitDeviceEvent routes
+        // through the legacy RCTDeviceEventEmitter under the old architecture and the
+        // Bridgeless event emitter under the new one, so this works on both.
         if (!reactApplicationContext.hasActiveReactInstance()) return
-        reactApplicationContext
-            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            .emit("SimulaAds_onAdEvent", params)
+        reactApplicationContext.emitDeviceEvent("SimulaAds_onAdEvent", params)
     }
 
     // ── Error mapping ─────────────────────────────────────────────────────────

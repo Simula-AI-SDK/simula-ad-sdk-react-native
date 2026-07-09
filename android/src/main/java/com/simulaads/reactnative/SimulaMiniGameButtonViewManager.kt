@@ -1,8 +1,8 @@
 package com.simulaads.reactnative
 
+import com.facebook.react.bridge.Dynamic
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.ReadableType
-import com.facebook.react.uimanager.SimpleViewManager
 import com.facebook.react.uimanager.ThemedReactContext
 import com.facebook.react.uimanager.annotations.ReactProp
 import ad.simula.ad.sdk.model.MiniGameButtonTheme
@@ -11,8 +11,13 @@ import ad.simula.ad.sdk.model.MiniGameButtonTheme
  * View manager for the inline React Native `<MiniGameButton>`
  * (`SimulaMiniGameButtonView`). Stores props as they arrive and commits them once per
  * transaction so the hosted composable re-composes only on a real change.
+ *
+ * Extends the architecture-specific [SimulaMiniGameButtonViewManagerSpec] — see
+ * SimulaNativeAdViewManagerSpec.kt for the newarch/oldarch split rationale. `theme` is an
+ * `UnsafeMixed` prop in the JS spec (a heterogeneous config object), which codegen types
+ * as [Dynamic] rather than `ReadableMap`; [setTheme] narrows it to a map itself.
  */
-class SimulaMiniGameButtonViewManager : SimpleViewManager<SimulaMiniGameButtonView>() {
+class SimulaMiniGameButtonViewManager : SimulaMiniGameButtonViewManagerSpec() {
 
     override fun getName(): String = "SimulaMiniGameButtonView"
 
@@ -20,23 +25,24 @@ class SimulaMiniGameButtonViewManager : SimpleViewManager<SimulaMiniGameButtonVi
         SimulaMiniGameButtonView(reactContext)
 
     @ReactProp(name = "text")
-    fun setText(view: SimulaMiniGameButtonView, value: String?) {
+    override fun setText(view: SimulaMiniGameButtonView, value: String?) {
         view.text = value
     }
 
     @ReactProp(name = "showPulsate", defaultBoolean = false)
-    fun setShowPulsate(view: SimulaMiniGameButtonView, value: Boolean) {
+    override fun setShowPulsate(view: SimulaMiniGameButtonView, value: Boolean) {
         view.showPulsate = value
     }
 
     @ReactProp(name = "showBadge", defaultBoolean = false)
-    fun setShowBadge(view: SimulaMiniGameButtonView, value: Boolean) {
+    override fun setShowBadge(view: SimulaMiniGameButtonView, value: Boolean) {
         view.showBadge = value
     }
 
     @ReactProp(name = "theme")
-    fun setTheme(view: SimulaMiniGameButtonView, value: ReadableMap?) {
-        view.theme = convertButtonTheme(value)
+    override fun setTheme(view: SimulaMiniGameButtonView, value: Dynamic) {
+        val map = if (value.type == ReadableType.Map) value.asMap() else null
+        view.theme = convertButtonTheme(map)
     }
 
     override fun onAfterUpdateTransaction(view: SimulaMiniGameButtonView) {
