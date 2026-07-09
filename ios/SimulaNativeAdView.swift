@@ -28,7 +28,9 @@ class SimulaNativeAdHostView: UIView {
     // A prop change marks the view for re-mount and schedules a layout pass, so the
     // slot re-mounts even when no size prop changed (e.g. a theme-only update).
     @objc var adUnitId: NSString? { didSet { setNeedsMount() } }
-    @objc var position: NSNumber = 0 { didSet { setNeedsMount() } }
+    // `adPosition` on the wire — `position` is a reserved RN layout prop name (crashes
+    // Android's shadow-node update; on iOS it collides with RCTShadowView's layout prop).
+    @objc var adPosition: NSNumber = 0 { didSet { setNeedsMount() } }
     @objc var theme: NSString? { didSet { setNeedsMount() } }
     @objc var preloadedAdId: NSString? { didSet { setNeedsMount() } }
     @objc var previewHtml: NSString? { didSet { setNeedsMount() } }
@@ -128,7 +130,7 @@ class SimulaNativeAdHostView: UIView {
         let root = SimulaNativeAdRoot(
             provider: provider,
             adUnitId: adUnitId as String?,
-            position: position.intValue,
+            position: adPosition.intValue,
             theme: theme as String?,
             preloadedAdId: preloadedAdId as String?,
             previewHTML: previewHtml as String?,

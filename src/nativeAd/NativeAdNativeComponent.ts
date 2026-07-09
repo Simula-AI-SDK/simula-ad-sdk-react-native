@@ -42,7 +42,11 @@ export interface NativeAdErrorEventData {
 
 export interface NativeProps extends ViewProps {
   adUnitId?: string;
-  position?: WithDefault<Int32, 0>;
+  // Named `adPosition` on the wire: `position` is a reserved RN layout prop
+  // (LayoutShadowNode expects the Yoga string "relative"/"absolute"/"static"), and an
+  // Int prop with that name crashes Android's shadow-node update. The public JS API
+  // still exposes `position`; NativeAd.tsx maps it.
+  adPosition?: WithDefault<Int32, 0>;
   theme?: string;
   preloadedAdId?: string;
   previewHtml?: string;

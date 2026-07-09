@@ -121,7 +121,9 @@ export function NativeAd({
   return (
     <NativeAdView
       adUnitId={adUnitId}
-      position={position}
+      // Public `position` maps to the wire prop `adPosition` — `position` itself is a
+      // reserved RN layout prop name (see NativeAdNativeComponent.ts).
+      adPosition={position}
       theme={theme}
       preloadedAdId={preloadedAdId}
       previewHtml={previewHtml}

@@ -27,8 +27,10 @@ class SimulaNativeAdViewManager : SimulaNativeAdViewManagerSpec() {
         view.adUnitId = value
     }
 
-    @ReactProp(name = "position", defaultInt = 0)
-    override fun setPosition(view: SimulaNativeAdView, value: Int) {
+    // Wire name is `adPosition`: `position` is a reserved RN layout prop (LayoutShadowNode
+    // expects a Yoga position-type String and throws on our Int during shadow-node update).
+    @ReactProp(name = "adPosition", defaultInt = 0)
+    override fun setAdPosition(view: SimulaNativeAdView, value: Int) {
         view.position = value
     }
 
