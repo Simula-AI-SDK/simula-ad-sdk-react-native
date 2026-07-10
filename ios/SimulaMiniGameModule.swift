@@ -1169,13 +1169,17 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
         self.originalUI = original as? WKUIDelegate
     }
 
-    private func presentViewController(_ vc: UIViewController) {
-        guard let hostingVC = SimulaMiniGameModule.activeHostingController else { return }
+    /// Returns false when no active overlay exists to present from. Callers that
+    /// claimed a link-handling slot must release it on failure — the presented VC's
+    /// delegate (the usual release path) will never fire for a VC never presented.
+    private func presentViewController(_ vc: UIViewController) -> Bool {
+        guard let hostingVC = SimulaMiniGameModule.activeHostingController else { return false }
         var topVC: UIViewController = hostingVC
         while let presented = topVC.presentedViewController {
             topVC = presented
         }
         topVC.present(vc, animated: true)
+        return true
     }
 
     private func presentStoreProduct(appID: String) {
@@ -1186,7 +1190,11 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
         storeVC.loadProduct(withParameters: [
             SKStoreProductParameterITunesItemIdentifier: NSNumber(value: Int(appID) ?? 0)
         ])
-        presentViewController(storeVC)
+        if !presentViewController(storeVC) {
+            // Presentation impossible (overlay already torn down) — release the slot
+            // now or every later link tap is silently ignored for this overlay session.
+            WKNavigationDelegateProxy.endHandlingExternalLink()
+        }
     }
 
     func productViewControllerDidFinish(_ viewController: SKStoreProductViewController) {
@@ -1203,7 +1211,9 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
 
         let safariVC = SFSafariViewController(url: url)
         safariVC.delegate = self
-        presentViewController(safariVC)
+        if !presentViewController(safariVC) {
+            WKNavigationDelegateProxy.endHandlingExternalLink()
+        }
     }
 
     private func resolveAndRoute(url: URL) {
@@ -1332,7 +1342,13 @@ class RedirectResolver: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
         guard let redirectURL = request.url else {
-            finish(with: task.currentRequest?.url ?? request.url!)
+            // A redirect with no URL: stop following and route the last known URL.
+            // Never force-unwrap here — `request.url` is nil in this branch, and an
+            // aborted host app is worse than a dropped link. `originalRequest` always
+            // carries the URL the resolve started from.
+            if let fallback = task.currentRequest?.url ?? task.originalRequest?.url {
+                finish(with: fallback)
+            }
             completionHandler(nil)
             return
         }
@@ -1351,7 +1367,10 @@ class RedirectResolver: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let finalURL = task.currentRequest?.url {
+        // Fall back to the original URL so `finish` always fires: it releases the
+        // module's `_isResolving` slot — if it never ran, external-link handling
+        // would stay blocked until the overlay is torn down.
+        if let finalURL = task.currentRequest?.url ?? task.originalRequest?.url {
             finish(with: finalURL)
         }
     }
