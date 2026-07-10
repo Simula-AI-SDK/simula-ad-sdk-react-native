@@ -40,6 +40,17 @@ class SimulaAdsModule: RCTEventEmitter {
         // Strong ref keeps the delegate proxy alive while the ad exists.
         let proxy: AnyObject
 
+        /// True from DISPLAYED to CLOSED — the unit (including its post-close fallback
+        /// screens; CLOSED fires only after the last one) is on screen.
+        var isShowing = false
+
+        /// Set when JS destroyed the instance while its unit was still showing. Events stop
+        /// reaching the bridge immediately (the JS instance is gone), but the native object is
+        /// released only on CLOSED, so its close flow — fallback screens, reward earn +
+        /// verification enqueue, teardown — completes on a live object instead of being
+        /// dropped mid-unit.
+        var destroyPending = false
+
         init(interstitial: SimulaInterstitialAd, proxy: AnyObject) {
             self.adType = "interstitial"
             self.interstitial = interstitial
@@ -255,10 +266,19 @@ class SimulaAdsModule: RCTEventEmitter {
     @objc
     func destroyAd(_ instanceId: String) {
         MainActor.assumeIsolated {
-            if let entry = entries.removeValue(forKey: instanceId) {
-                entry.interstitial?.delegate = nil
-                entry.rewarded?.delegate = nil
+            guard let entry = entries[instanceId] else { return }
+            // Deferred destroy while the unit is on screen: this module holds the only strong
+            // reference to the ad object, and dropping it mid-unit would strand the close flow
+            // (reward verification, fallback screens) — and, on SDKs without presenter
+            // self-retention, tear the ad window off screen. Suppress JS events now; the
+            // object is released on CLOSED (see noteLifecycle).
+            if entry.isShowing {
+                entry.destroyPending = true
+                return
             }
+            entries.removeValue(forKey: instanceId)
+            entry.interstitial?.delegate = nil
+            entry.rewarded?.delegate = nil
         }
     }
 
@@ -381,15 +401,46 @@ class SimulaAdsModule: RCTEventEmitter {
 
     // MARK: - Event emission (called on main thread from delegate proxies)
 
+    /// Tracks each unit's on-screen window (DISPLAYED → CLOSED) and finalizes a deferred
+    /// destroy once the unit fully closes. Independent of the listener guard, so the state
+    /// stays correct even while JS has no listeners attached.
+    private func noteLifecycle(_ instanceId: String, _ type: String) {
+        guard let entry = entries[instanceId] else { return }
+        switch type {
+        case "DISPLAYED":
+            entry.isShowing = true
+        case "CLOSED":
+            entry.isShowing = false
+            if entry.destroyPending {
+                entries.removeValue(forKey: instanceId)
+                entry.interstitial?.delegate = nil
+                entry.rewarded?.delegate = nil
+            }
+        default:
+            break
+        }
+    }
+
+    /// False once a deferred destroy is pending: the JS instance is gone, so no further
+    /// events may reach the bridge (the native object stays alive only to finish its
+    /// close flow).
+    private func canEmit(_ instanceId: String) -> Bool {
+        hasListeners && entries[instanceId]?.destroyPending != true
+    }
+
     fileprivate func emitSimple(_ instanceId: String, _ adType: String, _ type: String) {
-        guard hasListeners else { return }
+        // Evaluate the guard BEFORE noteLifecycle: the CLOSED that finalizes a deferred
+        // destroy removes the entry, which must not un-suppress its own emission.
+        let emit = canEmit(instanceId)
+        noteLifecycle(instanceId, type)
+        guard emit else { return }
         sendEvent(withName: SimulaAdsModule.eventName, body: [
             "instanceId": instanceId, "adType": adType, "type": type,
         ])
     }
 
     fileprivate func emitError(_ instanceId: String, _ adType: String, _ type: String, _ error: SimulaAdError) {
-        guard hasListeners else { return }
+        guard canEmit(instanceId) else { return }
         let mapped = SimulaAdsModule.describe(error)
         var body: [String: Any] = [
             "instanceId": instanceId, "adType": adType, "type": type,
@@ -400,7 +451,7 @@ class SimulaAdsModule: RCTEventEmitter {
     }
 
     fileprivate func emitVerificationFailed(_ instanceId: String, _ error: Error) {
-        guard hasListeners else { return }
+        guard canEmit(instanceId) else { return }
         sendEvent(withName: SimulaAdsModule.eventName, body: [
             "instanceId": instanceId, "adType": "rewarded",
             "type": "REWARD_VERIFICATION_FAILED",
@@ -410,7 +461,7 @@ class SimulaAdsModule: RCTEventEmitter {
     }
 
     fileprivate func emitRewardVerified(_ instanceId: String, _ token: String?) {
-        guard hasListeners else { return }
+        guard canEmit(instanceId) else { return }
         sendEvent(withName: SimulaAdsModule.eventName, body: [
             "instanceId": instanceId, "adType": "rewarded",
             "type": "REWARD_VERIFIED",
@@ -420,7 +471,7 @@ class SimulaAdsModule: RCTEventEmitter {
 
     /// PAID event — flattens the `AdValue` estimate onto the wire (see `eventRouter`).
     fileprivate func emitPaid(_ instanceId: String, _ adType: String, _ value: AdValue) {
-        guard hasListeners else { return }
+        guard canEmit(instanceId) else { return }
         sendEvent(withName: SimulaAdsModule.eventName, body: [
             "instanceId": instanceId, "adType": adType, "type": "PAID",
             "valueMicros": value.valueMicros,

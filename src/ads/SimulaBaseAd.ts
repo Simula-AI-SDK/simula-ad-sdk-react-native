@@ -45,6 +45,14 @@ export abstract class SimulaBaseAd {
   /** Convenience mirror of native readiness — informational only. */
   private _loaded = false;
 
+  /**
+   * True when a LOADED arrived after the most recent DISPLAYED — i.e. the native
+   * auto-preload delivered the NEXT ad while the current unit was still on screen.
+   * The later CLOSED then refers to the shown unit, not the ready one, so it must
+   * not reset [_loaded].
+   */
+  private loadedSinceDisplay = false;
+
   private destroyed = false;
 
   // Listeners keyed by event type, plus catch-all listeners.
@@ -77,15 +85,31 @@ export abstract class SimulaBaseAd {
   // ── Event fan-out ─────────────────────────────────────────────────────
 
   private dispatch(event: SimulaAdEvent): void {
-    // Maintain the convenience flag from lifecycle events.
+    // Maintain the convenience flag from lifecycle events, tracking the NATIVE state:
+    // events that don't discard the natively held ad must not report it gone.
     switch (event.type) {
       case "LOADED":
         this._loaded = true;
+        this.loadedSinceDisplay = true;
+        break;
+      case "DISPLAYED":
+        this.loadedSinceDisplay = false;
+        break;
+      case "CLOSED":
+        // Don't clobber a LOADED that arrived after the last DISPLAYED: the native
+        // auto-preload can deliver the next ad while this unit's end screens are still
+        // up, so its LOADED may precede this CLOSED — native still holds a ready ad.
+        if (!this.loadedSinceDisplay) this._loaded = false;
         break;
       case "LOAD_FAILED":
-      case "CLOSED":
+        // duplicate_request rejects the redundant load() call, NOT the ad — the
+        // in-flight/ready ad survives natively and stays showable.
+        if (event.error?.code !== "duplicate_request") this._loaded = false;
+        break;
       case "DISPLAY_FAILED":
-        this._loaded = false;
+        // no_presentation_context keeps the loaded ad natively (the host can retry
+        // show()); every other display failure means nothing is ready.
+        if (event.error?.code !== "no_presentation_context") this._loaded = false;
         break;
       default:
         break;
