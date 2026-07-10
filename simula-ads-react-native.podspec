@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "simula-ads-react-native"
-  s.version      = "1.3.4"
+  s.version      = "1.3.5"
   s.summary      = "Simula Ad SDK for React Native"
   s.description  = "React Native bridge for Simula's native iOS Ad SDK with mini-game support."
   s.homepage     = "https://github.com/Simula-AI-SDK/simula-ad-sdk-react-native"
