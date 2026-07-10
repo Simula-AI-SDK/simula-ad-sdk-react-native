@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "simula-ads-react-native"
-  s.version      = "1.3.5"
+  s.version      = "1.3.6"
   s.summary      = "Simula Ad SDK for React Native"
   s.description  = "React Native bridge for Simula's native iOS Ad SDK with mini-game support."
   s.homepage     = "https://github.com/Simula-AI-SDK/simula-ad-sdk-react-native"
@@ -14,9 +14,11 @@ Pod::Spec.new do |s|
   s.source_files = "ios/**/*.{h,m,swift}"
 
   s.dependency "React-Core"
-  # 1.1.3 carries verification retry-wake + presenter retention fixes — do not
-  # resolve to anything older.
-  s.dependency "SimulaAdSDK", "~> 1.1.3"
+  # 1.1.4+ ships as a prebuilt XCFramework: host Xcodes no longer compile SDK source,
+  # which is the mitigation for the Swift 6.1–6.3 optimizer task-teardown crash
+  # ("freed pointer was not the last allocation") in host apps. Do not resolve to
+  # anything older — 1.1.3 and below are source pods that re-expose the bug.
+  s.dependency "SimulaAdSDK", "~> 1.1.4"
 
   s.frameworks = "StoreKit", "SafariServices"
 end
