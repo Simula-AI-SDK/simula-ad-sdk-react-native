@@ -127,6 +127,23 @@ describe("SimulaAds.updatePrimaryUserID", () => {
   });
 });
 
+describe("SimulaAds.checkFrequencyCap", () => {
+  it("resolves the native value", async () => {
+    native.checkFrequencyCap.mockResolvedValueOnce(true);
+    await expect(SimulaAds.checkFrequencyCap("unit_1")).resolves.toBe(true);
+  });
+
+  it("passes null when primaryUserID is omitted", async () => {
+    await SimulaAds.checkFrequencyCap("unit_1");
+    expect(native.checkFrequencyCap).toHaveBeenCalledWith("unit_1", null);
+  });
+
+  it("passes an explicit primaryUserID through", async () => {
+    await SimulaAds.checkFrequencyCap("unit_1", "user-123");
+    expect(native.checkFrequencyCap).toHaveBeenCalledWith("unit_1", "user-123");
+  });
+});
+
 describe("SimulaAds diagnostics", () => {
   it("userAgent / deviceId resolve the native values", async () => {
     native.getUserAgent.mockResolvedValueOnce("UA/9");

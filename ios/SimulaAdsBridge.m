@@ -11,6 +11,10 @@ RCT_EXTERN_METHOD(isInitialized:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(updateContext:(NSDictionary *)context)
 RCT_EXTERN_METHOD(updatePrimaryUserID:(NSString *)id)
+RCT_EXTERN_METHOD(checkFrequencyCap:(NSString *)adUnitId
+                  primaryUserID:(NSString *)primaryUserID
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(getUserAgent:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(getDeviceId:(RCTPromiseResolveBlock)resolve

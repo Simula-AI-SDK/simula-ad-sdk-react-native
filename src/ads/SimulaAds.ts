@@ -100,6 +100,28 @@ export const SimulaAds = {
   },
 
   /**
+   * Checks whether the user has hit their frequency cap for `adUnitId` — a
+   * read-only check against the backend that records no impression. Call it
+   * before rendering an ad-gated surface to skip it entirely when no ad would
+   * serve. Resolves `true` when the cap has been reached (skip the surface);
+   * `false` when the user is still eligible, before `initialize`, or on any
+   * failure (fails open so a transport hiccup can never hide a surface that
+   * would otherwise have served). A `true` result is cached natively for the
+   * rest of the local day. `primaryUserID` falls back to the SDK's current
+   * PPID when omitted.
+   */
+  async checkFrequencyCap(
+    adUnitId: string,
+    primaryUserID?: string | null,
+  ): Promise<boolean> {
+    if (!isAdsModuleAvailable()) {
+      warnAdsUnavailable("checkFrequencyCap");
+      return false;
+    }
+    return NativeAds!.checkFrequencyCap(adUnitId, primaryUserID ?? null);
+  },
+
+  /**
    * Imperatively preload one native ad before its slot scrolls into view. Fires a
    * single native-ad request using the current targeting context, caches it, and
    * resolves a `preloadedAdId` to pass to a `<NativeAd preloadedAdId={...}>` (which

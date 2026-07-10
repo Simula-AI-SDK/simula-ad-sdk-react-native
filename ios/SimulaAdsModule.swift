@@ -130,6 +130,29 @@ class SimulaAdsModule: RCTEventEmitter {
         }
     }
 
+    /// Read-only frequency-cap check. Resolves `true` when the cap is reached;
+    /// `false` when eligible, pre-init, or on any failure (the SDK fails open).
+    @objc
+    func checkFrequencyCap(_ adUnitId: NSString,
+                           primaryUserID: NSString?,
+                           resolve: @escaping RCTPromiseResolveBlock,
+                           reject: @escaping RCTPromiseRejectBlock) {
+        let unitId = adUnitId as String
+        let ppid = primaryUserID as String?
+        // Single-call task closure — see .cursor/skills/swift-concurrency-task-shape/SKILL.md.
+        Task { @MainActor in await Self.runCheckFrequencyCap(unitId, ppid, resolve) }
+    }
+
+    /// Task body for `checkFrequencyCap` (named method — see the task-shape skill).
+    @MainActor
+    private static func runCheckFrequencyCap(
+        _ adUnitId: String,
+        _ primaryUserID: String?,
+        _ resolve: @escaping RCTPromiseResolveBlock
+    ) async {
+        resolve(await SimulaAds.checkFrequencyCap(adUnitId: adUnitId, primaryUserID: primaryUserID))
+    }
+
     // MARK: - Native ad (imperative)
 
     @objc
