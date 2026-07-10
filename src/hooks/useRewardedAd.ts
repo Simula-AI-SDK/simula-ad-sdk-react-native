@@ -52,14 +52,21 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
     setAdValue(null);
     setError(undefined);
 
+    // True when a LOADED arrived after the most recent DISPLAYED — the native
+    // auto-preload delivered the NEXT ad while the current unit was still on screen,
+    // so the later CLOSED (for the shown unit) must not reset isLoaded.
+    let loadedSinceDisplay = false;
+
     const off = ad.addAdEventsListener((event) => {
       switch (event.type) {
         case "LOADED":
+          loadedSinceDisplay = true;
           setIsLoaded(true);
           setIsClosed(false);
           setError(undefined);
           break;
         case "DISPLAYED":
+          loadedSinceDisplay = false;
           setIsClosed(false);
           setEarnedReward(false);
           setRewardVerified(false);
@@ -74,7 +81,7 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
           if (event.adValue) setAdValue(event.adValue);
           break;
         case "CLOSED":
-          setIsLoaded(false);
+          if (!loadedSinceDisplay) setIsLoaded(false);
           setIsClosed(true);
           break;
         case "EARNED_REWARD":
@@ -85,8 +92,16 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
           setRewardToken(event.rewardToken ?? null);
           break;
         case "LOAD_FAILED":
+          // duplicate_request rejects the redundant load() call, NOT the ad — the
+          // in-flight/ready ad survives natively, so isLoaded must not flip false.
+          // The error (with retryInSeconds) is still surfaced as information.
+          if (event.error?.code !== "duplicate_request") setIsLoaded(false);
+          if (event.error) setError(event.error);
+          break;
         case "DISPLAY_FAILED":
-          setIsLoaded(false);
+          // no_presentation_context keeps the loaded ad natively (show() can be
+          // retried); every other display failure means nothing is ready.
+          if (event.error?.code !== "no_presentation_context") setIsLoaded(false);
           if (event.error) setError(event.error);
           break;
         case "REWARD_VERIFICATION_FAILED":

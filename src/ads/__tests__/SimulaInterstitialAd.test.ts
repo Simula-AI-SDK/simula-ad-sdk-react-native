@@ -49,12 +49,59 @@ describe("SimulaInterstitialAd", () => {
     expect(loaded).toHaveBeenCalledTimes(1);
     expect(ad.loaded).toBe(true);
 
+    // A normal show → close cycle consumes the loaded ad.
+    __emit(AD_EVENT_NAME, { instanceId, adType: "interstitial", type: "DISPLAYED" });
     __emit(AD_EVENT_NAME, { instanceId, adType: "interstitial", type: "CLOSED" });
     expect(ad.loaded).toBe(false);
 
     off();
     __emit(AD_EVENT_NAME, { instanceId, adType: "interstitial", type: "LOADED" });
     expect(loaded).toHaveBeenCalledTimes(1); // unsubscribed
+    ad.destroy();
+  });
+
+  it("keeps the loaded mirror when native still holds a ready ad", () => {
+    const ad = SimulaInterstitialAd.create("unit");
+    const instanceId = native.createInterstitial.mock.calls[0][0];
+
+    // Show unit 1, then the native auto-preload delivers the NEXT ad's LOADED while
+    // unit 1 (e.g. its end screens) is still on screen — the later CLOSED refers to
+    // the shown unit and must not clobber the ready ad's mirror.
+    __emit(AD_EVENT_NAME, { instanceId, adType: "interstitial", type: "LOADED" });
+    __emit(AD_EVENT_NAME, { instanceId, adType: "interstitial", type: "DISPLAYED" });
+    __emit(AD_EVENT_NAME, { instanceId, adType: "interstitial", type: "LOADED" });
+    __emit(AD_EVENT_NAME, { instanceId, adType: "interstitial", type: "CLOSED" });
+    expect(ad.loaded).toBe(true);
+
+    // duplicate_request rejects the redundant load() call, not the held ad.
+    __emit(AD_EVENT_NAME, {
+      instanceId,
+      adType: "interstitial",
+      type: "LOAD_FAILED",
+      code: "duplicate_request",
+      message: "An ad is already loaded. You can call load() again in 30 seconds.",
+    });
+    expect(ad.loaded).toBe(true);
+
+    // no_presentation_context keeps the loaded ad natively (show() can be retried).
+    __emit(AD_EVENT_NAME, {
+      instanceId,
+      adType: "interstitial",
+      type: "DISPLAY_FAILED",
+      code: "no_presentation_context",
+      message: "No window scene.",
+    });
+    expect(ad.loaded).toBe(true);
+
+    // A genuine load failure clears the mirror.
+    __emit(AD_EVENT_NAME, {
+      instanceId,
+      adType: "interstitial",
+      type: "LOAD_FAILED",
+      code: "network",
+      message: "HTTP 500",
+    });
+    expect(ad.loaded).toBe(false);
     ad.destroy();
   });
 

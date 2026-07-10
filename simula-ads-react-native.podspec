@@ -14,9 +14,9 @@ Pod::Spec.new do |s|
   s.source_files = "ios/**/*.{h,m,swift}"
 
   s.dependency "React-Core"
-  # 1.1.2 carries the Swift-concurrency task-shape hardening (host-toolchain
-  # miscompilation workaround) — do not resolve to anything older.
-  s.dependency "SimulaAdSDK", "~> 1.1.2"
+  # 1.1.3 carries verification retry-wake + presenter retention fixes — do not
+  # resolve to anything older.
+  s.dependency "SimulaAdSDK", "~> 1.1.3"
 
   s.frameworks = "StoreKit", "SafariServices"
 end
