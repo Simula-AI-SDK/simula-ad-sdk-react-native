@@ -405,19 +405,23 @@ class SimulaAdsModule: RCTEventEmitter {
     /// destroy once the unit fully closes. Independent of the listener guard, so the state
     /// stays correct even while JS has no listeners attached.
     private func noteLifecycle(_ instanceId: String, _ type: String) {
-        guard let entry = entries[instanceId] else { return }
-        switch type {
-        case "DISPLAYED":
-            entry.isShowing = true
-        case "CLOSED":
-            entry.isShowing = false
-            if entry.destroyPending {
-                entries.removeValue(forKey: instanceId)
-                entry.interstitial?.delegate = nil
-                entry.rewarded?.delegate = nil
+        // Delegate proxies invoke us on the main queue (methodQueue); assumeIsolated
+        // is required to mutate @MainActor-isolated SDK `delegate` properties.
+        MainActor.assumeIsolated {
+            guard let entry = entries[instanceId] else { return }
+            switch type {
+            case "DISPLAYED":
+                entry.isShowing = true
+            case "CLOSED":
+                entry.isShowing = false
+                if entry.destroyPending {
+                    entries.removeValue(forKey: instanceId)
+                    entry.interstitial?.delegate = nil
+                    entry.rewarded?.delegate = nil
+                }
+            default:
+                break
             }
-        default:
-            break
         }
     }
 
