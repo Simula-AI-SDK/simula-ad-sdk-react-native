@@ -138,7 +138,11 @@ class SimulaAdsModule: RCTEventEmitter {
                            resolve: @escaping RCTPromiseResolveBlock,
                            reject: @escaping RCTPromiseRejectBlock) {
         let unitId = adUnitId as String
-        let ppid = primaryUserID as String?
+        // Match Android (`isNotBlank`): a blank id is treated as omitted so the SDK
+        // falls back to its current PPID — same JS call, same result on both platforms.
+        let ppid = (primaryUserID as String?).flatMap {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
+        }
         // Single-call task closure: multi-statement async closures are miscompiled by
         // Swift 6.1–6.3 optimizers (swiftlang/swift#81771), aborting host apps at task teardown.
         Task { @MainActor in await Self.runCheckFrequencyCap(unitId, ppid, resolve) }

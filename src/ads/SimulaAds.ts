@@ -118,7 +118,11 @@ export const SimulaAds = {
       warnAdsUnavailable("checkFrequencyCap");
       return false;
     }
-    return NativeAds!.checkFrequencyCap(adUnitId, primaryUserID ?? null);
+    // Fail open on an unexpected bridge rejection too — a transport/bridge
+    // hiccup must never hide a surface that would otherwise have served.
+    return NativeAds!.checkFrequencyCap(adUnitId, primaryUserID ?? null).catch(
+      () => false,
+    );
   },
 
   /**

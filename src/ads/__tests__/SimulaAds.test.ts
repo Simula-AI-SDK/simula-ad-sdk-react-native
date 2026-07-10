@@ -142,6 +142,11 @@ describe("SimulaAds.checkFrequencyCap", () => {
     await SimulaAds.checkFrequencyCap("unit_1", "user-123");
     expect(native.checkFrequencyCap).toHaveBeenCalledWith("unit_1", "user-123");
   });
+
+  it("fails open (false) when the native call rejects", async () => {
+    native.checkFrequencyCap.mockRejectedValueOnce(new Error("bridge down"));
+    await expect(SimulaAds.checkFrequencyCap("unit_1")).resolves.toBe(false);
+  });
 });
 
 describe("SimulaAds diagnostics", () => {
