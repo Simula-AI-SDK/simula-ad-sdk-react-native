@@ -104,6 +104,18 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
         SimulaAds.updatePrimaryUserID(id?.takeIf { it.isNotBlank() })
     }
 
+    /**
+     * Read-only frequency-cap check. Resolves true when the cap is reached; false
+     * when eligible, pre-init, or on any failure (the SDK fails open). Uses the
+     * SDK's callback overload, which delivers the result on the main thread.
+     */
+    @ReactMethod
+    fun checkFrequencyCap(adUnitId: String, primaryUserID: String?, promise: Promise) {
+        SimulaAds.checkFrequencyCap(adUnitId, primaryUserID?.takeIf { it.isNotBlank() }) { capped ->
+            promise.resolve(capped)
+        }
+    }
+
     @ReactMethod
     fun getUserAgent(promise: Promise) {
         promise.resolve(SimulaAds.userAgent)

@@ -31,6 +31,10 @@ export interface NativeSimulaAdsModule {
   isInitialized(): Promise<boolean>;
   updateContext(context: Record<string, unknown>): void;
   updatePrimaryUserID(id: string | null): void;
+  checkFrequencyCap(
+    adUnitId: string,
+    primaryUserID: string | null,
+  ): Promise<boolean>;
   getUserAgent(): Promise<string | null>;
   getDeviceId(): Promise<string | null>;
 

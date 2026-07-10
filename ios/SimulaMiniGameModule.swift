@@ -661,11 +661,12 @@ class SimulaMiniGameModule: RCTEventEmitter {
             primaryUserID: primaryUserID,
             hasPrivacyConsent: hasPrivacyConsent
         )
-        // Single-call task closure — see .cursor/skills/swift-concurrency-task-shape/SKILL.md.
+        // Single-call task closure: multi-statement async closures are miscompiled by
+        // Swift 6.1–6.3 optimizers (swiftlang/swift#81771), aborting host apps at task teardown.
         Task { await Self.warmSessionAndResolve(provider, resolve) }
     }
 
-    /// Task body for `initialize`'s session warm-up (named method — see the task-shape skill).
+    /// Task body for `initialize`'s session warm-up (named method — same optimizer workaround as above).
     private static func warmSessionAndResolve(
         _ provider: SimulaProvider,
         _ resolve: @escaping RCTPromiseResolveBlock

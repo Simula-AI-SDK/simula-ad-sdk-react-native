@@ -25,4 +25,14 @@ node_modules/
 
 # Ignore docs and tooling config
 docs/
+
+# AI tool config / skills — never ship to host apps
 .claude/
+.cursor/
+.cursorrules
+.cursorignore
+AGENTS.md
+CLAUDE.md
+.aider*
+.windsurf/
+.github/copilot-instructions.md

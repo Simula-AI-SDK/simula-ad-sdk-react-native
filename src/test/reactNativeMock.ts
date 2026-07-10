@@ -44,6 +44,7 @@ function makeAdsModule() {
     isInitialized: jest.fn().mockResolvedValue(true),
     updateContext: jest.fn(),
     updatePrimaryUserID: jest.fn(),
+    checkFrequencyCap: jest.fn().mockResolvedValue(false),
     getUserAgent: jest.fn().mockResolvedValue("Simula-UA/1.0"),
     getDeviceId: jest.fn().mockResolvedValue("device-123"),
     preloadNativeAd: jest.fn().mockResolvedValue("preloaded_1"),
