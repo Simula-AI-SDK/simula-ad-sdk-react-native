@@ -139,11 +139,12 @@ class SimulaAdsModule: RCTEventEmitter {
                            reject: @escaping RCTPromiseRejectBlock) {
         let unitId = adUnitId as String
         let ppid = primaryUserID as String?
-        // Single-call task closure — see .cursor/skills/swift-concurrency-task-shape/SKILL.md.
+        // Single-call task closure: multi-statement async closures are miscompiled by
+        // Swift 6.1–6.3 optimizers (swiftlang/swift#81771), aborting host apps at task teardown.
         Task { @MainActor in await Self.runCheckFrequencyCap(unitId, ppid, resolve) }
     }
 
-    /// Task body for `checkFrequencyCap` (named method — see the task-shape skill).
+    /// Task body for `checkFrequencyCap` (named method — same optimizer workaround as above).
     @MainActor
     private static func runCheckFrequencyCap(
         _ adUnitId: String,
@@ -164,11 +165,12 @@ class SimulaAdsModule: RCTEventEmitter {
         let unitId = adUnitId as String?
         let pos = position.intValue
         let themeName = theme as String?
-        // Single-call task closure — see .cursor/skills/swift-concurrency-task-shape/SKILL.md.
+        // Single-call task closure: multi-statement async closures are miscompiled by
+        // Swift 6.1–6.3 optimizers (swiftlang/swift#81771), aborting host apps at task teardown.
         Task { @MainActor in await Self.runPreloadNativeAd(unitId, pos, themeName, resolve) }
     }
 
-    /// Task body for `preloadNativeAd` (named method — see the task-shape skill).
+    /// Task body for `preloadNativeAd` (named method — same optimizer workaround as above).
     @MainActor
     private static func runPreloadNativeAd(
         _ adUnitId: String?,
@@ -347,7 +349,8 @@ class SimulaAdsModule: RCTEventEmitter {
     func requestTrackingAuthorization(_ resolve: @escaping RCTPromiseResolveBlock,
                                       reject: @escaping RCTPromiseRejectBlock) {
         #if os(iOS)
-        // Single-call task closure — see .cursor/skills/swift-concurrency-task-shape/SKILL.md.
+        // Single-call task closure: multi-statement async closures are miscompiled by
+        // Swift 6.1–6.3 optimizers (swiftlang/swift#81771), aborting host apps at task teardown.
         Task { @MainActor in await Self.runRequestTrackingAuthorization(resolve) }
         #else
         resolve("unavailable")
@@ -355,7 +358,7 @@ class SimulaAdsModule: RCTEventEmitter {
     }
 
     #if os(iOS)
-    /// Task body for `requestTrackingAuthorization` (named method — see the task-shape skill).
+    /// Task body for `requestTrackingAuthorization` (named method — same optimizer workaround as above).
     @MainActor
     private static func runRequestTrackingAuthorization(_ resolve: @escaping RCTPromiseResolveBlock) async {
         resolve(attStatusString(await SimulaPrivacy.shared.requestTrackingAuthorization()))
