@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "simula-ads-react-native"
-  s.version      = "1.3.6"
+  s.version      = "1.3.6-beta.1"
   s.summary      = "Simula Ad SDK for React Native"
   s.description  = "React Native bridge for Simula's native iOS Ad SDK with mini-game support."
   s.homepage     = "https://github.com/Simula-AI-SDK/simula-ad-sdk-react-native"
@@ -18,7 +18,9 @@ Pod::Spec.new do |s|
   # which is the mitigation for the Swift 6.1–6.3 optimizer task-teardown crash
   # ("freed pointer was not the last allocation") in host apps. Do not resolve to
   # anything older — 1.1.3 and below are source pods that re-expose the bug.
-  s.dependency "SimulaAdSDK", "~> 1.1.4"
+  # EXACT prerelease pin (CocoaPods excludes prereleases from `~>` ranges); the bridge
+  # also requires the 1.1.4 completion-based APIs. Restore `~> 1.1.4` for the stable release.
+  s.dependency "SimulaAdSDK", "1.1.4-beta.1"
 
   s.frameworks = "StoreKit", "SafariServices"
 end
