@@ -154,19 +154,15 @@ class SimulaAdsModule: RCTEventEmitter {
         let ppid = (primaryUserID as String?).flatMap {
             $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
         }
-        // Single-call task closure: multi-statement async closures are miscompiled by
-        // Swift 6.1–6.3 optimizers (swiftlang/swift#81771), aborting host apps at task teardown.
-        Task { @MainActor in await Self.runCheckFrequencyCap(unitId, ppid, resolve) }
-    }
-
-    /// Task body for `checkFrequencyCap` (named method — same optimizer workaround as above).
-    @MainActor
-    private static func runCheckFrequencyCap(
-        _ adUnitId: String,
-        _ primaryUserID: String?,
-        _ resolve: @escaping RCTPromiseResolveBlock
-    ) async {
-        resolve(await SimulaAds.checkFrequencyCap(adUnitId: adUnitId, primaryUserID: primaryUserID))
+        // Completion-based SDK call — the bridge must create NO Swift Concurrency tasks:
+        // this file is compiled by the host app's Xcode, and affected toolchains miscompile
+        // optimized task code into teardown aborts. The task lives inside the SDK binary,
+        // which is prebuilt with a pinned pre-regression toolchain (SDK >= 1.1.4).
+        MainActor.assumeIsolated { // methodQueue = .main
+            SimulaAds.checkFrequencyCap(adUnitId: unitId, primaryUserID: ppid) { capped in
+                resolve(capped)
+            }
+        }
     }
 
     // MARK: - Native ad (imperative)
@@ -180,20 +176,12 @@ class SimulaAdsModule: RCTEventEmitter {
         let unitId = adUnitId as String?
         let pos = position.intValue
         let themeName = theme as String?
-        // Single-call task closure: multi-statement async closures are miscompiled by
-        // Swift 6.1–6.3 optimizers (swiftlang/swift#81771), aborting host apps at task teardown.
-        Task { @MainActor in await Self.runPreloadNativeAd(unitId, pos, themeName, resolve) }
-    }
-
-    /// Task body for `preloadNativeAd` (named method — same optimizer workaround as above).
-    @MainActor
-    private static func runPreloadNativeAd(
-        _ adUnitId: String?,
-        _ position: Int,
-        _ theme: String?,
-        _ resolve: @escaping RCTPromiseResolveBlock
-    ) async {
-        resolve(await SimulaAds.preloadNativeAd(adUnitId: adUnitId, position: position, theme: theme))
+        // Completion-based SDK call — no bridge-created task (see checkFrequencyCap above).
+        MainActor.assumeIsolated { // methodQueue = .main
+            SimulaAds.preloadNativeAd(adUnitId: unitId, position: pos, theme: themeName) { preloadedAdId in
+                resolve(preloadedAdId)
+            }
+        }
     }
 
     @objc
@@ -373,21 +361,16 @@ class SimulaAdsModule: RCTEventEmitter {
     func requestTrackingAuthorization(_ resolve: @escaping RCTPromiseResolveBlock,
                                       reject: @escaping RCTPromiseRejectBlock) {
         #if os(iOS)
-        // Single-call task closure: multi-statement async closures are miscompiled by
-        // Swift 6.1–6.3 optimizers (swiftlang/swift#81771), aborting host apps at task teardown.
-        Task { @MainActor in await Self.runRequestTrackingAuthorization(resolve) }
+        // Completion-based SDK call — no bridge-created task (see checkFrequencyCap above).
+        MainActor.assumeIsolated { // methodQueue = .main
+            SimulaPrivacy.shared.requestTrackingAuthorization { status in
+                resolve(Self.attStatusString(status))
+            }
+        }
         #else
         resolve("unavailable")
         #endif
     }
-
-    #if os(iOS)
-    /// Task body for `requestTrackingAuthorization` (named method — same optimizer workaround as above).
-    @MainActor
-    private static func runRequestTrackingAuthorization(_ resolve: @escaping RCTPromiseResolveBlock) async {
-        resolve(attStatusString(await SimulaPrivacy.shared.requestTrackingAuthorization()))
-    }
-    #endif
 
     @objc
     func getTrackingAuthorizationStatus(_ resolve: @escaping RCTPromiseResolveBlock,
