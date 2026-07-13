@@ -18,6 +18,11 @@ import NativeAdViewComponent, {
 } from "./NativeAdNativeComponent";
 import type { NativeAdProps, NativeAdError } from "./types";
 import type { AdValue } from "../ads/types";
+import {
+  getLastKnownHeight,
+  nativeAdHeightKey,
+  rememberHeight,
+} from "./heightCache";
 
 const COMPONENT_NAME = "SimulaNativeAdView";
 
@@ -63,17 +68,29 @@ export function NativeAd({
   onError,
   width,
 }: NativeAdProps): React.JSX.Element | null {
-  // Collapsed until the native view reports a height (shimmer/provisional height
-  // arrives on the first measure; a no-fill keeps it at 0).
-  const [height, setHeight] = useState(0);
+  // Same identity as the native per-slot cache, so the remembered height always describes the
+  // ad the native side will re-render. Previews are debug-only and never cached.
+  const heightKey =
+    previewHtml == null
+      ? nativeAdHeightKey(adUnitId, position, preloadedAdId)
+      : null;
+
+  // Collapsed until the native view reports a height (shimmer/provisional height arrives on the
+  // first measure; a no-fill keeps it at 0) — except on a remount of a slot we've already
+  // measured, which starts at its last known height so the row doesn't collapse-then-expand
+  // (the native side re-renders the cached ad at that same size on its first frame).
+  const [height, setHeight] = useState(
+    () => (heightKey != null ? getLastKnownHeight(heightKey) : undefined) ?? 0,
+  );
 
   const handleSize = useCallback(
     (event: { nativeEvent: NativeAdSizeChangeEventData }) => {
       const next = event?.nativeEvent?.height ?? 0;
+      if (heightKey != null) rememberHeight(heightKey, next);
       // Threshold sub-pixel churn so a measuring creative can't thrash the feed.
       setHeight((prev) => (Math.abs(prev - next) >= 1 ? next : prev));
     },
-    [],
+    [heightKey],
   );
 
   const handleImpression = useCallback(

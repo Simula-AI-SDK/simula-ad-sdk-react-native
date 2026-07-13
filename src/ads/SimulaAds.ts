@@ -13,6 +13,7 @@ import {
 } from "../internal/nativeModules";
 import { SimulaPrivacyConfig } from "../privacy/types";
 import { SimulaAdContext, toNativeAdContext } from "./context";
+import { forgetNativeAdHeights } from "../nativeAd/heightCache";
 import type { SimulaNativeAdTheme } from "../nativeAd/types";
 
 export interface SimulaInitConfig {
@@ -161,12 +162,16 @@ export const SimulaAds = {
    */
   invalidateNativeAd(options?: { adUnitId?: string; position?: number }): void {
     if (!isAdsModuleAvailable()) return warnAdsUnavailable("invalidateNativeAd");
+    // Drop the slot's remembered height too, so the refreshed slot's next mount doesn't seed
+    // itself with the previous ad's size.
+    forgetNativeAdHeights(options?.adUnitId ?? "", options?.position ?? 0);
     NativeAds!.invalidateNativeAd(options?.adUnitId ?? null, options?.position ?? 0);
   },
 
   /** Clear every cached native ad (all slots). */
   invalidateNativeAds(): void {
     if (!isAdsModuleAvailable()) return warnAdsUnavailable("invalidateNativeAds");
+    forgetNativeAdHeights();
     NativeAds!.invalidateNativeAds();
   },
 

@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "simula-ads-react-native"
-  s.version      = "1.3.6-beta.1"
+  s.version      = "1.3.6-beta.2"
   s.summary      = "Simula Ad SDK for React Native"
   s.description  = "React Native bridge for Simula's native iOS Ad SDK with mini-game support."
   s.homepage     = "https://github.com/Simula-AI-SDK/simula-ad-sdk-react-native"
@@ -20,7 +20,8 @@ Pod::Spec.new do |s|
   # anything older — 1.1.3 and below are source pods that re-expose the bug.
   # EXACT prerelease pin (CocoaPods excludes prereleases from `~>` ranges); the bridge
   # also requires the 1.1.4 completion-based APIs. Restore `~> 1.1.4` for the stable release.
-  s.dependency "SimulaAdSDK", "1.1.4-beta.1"
+  # Local demo overrides this with `:path` to ../simula-ad-sdk-swift while testing.
+  s.dependency "SimulaAdSDK", "1.1.4-beta.2"
 
   s.frameworks = "StoreKit", "SafariServices"
 end
