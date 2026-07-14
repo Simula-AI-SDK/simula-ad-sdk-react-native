@@ -412,8 +412,12 @@ class SimulaMiniGameModule: RCTEventEmitter {
         }
         self.menuHostingController = hostingVC
 
-        Task {
-            await provider.createSession()
+        // Completion-based session warm-up — the bridge must create NO Swift Concurrency
+        // tasks: this file is compiled by the host app's Xcode, and affected toolchains
+        // miscompile optimized task code into teardown aborts. The task lives inside the
+        // SDK binary, prebuilt with a pinned pre-regression toolchain (SDK >= 1.1.4).
+        MainActor.assumeIsolated { // methodQueue = .main
+            provider.createSession {}
         }
 
         resolve(nil)
@@ -542,8 +546,12 @@ class SimulaMiniGameModule: RCTEventEmitter {
         }
         self.invitationHostingController = hostingVC
 
-        Task {
-            await provider.createSession()
+        // Completion-based session warm-up — the bridge must create NO Swift Concurrency
+        // tasks: this file is compiled by the host app's Xcode, and affected toolchains
+        // miscompile optimized task code into teardown aborts. The task lives inside the
+        // SDK binary, prebuilt with a pinned pre-regression toolchain (SDK >= 1.1.4).
+        MainActor.assumeIsolated { // methodQueue = .main
+            provider.createSession {}
         }
 
         resolve(nil)
@@ -613,8 +621,12 @@ class SimulaMiniGameModule: RCTEventEmitter {
         // Hide status bar (UIViewControllerBasedStatusBarAppearance=false, so use UIApplication)
         UIApplication.shared.isStatusBarHidden = true
 
-        Task {
-            await provider.createSession()
+        // Completion-based session warm-up — the bridge must create NO Swift Concurrency
+        // tasks: this file is compiled by the host app's Xcode, and affected toolchains
+        // miscompile optimized task code into teardown aborts. The task lives inside the
+        // SDK binary, prebuilt with a pinned pre-regression toolchain (SDK >= 1.1.4).
+        MainActor.assumeIsolated { // methodQueue = .main
+            provider.createSession {}
         }
 
         resolve(nil)
@@ -661,18 +673,13 @@ class SimulaMiniGameModule: RCTEventEmitter {
             primaryUserID: primaryUserID,
             hasPrivacyConsent: hasPrivacyConsent
         )
-        // Single-call task closure: multi-statement async closures are miscompiled by
-        // Swift 6.1–6.3 optimizers (swiftlang/swift#81771), aborting host apps at task teardown.
-        Task { await Self.warmSessionAndResolve(provider, resolve) }
-    }
-
-    /// Task body for `initialize`'s session warm-up (named method — same optimizer workaround as above).
-    private static func warmSessionAndResolve(
-        _ provider: SimulaProvider,
-        _ resolve: @escaping RCTPromiseResolveBlock
-    ) async {
-        await provider.createSession()
-        resolve(nil)
+        // Completion-based session warm-up — no bridge-created task (the bridge is compiled
+        // by the host's Xcode; the task lives inside the prebuilt SDK binary, SDK >= 1.1.4).
+        MainActor.assumeIsolated { // methodQueue = .main
+            provider.createSession {
+                resolve(nil)
+            }
+        }
     }
 
     // MARK: - CharacterSelector
@@ -742,8 +749,12 @@ class SimulaMiniGameModule: RCTEventEmitter {
         topVC.present(hostingVC, animated: false)
         self.characterSelectorHostingController = hostingVC
 
-        Task {
-            await provider.createSession()
+        // Completion-based session warm-up — the bridge must create NO Swift Concurrency
+        // tasks: this file is compiled by the host app's Xcode, and affected toolchains
+        // miscompile optimized task code into teardown aborts. The task lives inside the
+        // SDK binary, prebuilt with a pinned pre-regression toolchain (SDK >= 1.1.4).
+        MainActor.assumeIsolated { // methodQueue = .main
+            provider.createSession {}
         }
 
         resolve(nil)

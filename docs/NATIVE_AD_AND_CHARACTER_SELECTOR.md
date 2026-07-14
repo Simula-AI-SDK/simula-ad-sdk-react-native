@@ -87,10 +87,17 @@ SimulaAds.destroyPreloadedAd(id);                                       // relea
 ### Performance notes
 
 - Pass a **stable `adUnitId` + `position`** per slot so the native per-slot cache reuses
-  the same serve when a row recycles (no duplicate request/impression).
+  the same serve when a row recycles (no duplicate request/impression), and so the
+  JS-side height cache can re-apply the row's measured height on remount.
 - On the legacy RN architecture the card's height round-trips native→JS→native once per
   size change. The native side smooths this (provisional height + thresholding); keep
   `FlatList` `windowSize`/`removeClippedSubviews` reasonable for long feeds.
+- **Remounts no longer collapse the row**: when list virtualization unmounts and remounts
+  a slot, `<NativeAd>` seeds its height from the last measured value for that
+  `adUnitId`/`position` and the native side re-renders the cached ad at that same size on
+  its first frame (on iOS the already-rendered WebView itself is reattached — no reload,
+  no flash). `SimulaAds.invalidateNativeAd(s)` clears the remembered height along with
+  the cached serve.
 
 ## `<CharacterSelector>` — "pick your partner" modal
 

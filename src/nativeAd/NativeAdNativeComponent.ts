@@ -19,6 +19,12 @@ import codegenNativeComponent from "react-native/Libraries/Utilities/codegenNati
 
 export interface NativeAdSizeChangeEventData {
   height: Double;
+  // Identity of the slot the height was measured for. Native emits size events
+  // asynchronously, so after a recycled list cell rebinds to a new slot a late event can
+  // still describe the previous creative — JS uses these to drop such stale events.
+  adUnitId?: string;
+  adPosition?: Int32;
+  preloadedAdId?: string;
 }
 
 export interface NativeAdImpressionEventData {

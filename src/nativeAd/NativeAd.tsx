@@ -18,6 +18,11 @@ import NativeAdViewComponent, {
 } from "./NativeAdNativeComponent";
 import type { NativeAdProps, NativeAdError } from "./types";
 import type { AdValue } from "../ads/types";
+import {
+  getLastKnownHeight,
+  nativeAdHeightKey,
+  rememberHeight,
+} from "./heightCache";
 
 const COMPONENT_NAME = "SimulaNativeAdView";
 
@@ -63,17 +68,57 @@ export function NativeAd({
   onError,
   width,
 }: NativeAdProps): React.JSX.Element | null {
-  // Collapsed until the native view reports a height (shimmer/provisional height
-  // arrives on the first measure; a no-fill keeps it at 0).
-  const [height, setHeight] = useState(0);
+  // Same identity as the native per-slot cache, so the remembered height always describes the
+  // ad the native side will re-render. Previews are debug-only and never cached.
+  const heightKey =
+    previewHtml == null
+      ? nativeAdHeightKey(adUnitId, position, preloadedAdId)
+      : null;
+
+  // Collapsed until the native view reports a height (shimmer/provisional height arrives on the
+  // first measure; a no-fill keeps it at 0) — except when we've already measured this slot,
+  // which starts at its last known height so the row doesn't collapse-then-expand (the native
+  // side re-renders the cached ad at that same size on its first frame).
+  //
+  // FlashList / RecyclerListView recycle cells: the same `<NativeAd>` instance is rebound to a
+  // new `position` without remounting, so the useState initializer does NOT re-run. Reseed when
+  // the slot identity changes (during render) so Yoga commits the correct height in the same
+  // turn as the new adPosition — otherwise the row keeps the previous ad's height (big gap or
+  // half-clipped creative) until onAdSizeChange catches up.
+  const [height, setHeight] = useState(
+    () => (heightKey != null ? getLastKnownHeight(heightKey) : undefined) ?? 0,
+  );
+  const [heightKeyForState, setHeightKeyForState] = useState(heightKey);
+  if (heightKey !== heightKeyForState) {
+    setHeightKeyForState(heightKey);
+    setHeight(
+      (heightKey != null ? getLastKnownHeight(heightKey) : undefined) ?? 0,
+    );
+  }
 
   const handleSize = useCallback(
     (event: { nativeEvent: NativeAdSizeChangeEventData }) => {
-      const next = event?.nativeEvent?.height ?? 0;
+      const nativeEvent = event?.nativeEvent;
+      // Size events cross the bridge asynchronously: when list recycling rebinds this
+      // component to a new slot, an event measured for the *previous* creative can arrive
+      // after `heightKey` already changed — caching it would poison the new slot's
+      // remembered height. Native stamps each event with the slot it measured; drop
+      // mismatches. (Identity absent → older native binary; accept as before.)
+      if (nativeEvent?.adPosition != null) {
+        if (
+          (nativeEvent.adUnitId ?? "") !== (adUnitId ?? "") ||
+          nativeEvent.adPosition !== position ||
+          (nativeEvent.preloadedAdId ?? "") !== (preloadedAdId ?? "")
+        ) {
+          return;
+        }
+      }
+      const next = nativeEvent?.height ?? 0;
+      if (heightKey != null) rememberHeight(heightKey, next);
       // Threshold sub-pixel churn so a measuring creative can't thrash the feed.
       setHeight((prev) => (Math.abs(prev - next) >= 1 ? next : prev));
     },
-    [],
+    [heightKey, adUnitId, position, preloadedAdId],
   );
 
   const handleImpression = useCallback(

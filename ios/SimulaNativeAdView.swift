@@ -56,6 +56,15 @@ class SimulaNativeAdHostView: UIView {
     private var needsMount = true
     private var lastReportedHeight: CGFloat = -1
     private var mountRetries = 0
+    // Bumped on every (re)mount. Height callbacks capture the generation they were mounted
+    // with; a torn-down root reporting a late GeometryReader height is ignored instead of
+    // being attributed to the new slot.
+    private var mountGeneration = 0
+    // The slot identity the current root was mounted with. Size events are stamped with
+    // this — NOT the live props — because a prop change lands before `mountIfNeeded`
+    // re-mounts (it waits for the next layout pass), and a height reported in that window
+    // still describes the old creative. JS compares the stamp and drops mismatches.
+    private var mountedSlotIdentity: (adUnitId: String, position: Int, preloadedAdId: String) = ("", 0, "")
     // True once the current `hostingController` has been added to a parent view controller.
     // Deliberately independent of `needsMount`: `mountIfNeeded()` can build and show the
     // hosting controller before a parent VC is discoverable (e.g. the first `layoutSubviews`
@@ -112,6 +121,13 @@ class SimulaNativeAdHostView: UIView {
         }
         needsMount = false
         mountRetries = 0
+        mountGeneration += 1
+        let generation = mountGeneration
+        mountedSlotIdentity = (
+            (adUnitId as String?) ?? "",
+            adPosition.intValue,
+            (preloadedAdId as String?) ?? ""
+        )
 
         // Clip the hosted content to our bounds so it never briefly overflows the
         // sibling feed rows before JS applies the reported height.
@@ -134,7 +150,7 @@ class SimulaNativeAdHostView: UIView {
             theme: theme as String?,
             preloadedAdId: preloadedAdId as String?,
             previewHTML: previewHtml as String?,
-            onHeight: { [weak self] height in self?.reportHeight(height) },
+            onHeight: { [weak self] height in self?.reportHeight(height, generation: generation) },
             onImpression: { [weak self] data in self?.emitImpression(data) },
             onClick: { [weak self] in self?.emitClick() },
             onPaid: { [weak self] value in self?.emitPaid(value) },
@@ -144,6 +160,16 @@ class SimulaNativeAdHostView: UIView {
         let controller = UIHostingController(rootView: root)
         controller.view.backgroundColor = .clear
         controller.view.translatesAutoresizingMaskIntoConstraints = false
+
+        // A feed cell must render identically wherever it sits on screen. UIHostingController
+        // propagates the screen's safe area into the hosted SwiftUI tree, so as the cell slides
+        // under the notch/status bar the content re-insets (0 → ~59pt) and visibly slides inside
+        // the fixed-height, clipped card — it reads as "the ad scrolls" near the top edge. The
+        // keyboard safe-area region does the same on chat screens. Disable propagation at the
+        // controller (iOS 16.4+); older iOS is covered by .ignoresSafeArea() on the root view.
+        if #available(iOS 16.4, *) {
+            controller.safeAreaRegions = []
+        }
 
         // Proper UIViewController containment (matches SimulaMiniGameModule's overlay
         // hosting controllers): without addChild/didMove(toParent:), the hosted SwiftUI
@@ -159,10 +185,13 @@ class SimulaNativeAdHostView: UIView {
         addSubview(controller.view)
 
         // Pin width to the host (RN owns width via style); leave height to the content.
-        // The reported height drives both this constraint and the host's RN height, so
-        // they agree once measured. The slot's own height is independent of this
-        // constraint, so the GeometryReader still measures the true content height.
-        let height = controller.view.heightAnchor.constraint(equalToConstant: 0)
+        // Seed from the JS-owned bounds when available so a recycled FlashList cell that
+        // already applied the cached height doesn't briefly clip the creative to 0 while
+        // GeometryReader remeasures. Force the next report through by resetting the
+        // dedupe watermark — a rebound slot can share the previous cell's last height.
+        let seededHeight = bounds.height > 1 ? bounds.height.rounded() : 0
+        lastReportedHeight = -1
+        let height = controller.view.heightAnchor.constraint(equalToConstant: seededHeight)
         height.priority = .defaultHigh
         NSLayoutConstraint.activate([
             controller.view.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -219,13 +248,27 @@ class SimulaNativeAdHostView: UIView {
 
     // MARK: Height + events
 
-    private func reportHeight(_ height: CGFloat) {
-        let rounded = height.rounded()
+    private func reportHeight(_ height: CGFloat, generation: Int) {
+        // A root from a previous mount can still emit GeometryReader callbacks while (or
+        // after) a prop change swaps the slot; attributing its height to the current slot
+        // would poison the JS height cache. The new mount's own reports still flow.
+        guard generation == mountGeneration else { return }
+        // Round UP: rounding down leaves the creative a sub-point taller than the JS-applied
+        // container, which clips the card's bottom edge and gives the inner web view a sliver of
+        // scrollable overflow.
+        let rounded = height.rounded(.up)
         // Threshold sub-point churn so a measuring creative can't thrash the feed.
         guard abs(rounded - lastReportedHeight) >= 1 else { return }
         lastReportedHeight = rounded
         heightConstraint?.constant = rounded
-        onAdSizeChange?(["height": rounded])
+        onAdSizeChange?([
+            "height": rounded,
+            // Slot identity the measured root was mounted with (not the live props), so JS
+            // can discard a report that raced a list-recycle rebind.
+            "adUnitId": mountedSlotIdentity.adUnitId,
+            "adPosition": mountedSlotIdentity.position,
+            "preloadedAdId": mountedSlotIdentity.preloadedAdId,
+        ])
     }
 
     private func emitImpression(_ data: NativeAdData) {
@@ -315,6 +358,11 @@ private struct SimulaNativeAdRoot: View {
                     .onChange(of: geo.size.height) { onHeight($0) }
             }
         )
+        // Pre-iOS 16.4 counterpart of `safeAreaRegions = []` (set where this controller is
+        // built): without it, a cell sliding under the notch/status bar (or above the
+        // keyboard) has its content re-inset by the propagated safe area — the ad visibly
+        // slides inside the clipped card and its measured height shifts mid-scroll.
+        .ignoresSafeArea(.all, edges: .all)
         .environmentObject(provider)
     }
 }
