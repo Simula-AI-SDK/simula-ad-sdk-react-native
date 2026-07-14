@@ -98,12 +98,27 @@ export function NativeAd({
 
   const handleSize = useCallback(
     (event: { nativeEvent: NativeAdSizeChangeEventData }) => {
-      const next = event?.nativeEvent?.height ?? 0;
+      const nativeEvent = event?.nativeEvent;
+      // Size events cross the bridge asynchronously: when list recycling rebinds this
+      // component to a new slot, an event measured for the *previous* creative can arrive
+      // after `heightKey` already changed — caching it would poison the new slot's
+      // remembered height. Native stamps each event with the slot it measured; drop
+      // mismatches. (Identity absent → older native binary; accept as before.)
+      if (nativeEvent?.adPosition != null) {
+        if (
+          (nativeEvent.adUnitId ?? "") !== (adUnitId ?? "") ||
+          nativeEvent.adPosition !== position ||
+          (nativeEvent.preloadedAdId ?? "") !== (preloadedAdId ?? "")
+        ) {
+          return;
+        }
+      }
+      const next = nativeEvent?.height ?? 0;
       if (heightKey != null) rememberHeight(heightKey, next);
       // Threshold sub-pixel churn so a measuring creative can't thrash the feed.
       setHeight((prev) => (Math.abs(prev - next) >= 1 ? next : prev));
     },
-    [heightKey],
+    [heightKey, adUnitId, position, preloadedAdId],
   );
 
   const handleImpression = useCallback(

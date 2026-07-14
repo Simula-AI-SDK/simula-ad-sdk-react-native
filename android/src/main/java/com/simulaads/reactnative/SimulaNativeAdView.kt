@@ -138,7 +138,12 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
         if (measured != contentHeightPx) {
             contentHeightPx = measured
             // Report out of the measure pass to avoid dispatching events mid-layout.
-            post { reportHeight(contentHeightPx) }
+            // A recycled view can be rebound to a new slot between this measure and the
+            // posted run — drop the report then, so the previous creative's height is
+            // never attributed to the new slot (commitProps resets the watermark, so the
+            // new slot's own measure still reports).
+            val slotAtMeasure = committedKey
+            post { if (committedKey == slotAtMeasure) reportHeight(contentHeightPx) }
         }
         // Take the size RN computed for us (our height tracks the value we feed back).
         setMeasuredDimension(width, MeasureSpec.getSize(heightMeasureSpec))
@@ -173,7 +178,14 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
         // Threshold sub-dp churn so a measuring creative can't thrash the feed.
         if (Math.abs(heightDp - lastReportedHeightDp) < 1) return
         lastReportedHeightDp = heightDp
-        val payload = Arguments.createMap().apply { putDouble("height", heightDp.toDouble()) }
+        val payload = Arguments.createMap().apply {
+            putDouble("height", heightDp.toDouble())
+            // Slot identity, so JS can discard a report that raced a list-recycle rebind
+            // (the event dispatch is async; by delivery this view may describe a new slot).
+            putString("adUnitId", adUnitId.orEmpty())
+            putInt("adPosition", position)
+            putString("preloadedAdId", preloadedAdId.orEmpty())
+        }
         emit("onAdSizeChange", payload)
     }
 

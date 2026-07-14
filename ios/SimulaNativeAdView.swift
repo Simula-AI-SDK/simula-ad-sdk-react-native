@@ -56,6 +56,15 @@ class SimulaNativeAdHostView: UIView {
     private var needsMount = true
     private var lastReportedHeight: CGFloat = -1
     private var mountRetries = 0
+    // Bumped on every (re)mount. Height callbacks capture the generation they were mounted
+    // with; a torn-down root reporting a late GeometryReader height is ignored instead of
+    // being attributed to the new slot.
+    private var mountGeneration = 0
+    // The slot identity the current root was mounted with. Size events are stamped with
+    // this — NOT the live props — because a prop change lands before `mountIfNeeded`
+    // re-mounts (it waits for the next layout pass), and a height reported in that window
+    // still describes the old creative. JS compares the stamp and drops mismatches.
+    private var mountedSlotIdentity: (adUnitId: String, position: Int, preloadedAdId: String) = ("", 0, "")
     // True once the current `hostingController` has been added to a parent view controller.
     // Deliberately independent of `needsMount`: `mountIfNeeded()` can build and show the
     // hosting controller before a parent VC is discoverable (e.g. the first `layoutSubviews`
@@ -112,6 +121,13 @@ class SimulaNativeAdHostView: UIView {
         }
         needsMount = false
         mountRetries = 0
+        mountGeneration += 1
+        let generation = mountGeneration
+        mountedSlotIdentity = (
+            (adUnitId as String?) ?? "",
+            adPosition.intValue,
+            (preloadedAdId as String?) ?? ""
+        )
 
         // Clip the hosted content to our bounds so it never briefly overflows the
         // sibling feed rows before JS applies the reported height.
@@ -134,7 +150,7 @@ class SimulaNativeAdHostView: UIView {
             theme: theme as String?,
             preloadedAdId: preloadedAdId as String?,
             previewHTML: previewHtml as String?,
-            onHeight: { [weak self] height in self?.reportHeight(height) },
+            onHeight: { [weak self] height in self?.reportHeight(height, generation: generation) },
             onImpression: { [weak self] data in self?.emitImpression(data) },
             onClick: { [weak self] in self?.emitClick() },
             onPaid: { [weak self] value in self?.emitPaid(value) },
@@ -232,7 +248,11 @@ class SimulaNativeAdHostView: UIView {
 
     // MARK: Height + events
 
-    private func reportHeight(_ height: CGFloat) {
+    private func reportHeight(_ height: CGFloat, generation: Int) {
+        // A root from a previous mount can still emit GeometryReader callbacks while (or
+        // after) a prop change swaps the slot; attributing its height to the current slot
+        // would poison the JS height cache. The new mount's own reports still flow.
+        guard generation == mountGeneration else { return }
         // Round UP: rounding down leaves the creative a sub-point taller than the JS-applied
         // container, which clips the card's bottom edge and gives the inner web view a sliver of
         // scrollable overflow.
@@ -241,7 +261,14 @@ class SimulaNativeAdHostView: UIView {
         guard abs(rounded - lastReportedHeight) >= 1 else { return }
         lastReportedHeight = rounded
         heightConstraint?.constant = rounded
-        onAdSizeChange?(["height": rounded])
+        onAdSizeChange?([
+            "height": rounded,
+            // Slot identity the measured root was mounted with (not the live props), so JS
+            // can discard a report that raced a list-recycle rebind.
+            "adUnitId": mountedSlotIdentity.adUnitId,
+            "adPosition": mountedSlotIdentity.position,
+            "preloadedAdId": mountedSlotIdentity.preloadedAdId,
+        ])
     }
 
     private func emitImpression(_ data: NativeAdData) {

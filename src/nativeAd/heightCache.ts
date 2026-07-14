@@ -12,13 +12,20 @@
 const lastKnownHeights = new Map<string, number>();
 const MAX_ENTRIES = 128;
 
+// `|` separates key segments; escape it (and the escape char itself) so an adUnitId that
+// contains `|` (e.g. "feed|1" at position 0 → "feed|1|0|") can't produce a key that
+// collides with another slot's prefix in forgetNativeAdHeights.
+function escapeSegment(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
+}
+
 /** The cache key for a slot — mirrors the native per-slot cache identity. */
 export function nativeAdHeightKey(
   adUnitId: string | undefined,
   position: number,
   preloadedAdId: string | undefined,
 ): string {
-  return `${adUnitId ?? ""}|${position}|${preloadedAdId ?? ""}`;
+  return `${escapeSegment(adUnitId ?? "")}|${position}|${escapeSegment(preloadedAdId ?? "")}`;
 }
 
 export function getLastKnownHeight(key: string): number | undefined {
@@ -43,7 +50,7 @@ export function forgetNativeAdHeights(adUnitId?: string, position?: number): voi
     lastKnownHeights.clear();
     return;
   }
-  const prefix = `${adUnitId ?? ""}|${position ?? 0}|`;
+  const prefix = `${escapeSegment(adUnitId ?? "")}|${position ?? 0}|`;
   for (const key of Array.from(lastKnownHeights.keys())) {
     if (key.startsWith(prefix)) lastKnownHeights.delete(key);
   }

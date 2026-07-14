@@ -21,6 +21,32 @@ describe("nativeAd heightCache", () => {
     expect(getLastKnownHeight(key)).toBe(312);
   });
 
+  it("escapes '|' in segments so ids can't collide across slots", () => {
+    // Without escaping, ("feed|1", 0) and ("feed", 1) would both produce keys
+    // starting with "feed|1|0|" / "feed|1|" and prefix-forget would cross-clear.
+    expect(nativeAdHeightKey("feed|1", 0, undefined)).not.toBe(
+      nativeAdHeightKey("feed", 1, "0"),
+    );
+    rememberHeight(nativeAdHeightKey("feed|1", 0, undefined), 100);
+    rememberHeight(nativeAdHeightKey("feed", 1, undefined), 200);
+    forgetNativeAdHeights("feed", 1);
+    expect(getLastKnownHeight(nativeAdHeightKey("feed|1", 0, undefined))).toBe(100);
+    expect(getLastKnownHeight(nativeAdHeightKey("feed", 1, undefined))).toBeUndefined();
+    forgetNativeAdHeights("feed|1", 0);
+    expect(
+      getLastKnownHeight(nativeAdHeightKey("feed|1", 0, undefined)),
+    ).toBeUndefined();
+  });
+
+  it("escapes backslashes so escape sequences can't be forged", () => {
+    // "feed\" + "|1..." must not collide with the escaped form of "feed|1...".
+    rememberHeight(nativeAdHeightKey("feed\\", 0, undefined), 10);
+    rememberHeight(nativeAdHeightKey("feed\\|0", 7, undefined), 20);
+    forgetNativeAdHeights("feed\\", 0);
+    expect(getLastKnownHeight(nativeAdHeightKey("feed\\", 0, undefined))).toBeUndefined();
+    expect(getLastKnownHeight(nativeAdHeightKey("feed\\|0", 7, undefined))).toBe(20);
+  });
+
   it("forgets a specific slot (all preload variants) without touching others", () => {
     rememberHeight(nativeAdHeightKey("feed", 1, undefined), 100);
     rememberHeight(nativeAdHeightKey("feed", 1, "pre_1"), 110);
