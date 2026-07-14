@@ -86,7 +86,17 @@ android {
     }
 }
 
+// Local-testing override: set `simulaAdSdkVersion` in the HOST app's gradle.properties to test
+// an unreleased Kotlin SDK, e.g. after
+//   ./gradlew :simula-ad-sdk:publishToMavenLocal -PVERSION_NAME=1.1.4-local -PRELEASE_SIGNING_ENABLED=false
+// in ../simula-ad-sdk-kotlin, set: simulaAdSdkVersion=1.1.4-local
+// Unset (every real host app), this resolves the published release from Maven Central.
+def simulaAdSdkVersion = findProperty('simulaAdSdkVersion')?.toString() ?: '1.1.3'
+
 repositories {
+    // Maven Local participates only for explicit local-override versions, so a stale
+    // locally-published artifact can never shadow the pinned release for real hosts.
+    if (simulaAdSdkVersion.endsWith('-local')) { mavenLocal() }
     google()
     mavenCentral()
 }
@@ -95,8 +105,8 @@ dependencies {
     // React Native
     implementation 'com.facebook.react:react-android:+'
 
-    // Simula Ad SDK (native Kotlin SDK from Maven Central)
-    implementation 'ad.simula:ad-sdk:1.1.3'
+    // Simula Ad SDK (native Kotlin SDK from Maven Central; see simulaAdSdkVersion above)
+    implementation "ad.simula:ad-sdk:${simulaAdSdkVersion}"
 
     // Jetpack Compose (needed to host MiniGameMenu composable)
     implementation platform('androidx.compose:compose-bom:2024.02.00')

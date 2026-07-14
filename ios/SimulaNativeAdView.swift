@@ -145,6 +145,16 @@ class SimulaNativeAdHostView: UIView {
         controller.view.backgroundColor = .clear
         controller.view.translatesAutoresizingMaskIntoConstraints = false
 
+        // A feed cell must render identically wherever it sits on screen. UIHostingController
+        // propagates the screen's safe area into the hosted SwiftUI tree, so as the cell slides
+        // under the notch/status bar the content re-insets (0 → ~59pt) and visibly slides inside
+        // the fixed-height, clipped card — it reads as "the ad scrolls" near the top edge. The
+        // keyboard safe-area region does the same on chat screens. Disable propagation at the
+        // controller (iOS 16.4+); older iOS is covered by .ignoresSafeArea() on the root view.
+        if #available(iOS 16.4, *) {
+            controller.safeAreaRegions = []
+        }
+
         // Proper UIViewController containment (matches SimulaMiniGameModule's overlay
         // hosting controllers): without addChild/didMove(toParent:), the hosted SwiftUI
         // tree never receives correct trait-collection/safe-area propagation and its
@@ -159,10 +169,13 @@ class SimulaNativeAdHostView: UIView {
         addSubview(controller.view)
 
         // Pin width to the host (RN owns width via style); leave height to the content.
-        // The reported height drives both this constraint and the host's RN height, so
-        // they agree once measured. The slot's own height is independent of this
-        // constraint, so the GeometryReader still measures the true content height.
-        let height = controller.view.heightAnchor.constraint(equalToConstant: 0)
+        // Seed from the JS-owned bounds when available so a recycled FlashList cell that
+        // already applied the cached height doesn't briefly clip the creative to 0 while
+        // GeometryReader remeasures. Force the next report through by resetting the
+        // dedupe watermark — a rebound slot can share the previous cell's last height.
+        let seededHeight = bounds.height > 1 ? bounds.height.rounded() : 0
+        lastReportedHeight = -1
+        let height = controller.view.heightAnchor.constraint(equalToConstant: seededHeight)
         height.priority = .defaultHigh
         NSLayoutConstraint.activate([
             controller.view.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -220,7 +233,10 @@ class SimulaNativeAdHostView: UIView {
     // MARK: Height + events
 
     private func reportHeight(_ height: CGFloat) {
-        let rounded = height.rounded()
+        // Round UP: rounding down leaves the creative a sub-point taller than the JS-applied
+        // container, which clips the card's bottom edge and gives the inner web view a sliver of
+        // scrollable overflow.
+        let rounded = height.rounded(.up)
         // Threshold sub-point churn so a measuring creative can't thrash the feed.
         guard abs(rounded - lastReportedHeight) >= 1 else { return }
         lastReportedHeight = rounded
@@ -315,6 +331,11 @@ private struct SimulaNativeAdRoot: View {
                     .onChange(of: geo.size.height) { onHeight($0) }
             }
         )
+        // Pre-iOS 16.4 counterpart of `safeAreaRegions = []` (set where this controller is
+        // built): without it, a cell sliding under the notch/status bar (or above the
+        // keyboard) has its content re-inset by the propagated safe area — the ad visibly
+        // slides inside the clipped card and its measured height shifts mid-scroll.
+        .ignoresSafeArea(.all, edges: .all)
         .environmentObject(provider)
     }
 }

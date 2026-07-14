@@ -76,12 +76,25 @@ export function NativeAd({
       : null;
 
   // Collapsed until the native view reports a height (shimmer/provisional height arrives on the
-  // first measure; a no-fill keeps it at 0) — except on a remount of a slot we've already
-  // measured, which starts at its last known height so the row doesn't collapse-then-expand
-  // (the native side re-renders the cached ad at that same size on its first frame).
+  // first measure; a no-fill keeps it at 0) — except when we've already measured this slot,
+  // which starts at its last known height so the row doesn't collapse-then-expand (the native
+  // side re-renders the cached ad at that same size on its first frame).
+  //
+  // FlashList / RecyclerListView recycle cells: the same `<NativeAd>` instance is rebound to a
+  // new `position` without remounting, so the useState initializer does NOT re-run. Reseed when
+  // the slot identity changes (during render) so Yoga commits the correct height in the same
+  // turn as the new adPosition — otherwise the row keeps the previous ad's height (big gap or
+  // half-clipped creative) until onAdSizeChange catches up.
   const [height, setHeight] = useState(
     () => (heightKey != null ? getLastKnownHeight(heightKey) : undefined) ?? 0,
   );
+  const [heightKeyForState, setHeightKeyForState] = useState(heightKey);
+  if (heightKey !== heightKeyForState) {
+    setHeightKeyForState(heightKey);
+    setHeight(
+      (heightKey != null ? getLastKnownHeight(heightKey) : undefined) ?? 0,
+    );
+  }
 
   const handleSize = useCallback(
     (event: { nativeEvent: NativeAdSizeChangeEventData }) => {

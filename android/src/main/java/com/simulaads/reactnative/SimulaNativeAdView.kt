@@ -80,6 +80,12 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
     fun commitProps() {
         if (committedKey == propKey) return
         committedKey = propKey
+        // FlashList / RecyclerView rebinds this view to a new slot without recreating it.
+        // Drop the previous slot's measure watermark so the new creative's height is always
+        // reported (a coincidental same-dp height would otherwise be deduped away while JS
+        // still held the old row height).
+        contentHeightPx = 0
+        lastReportedHeightDp = Int.MIN_VALUE
         composeView.setContent {
             // The slot's global-session fallback requires SimulaAds.initialize to have run.
             // The provider normally initializes on mount before this view composes; gate
@@ -160,7 +166,10 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
 
     private fun reportHeight(heightPx: Int) {
         val density = resources.displayMetrics.density
-        val heightDp = Math.round(heightPx / density)
+        // Ceil, not round: rounding down leaves the creative a sub-dp taller than the JS-applied
+        // container, which clips the card's bottom edge and gives the inner WebView a sliver of
+        // scrollable overflow (mirrors the iOS bridge's rounded(.up)).
+        val heightDp = kotlin.math.ceil(heightPx / density).toInt()
         // Threshold sub-dp churn so a measuring creative can't thrash the feed.
         if (Math.abs(heightDp - lastReportedHeightDp) < 1) return
         lastReportedHeightDp = heightDp
