@@ -95,9 +95,10 @@ dependencies {
     // React Native
     implementation 'com.facebook.react:react-android:+'
 
-    // Simula Ad SDK (native Kotlin SDK from Maven Central). 1.1.4+ carries the native-ad
-    // retained-WebView load-failure fix and feed scroll/height parity fixes.
-    implementation 'ad.simula:ad-sdk:1.1.4-dev.1'
+    // Simula Ad SDK (native Kotlin SDK from Maven Central). 1.1.4-dev.2 carries the native-ad
+    // height fix (creative height measured only after full page load — no more render-at-
+    // placeholder-size then expand), plus the retained-WebView load-failure fix from 1.1.4.
+    implementation 'ad.simula:ad-sdk:1.1.4-dev.2'
 
     // Jetpack Compose (needed to host MiniGameMenu composable)
     implementation platform('androidx.compose:compose-bom:2024.02.00')
