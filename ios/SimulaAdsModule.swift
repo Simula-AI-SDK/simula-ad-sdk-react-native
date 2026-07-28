@@ -82,13 +82,30 @@ class SimulaAdsModule: RCTEventEmitter {
 
     override func supportedEvents() -> [String]! { [SimulaAdsModule.eventName] }
 
+    /// Runs `work` on the main thread SYNCHRONOUSLY (caller's semantics preserved). Only
+    /// safe because `moduleQueue` is never the main queue and nothing on main ever blocks
+    /// on it — the isMainThread fast path additionally guards a future main-thread call
+    /// site against a main.sync self-deadlock. `work` is @MainActor-isolated (so SDK calls
+    /// type-check) and non-async.
+    private func syncOnMain(_ work: @MainActor () -> Void) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { work() }
+        } else {
+            DispatchQueue.main.sync {
+                MainActor.assumeIsolated { work() }
+            }
+        }
+    }
+
     override func startObserving() {
-        // Called on `moduleQueue`; `hasListeners` is read on the main thread (canEmit).
-        DispatchQueue.main.async { self.hasListeners = true }
+        // `hasListeners` is read on the main thread (canEmit). A SYNC set so the flag is
+        // updated before this method returns — an async hop could drop an event emitted
+        // right after JS subscribes.
+        syncOnMain { self.hasListeners = true }
     }
 
     override func stopObserving() {
-        DispatchQueue.main.async { self.hasListeners = false }
+        syncOnMain { self.hasListeners = false }
     }
 
     /// Hop to the main thread for an @MainActor SDK touch. This file is compiled by the
@@ -102,9 +119,10 @@ class SimulaAdsModule: RCTEventEmitter {
     }
 
     override func invalidate() {
-        // Drop every ad + proxy on the main thread so a reload/teardown never leaks a
-        // presenter or fires events into a dead bridge.
-        runOnMain {
+        // Drop every ad + proxy BEFORE super.invalidate(), synchronously on the main thread —
+        // so no delegate proxy can fire an event into a tearing-down bridge (the guarantee
+        // the pre-moduleQueue code had when invalidate ran on main).
+        syncOnMain {
             for entry in self.entries.values {
                 entry.interstitial?.delegate = nil
                 entry.rewarded?.delegate = nil
@@ -411,8 +429,9 @@ class SimulaAdsModule: RCTEventEmitter {
     /// destroy once the unit fully closes. Independent of the listener guard, so the state
     /// stays correct even while JS has no listeners attached.
     private func noteLifecycle(_ instanceId: String, _ type: String) {
-        // Delegate proxies invoke us on the main queue (methodQueue); assumeIsolated
-        // is required to mutate @MainActor-isolated SDK `delegate` properties.
+        // Delegate proxies invoke us on the main thread (the SDK delivers delegate callbacks
+        // there); assumeIsolated is required to mutate @MainActor-isolated SDK `delegate`
+        // properties.
         MainActor.assumeIsolated {
             guard let entry = entries[instanceId] else { return }
             switch type {
