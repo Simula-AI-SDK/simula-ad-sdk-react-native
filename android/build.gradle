@@ -98,7 +98,9 @@ dependencies {
     // Simula Ad SDK (native Kotlin SDK from Maven Central). 1.1.4 carries the native-ad
     // height fix (creative height measured only after full page load — no more render-at-
     // placeholder-size then expand), plus the retained-WebView load-failure fix.
-    implementation 'ad.simula:ad-sdk:1.1.4'
+    // 1.1.5 defers SDK init I/O (SharedPreferences/SQLite), telemetry install, and the
+    // WebView prewarm off the calling thread (deferred startup).
+    implementation 'ad.simula:ad-sdk:1.1.5'
 
     // Jetpack Compose (needed to host MiniGameMenu composable)
     implementation platform('androidx.compose:compose-bom:2024.02.00')

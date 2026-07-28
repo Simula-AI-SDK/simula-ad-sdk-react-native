@@ -14,10 +14,12 @@ import AppTrackingTransparency
 /// - `create*` / `loadAd` / `showAd` / `destroyAd` are fire-and-forget (`void`);
 ///   all outcomes arrive as events. Only `initialize`, `isInitialized`, and the ATT
 ///   queries return promises.
-/// - All SDK-touching work runs on the main thread (`methodQueue = .main`), so the
-///   `@MainActor`-isolated SDK types are reached via `MainActor.assumeIsolated`.
-///   Because `methodQueue` is the serial main queue, back-to-back JS calls
-///   (`create → load → show`) execute in order.
+/// - Exported methods are received on a dedicated serial background queue
+///   (`methodQueue`) so bridge traffic never queues behind main-thread work at app
+///   startup. Each method hops to the main thread (`runOnMain`) only for the
+///   `@MainActor` SDK touch. The serial queue preserves JS call order and the main
+///   hops enqueue FIFO, so back-to-back JS calls (`create → load → show`) still
+///   execute in order.
 ///
 /// This module is kept separate from `SimulaMiniGameModule` (declarative surfaces)
 /// — different threading profile, different event channel, and codegen-shaped for a
@@ -68,25 +70,46 @@ class SimulaAdsModule: RCTEventEmitter {
 
     // MARK: - RCTEventEmitter
 
-    override var methodQueue: DispatchQueue { DispatchQueue.main }
+    // A dedicated serial queue — NOT the main thread. Exported methods are received here
+    // (arg parsing, validation) and hop to main only for the @MainActor SDK touch, so a
+    // congested main thread at app startup can't delay bridge traffic. Serial ⇒ JS call
+    // order is preserved into the FIFO main hops.
+    private let moduleQueue = DispatchQueue(label: "com.simula.ads.module")
+
+    override var methodQueue: DispatchQueue { moduleQueue }
 
     override static func requiresMainQueueSetup() -> Bool { false }
 
     override func supportedEvents() -> [String]! { [SimulaAdsModule.eventName] }
 
-    override func startObserving() { hasListeners = true }
+    override func startObserving() {
+        // Called on `moduleQueue`; `hasListeners` is read on the main thread (canEmit).
+        DispatchQueue.main.async { self.hasListeners = true }
+    }
 
-    override func stopObserving() { hasListeners = false }
+    override func stopObserving() {
+        DispatchQueue.main.async { self.hasListeners = false }
+    }
+
+    /// Hop to the main thread for an @MainActor SDK touch. This file is compiled by the
+    /// host app's Xcode, so it must NOT create Swift Concurrency tasks (affected toolchains
+    /// miscompile optimized task code into teardown aborts) — a GCD hop + assumeIsolated is
+    /// the safe shape. `work` is @MainActor-isolated (so SDK calls type-check) and non-async.
+    private func runOnMain(_ work: @escaping @MainActor () -> Void) {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { work() }
+        }
+    }
 
     override func invalidate() {
-        // Main-thread (methodQueue) — drop every ad + proxy so a reload/teardown
-        // never leaks a presenter or fires events into a dead bridge.
-        MainActor.assumeIsolated {
-            for entry in entries.values {
+        // Drop every ad + proxy on the main thread so a reload/teardown never leaks a
+        // presenter or fires events into a dead bridge.
+        runOnMain {
+            for entry in self.entries.values {
                 entry.interstitial?.delegate = nil
                 entry.rewarded?.delegate = nil
             }
-            entries.removeAll()
+            self.entries.removeAll()
         }
         super.invalidate()
     }
@@ -108,7 +131,7 @@ class SimulaAdsModule: RCTEventEmitter {
         let privacy = convertPrivacyConfig(config["privacy"])
         let adContext = convertAdContext(config["adContext"])
 
-        MainActor.assumeIsolated {
+        runOnMain {
             SimulaAds.initialize(
                 apiKey: apiKey,
                 devMode: devMode,
@@ -127,7 +150,7 @@ class SimulaAdsModule: RCTEventEmitter {
     @objc
     func updateContext(_ context: NSDictionary) {
         let adContext = convertAdContext(context)
-        MainActor.assumeIsolated {
+        runOnMain {
             SimulaAds.updateContext(adContext)
         }
     }
@@ -135,7 +158,7 @@ class SimulaAdsModule: RCTEventEmitter {
     @objc
     func updatePrimaryUserID(_ id: NSString?) {
         let userID = id as String?
-        MainActor.assumeIsolated {
+        runOnMain {
             // Empty/nil clears the PPID natively (logout).
             SimulaAds.updatePrimaryUserID(userID?.isEmpty == true ? nil : userID)
         }
@@ -158,7 +181,7 @@ class SimulaAdsModule: RCTEventEmitter {
         // this file is compiled by the host app's Xcode, and affected toolchains miscompile
         // optimized task code into teardown aborts. The task lives inside the SDK binary,
         // which is prebuilt with a pinned pre-regression toolchain (SDK >= 1.1.4).
-        MainActor.assumeIsolated { // methodQueue = .main
+        runOnMain {
             SimulaAds.checkFrequencyCap(adUnitId: unitId, primaryUserID: ppid) { capped in
                 resolve(capped)
             }
@@ -177,7 +200,7 @@ class SimulaAdsModule: RCTEventEmitter {
         let pos = position.intValue
         let themeName = theme as String?
         // Completion-based SDK call — no bridge-created task (see checkFrequencyCap above).
-        MainActor.assumeIsolated { // methodQueue = .main
+        runOnMain {
             SimulaAds.preloadNativeAd(adUnitId: unitId, position: pos, theme: themeName) { preloadedAdId in
                 resolve(preloadedAdId)
             }
@@ -186,21 +209,21 @@ class SimulaAdsModule: RCTEventEmitter {
 
     @objc
     func destroyPreloadedAd(_ preloadedAdId: NSString) {
-        MainActor.assumeIsolated {
+        runOnMain {
             SimulaAds.destroyPreloadedAd(preloadedAdId as String)
         }
     }
 
     @objc
     func invalidateNativeAd(_ adUnitId: NSString?, position: NSNumber) {
-        MainActor.assumeIsolated {
+        runOnMain {
             SimulaAds.invalidateNativeAd(adUnitId: adUnitId as String?, position: position.intValue)
         }
     }
 
     @objc
     func invalidateNativeAds() {
-        MainActor.assumeIsolated {
+        runOnMain {
             SimulaAds.invalidateNativeAds()
         }
     }
@@ -208,7 +231,7 @@ class SimulaAdsModule: RCTEventEmitter {
     @objc
     func isInitialized(_ resolve: @escaping RCTPromiseResolveBlock,
                        reject: @escaping RCTPromiseRejectBlock) {
-        MainActor.assumeIsolated {
+        runOnMain {
             resolve(SimulaAds.isInitialized)
         }
     }
@@ -216,7 +239,7 @@ class SimulaAdsModule: RCTEventEmitter {
     @objc
     func getUserAgent(_ resolve: @escaping RCTPromiseResolveBlock,
                       reject: @escaping RCTPromiseRejectBlock) {
-        MainActor.assumeIsolated {
+        runOnMain {
             resolve(SimulaAds.userAgent)
         }
     }
@@ -224,7 +247,7 @@ class SimulaAdsModule: RCTEventEmitter {
     @objc
     func getDeviceId(_ resolve: @escaping RCTPromiseResolveBlock,
                      reject: @escaping RCTPromiseRejectBlock) {
-        MainActor.assumeIsolated {
+        runOnMain {
             resolve(SimulaAds.deviceId as Any? ?? NSNull())
         }
     }
@@ -233,28 +256,28 @@ class SimulaAdsModule: RCTEventEmitter {
 
     @objc
     func createInterstitial(_ instanceId: String, adUnitId: String) {
-        MainActor.assumeIsolated {
+        runOnMain {
             let ad = SimulaInterstitialAd(adUnitId: adUnitId)
             let proxy = InterstitialDelegateProxy(module: self, instanceId: instanceId)
             ad.delegate = proxy
-            entries[instanceId] = AdEntry(interstitial: ad, proxy: proxy)
+            self.entries[instanceId] = AdEntry(interstitial: ad, proxy: proxy)
         }
     }
 
     @objc
     func createRewarded(_ instanceId: String, adUnitId: String) {
-        MainActor.assumeIsolated {
+        runOnMain {
             let ad = SimulaRewardedAd(adUnitId: adUnitId)
             let proxy = RewardedDelegateProxy(module: self, instanceId: instanceId)
             ad.delegate = proxy
-            entries[instanceId] = AdEntry(rewarded: ad, proxy: proxy)
+            self.entries[instanceId] = AdEntry(rewarded: ad, proxy: proxy)
         }
     }
 
     @objc
     func destroyAd(_ instanceId: String) {
-        MainActor.assumeIsolated {
-            guard let entry = entries[instanceId] else { return }
+        runOnMain {
+            guard let entry = self.entries[instanceId] else { return }
             // Deferred destroy while the unit is on screen: this module holds the only strong
             // reference to the ad object, and dropping it mid-unit would strand the close flow
             // (reward verification, fallback screens) — and, on SDKs without presenter
@@ -264,7 +287,7 @@ class SimulaAdsModule: RCTEventEmitter {
                 entry.destroyPending = true
                 return
             }
-            entries.removeValue(forKey: instanceId)
+            self.entries.removeValue(forKey: instanceId)
             entry.interstitial?.delegate = nil
             entry.rewarded?.delegate = nil
         }
@@ -278,8 +301,8 @@ class SimulaAdsModule: RCTEventEmitter {
         let charName = options["charName"] as? String
         let charImage = options["charImage"] as? String
         let charDesc = options["charDesc"] as? String
-        MainActor.assumeIsolated {
-            guard let entry = entries[instanceId] else { return }
+        runOnMain {
+            guard let entry = self.entries[instanceId] else { return }
             entry.interstitial?.load(charId: charId, charName: charName, charImage: charImage, charDesc: charDesc)
             entry.rewarded?.load(charId: charId, charName: charName, charImage: charImage, charDesc: charDesc)
         }
@@ -287,8 +310,8 @@ class SimulaAdsModule: RCTEventEmitter {
 
     @objc
     func showAd(_ instanceId: String) {
-        MainActor.assumeIsolated {
-            guard let entry = entries[instanceId] else { return }
+        runOnMain {
+            guard let entry = self.entries[instanceId] else { return }
             entry.interstitial?.show()
             entry.rewarded?.show()
         }
@@ -296,8 +319,8 @@ class SimulaAdsModule: RCTEventEmitter {
 
     @objc
     func showAdPreview(_ instanceId: String, options: NSDictionary) {
-        MainActor.assumeIsolated {
-            guard let entry = entries[instanceId] else { return }
+        runOnMain {
+            guard let entry = self.entries[instanceId] else { return }
             if let ad = entry.interstitial {
                 ad.showPreview(
                     closeTreatment: options["closeTreatment"] as? String ?? "hidden",
@@ -362,7 +385,7 @@ class SimulaAdsModule: RCTEventEmitter {
                                       reject: @escaping RCTPromiseRejectBlock) {
         #if os(iOS)
         // Completion-based SDK call — no bridge-created task (see checkFrequencyCap above).
-        MainActor.assumeIsolated { // methodQueue = .main
+        runOnMain {
             SimulaPrivacy.shared.requestTrackingAuthorization { status in
                 resolve(Self.attStatusString(status))
             }
