@@ -13,10 +13,12 @@ import UIKit
 /// reports the creative's content height up to JS (which owns the view's height).
 @objc(SimulaNativeAdViewManager)
 class SimulaNativeAdViewManager: RCTViewManager {
+    // `view()` is always invoked on the main thread by RN, so the manager itself doesn't
+    // need main-queue setup — returning false keeps bridge setup off the main thread at
+    // app startup.
     override func view() -> UIView! { SimulaNativeAdHostView() }
 
-    // View creation touches UIKit + the @MainActor SDK, so set up on the main queue.
-    override static func requiresMainQueueSetup() -> Bool { true }
+    override static func requiresMainQueueSetup() -> Bool { false }
 }
 
 /// The native view backing `<NativeAd>`. Hosts `NativeAdSlot` and bridges its
@@ -55,7 +57,11 @@ class SimulaNativeAdHostView: UIView {
     // driven `layoutSubviews`.
     private var needsMount = true
     private var lastReportedHeight: CGFloat = -1
-    private var mountRetries = 0
+    // Coalesces mount requests onto one pending runloop hop — see `scheduleMountIfNeeded`.
+    private var mountScheduled = false
+    // One-shot observer for the SDK's readiness notification, installed only while
+    // `SimulaAds.shared` is still nil (replaces the old 30×50ms main-queue poll).
+    private var initObserver: NSObjectProtocol?
     // Bumped on every (re)mount. Height callbacks capture the generation they were mounted
     // with; a torn-down root reporting a late GeometryReader height is ignored instead of
     // being attributed to the new slot.
@@ -66,27 +72,27 @@ class SimulaNativeAdHostView: UIView {
     // still describes the old creative. JS compares the stamp and drops mismatches.
     private var mountedSlotIdentity: (adUnitId: String, position: Int, preloadedAdId: String) = ("", 0, "")
     // True once the current `hostingController` has been added to a parent view controller.
-    // Deliberately independent of `needsMount`: `mountIfNeeded()` can build and show the
-    // hosting controller before a parent VC is discoverable (e.g. the first `layoutSubviews`
-    // firing pre-window-attach), which clears `needsMount` — so containment must be retried
-    // separately on later attach, not gated behind the same flag (see `attachToParentIfNeeded`).
+    // Deliberately independent of `needsMount`: `mountIfNeeded()` clears `needsMount` even
+    // when no parent VC is discoverable at mount time (e.g. the hierarchy is mid-attach),
+    // which skips containment — so it must be retried separately on later attach, not
+    // gated behind the same flag (see `attachToParentIfNeeded`).
     private var isHostingControllerContained = false
 
     // MARK: Mounting
 
     // RN sets view props via KVC, then lays the view out — so `layoutSubviews` is the
-    // reliable "props applied" hook on the old architecture. `mountIfNeeded` self-guards
-    // on `needsMount`, so the frequent scroll-driven calls are free.
+    // reliable "props applied" hook on the old architecture. The mount itself is deferred
+    // one runloop turn (see below), so the frequent scroll-driven layout passes stay cheap.
     override func layoutSubviews() {
         super.layoutSubviews()
-        mountIfNeeded()
+        scheduleMountIfNeeded()
         attachToParentIfNeeded()
     }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
         if window != nil {
-            mountIfNeeded()
+            scheduleMountIfNeeded()
             attachToParentIfNeeded()
         }
     }
@@ -103,24 +109,77 @@ class SimulaNativeAdHostView: UIView {
         if newWindow == nil { detachFromParentIfNeeded() }
     }
 
+    /// Coalesces a mount onto the next runloop turn. Building the hosting controller (and the
+    /// SwiftUI ad tree inside it — potentially a WebView acquire) synchronously inside
+    /// `layoutSubviews`/`didMoveToWindow` parked the main thread in the middle of a feed
+    /// layout pass; deferring keeps the layout pass itself cheap.
+    private func scheduleMountIfNeeded() {
+        guard needsMount, !mountScheduled else { return }
+        mountScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.mountScheduled = false
+            // The view may have left the window during the hop (RN unmounted it, or a
+            // virtualized list clipped it out): mounting now would run mountIfNeeded's
+            // addChild AFTER willMove(toWindow: nil) already ran, leaving the hosting
+            // controller in the parent VC's children for the life of the screen. Skip —
+            // needsMount stays true, so didMoveToWindow re-arms the mount on re-entry.
+            guard self.window != nil else { return }
+            self.mountIfNeeded()
+        }
+    }
+
+    /// Arms the one-shot SDK-readiness observer (idempotent). Fires `scheduleMountIfNeeded`
+    /// when `SimulaAds.initialize` completes — no main-queue polling while uninitialized.
+    private func observeDidInitializeOnce() {
+        guard initObserver == nil else { return }
+        initObserver = NotificationCenter.default.addObserver(
+            forName: .simulaAdsDidInitialize,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.removeInitObserver()
+            self.scheduleMountIfNeeded()
+        }
+    }
+
+    private func removeInitObserver() {
+        if let initObserver {
+            NotificationCenter.default.removeObserver(initObserver)
+            self.initObserver = nil
+        }
+    }
+
+    deinit {
+        removeInitObserver()
+        // Containment must not outlive the view: if deinit runs without a preceding
+        // willMove(toWindow: nil) pass, the parent VC would otherwise keep the hosting
+        // controller in its children for the life of the screen.
+        detachFromParentIfNeeded()
+    }
+
     private func mountIfNeeded() {
         guard needsMount else { return }
 
         let provider = MainActor.assumeIsolated { SimulaAds.shared }
         guard let provider else {
             // SimulaAds.initialize hasn't run yet (the provider's init effect races view
-            // creation). Retry with a short backoff (up to ~1.5s) since a relayout may not
-            // follow; then stay collapsed until props change.
-            if mountRetries < 30 {
-                mountRetries += 1
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                    self?.mountIfNeeded()
-                }
-            }
+            // creation). Wait for the one-shot readiness notification instead of polling
+            // `shared` on a main-queue timer; stay collapsed until then (a props change
+            // re-arms `needsMount` and re-runs this path). Arm FIRST, then re-check: if
+            // initialize completed between the check above and the registration, its
+            // notification was already posted and would be missed (both happen on the
+            // serial main queue today so the window can't interleave — but that ordering
+            // is an SDK implementation detail, not a contract).
+            observeDidInitializeOnce()
+            if MainActor.assumeIsolated({ SimulaAds.shared != nil }) { scheduleMountIfNeeded() }
             return
         }
+        // A previously-armed readiness observer has served its purpose once a live provider
+        // exists (shared never becomes nil again) — don't keep the registration until deinit.
+        removeInitObserver()
         needsMount = false
-        mountRetries = 0
         mountGeneration += 1
         let generation = mountGeneration
         mountedSlotIdentity = (
@@ -215,6 +274,11 @@ class SimulaNativeAdHostView: UIView {
     /// or if there's no hosting controller yet.
     private func attachToParentIfNeeded() {
         guard !isHostingControllerContained, let controller = hostingController else { return }
+        // Only contain while in a window: a view clipped out of a virtualized list can
+        // still reach a view controller through the responder chain, and containing then
+        // leaks the controller exactly like the deferred-mount race above (willMove
+        // already ran with nil and won't run again until the next detach).
+        guard window != nil else { return }
         guard let parentVC = nearestViewController() else { return }
         parentVC.addChild(controller)
         controller.didMove(toParent: parentVC)
@@ -233,10 +297,10 @@ class SimulaNativeAdHostView: UIView {
 
     /// Walks the responder chain to find the view controller currently managing this
     /// view's hierarchy (RN doesn't hand native views a specific "container VC" — this is
-    /// the standard way to find one for a view nested arbitrarily deep in a screen). `nil`
-    /// before the view is attached to a window; `mountIfNeeded` re-runs on `didMoveToWindow`
-    /// so a first call this early just skips containment (the hosted view still renders —
-    /// only the VC-lifecycle propagation is deferred).
+    /// the standard way to find one for a view nested arbitrarily deep in a screen). Only
+    /// called in-window (mounts and containment are window-gated), so a `nil` here means
+    /// the hierarchy is mid-attach; containment is retried on the next layout/attach pass
+    /// (the hosted view still renders — only the VC-lifecycle propagation is deferred).
     private func nearestViewController() -> UIViewController? {
         var responder: UIResponder? = self
         while let current = responder {
@@ -372,6 +436,6 @@ private struct SimulaNativeAdRoot: View {
 @objc(SimulaNativeAdViewManager)
 class SimulaNativeAdViewManager: RCTViewManager {
     override func view() -> UIView! { UIView() }
-    override static func requiresMainQueueSetup() -> Bool { true }
+    override static func requiresMainQueueSetup() -> Bool { false }
 }
 #endif
