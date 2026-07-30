@@ -12,8 +12,11 @@ import UIKit
 /// via `onButtonPress`. The button is pure UI — it needs no provider / session.
 @objc(SimulaMiniGameButtonViewManager)
 class SimulaMiniGameButtonViewManager: RCTViewManager {
+    // `view()` is always invoked on the main thread by RN, so the manager itself doesn't
+    // need main-queue setup — returning false keeps bridge setup off the main thread at
+    // app startup.
     override func view() -> UIView! { SimulaMiniGameButtonHostView() }
-    override static func requiresMainQueueSetup() -> Bool { true }
+    override static func requiresMainQueueSetup() -> Bool { false }
 }
 
 class SimulaMiniGameButtonHostView: UIView {
@@ -31,10 +34,24 @@ class SimulaMiniGameButtonHostView: UIView {
     private var heightConstraint: NSLayoutConstraint?
     private var needsMount = true
     private var lastReportedHeight: CGFloat = -1
+    // Coalesces mount requests onto one pending runloop hop — see `scheduleMountIfNeeded`.
+    private var mountScheduled = false
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        if needsMount { mountIfNeeded() }
+        scheduleMountIfNeeded()
+    }
+
+    /// Defers the hosting-controller build out of the layout pass (same rationale as the
+    /// native-ad host view: keep `layoutSubviews` cheap on a scrolling feed).
+    private func scheduleMountIfNeeded() {
+        guard needsMount, !mountScheduled else { return }
+        mountScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.mountScheduled = false
+            if self.needsMount { self.mountIfNeeded() }
+        }
     }
 
     private func setNeedsMount() {
@@ -137,6 +154,6 @@ private struct SimulaMiniGameButtonRoot: View {
 @objc(SimulaMiniGameButtonViewManager)
 class SimulaMiniGameButtonViewManager: RCTViewManager {
     override func view() -> UIView! { UIView() }
-    override static func requiresMainQueueSetup() -> Bool { true }
+    override static func requiresMainQueueSetup() -> Bool { false }
 }
 #endif
