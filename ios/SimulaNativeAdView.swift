@@ -72,10 +72,10 @@ class SimulaNativeAdHostView: UIView {
     // still describes the old creative. JS compares the stamp and drops mismatches.
     private var mountedSlotIdentity: (adUnitId: String, position: Int, preloadedAdId: String) = ("", 0, "")
     // True once the current `hostingController` has been added to a parent view controller.
-    // Deliberately independent of `needsMount`: `mountIfNeeded()` can build and show the
-    // hosting controller before a parent VC is discoverable (e.g. the first `layoutSubviews`
-    // firing pre-window-attach), which clears `needsMount` — so containment must be retried
-    // separately on later attach, not gated behind the same flag (see `attachToParentIfNeeded`).
+    // Deliberately independent of `needsMount`: `mountIfNeeded()` clears `needsMount` even
+    // when no parent VC is discoverable at mount time (e.g. the hierarchy is mid-attach),
+    // which skips containment — so it must be retried separately on later attach, not
+    // gated behind the same flag (see `attachToParentIfNeeded`).
     private var isHostingControllerContained = false
 
     // MARK: Mounting
@@ -119,6 +119,12 @@ class SimulaNativeAdHostView: UIView {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.mountScheduled = false
+            // The view may have left the window during the hop (RN unmounted it, or a
+            // virtualized list clipped it out): mounting now would run mountIfNeeded's
+            // addChild AFTER willMove(toWindow: nil) already ran, leaving the hosting
+            // controller in the parent VC's children for the life of the screen. Skip —
+            // needsMount stays true, so didMoveToWindow re-arms the mount on re-entry.
+            guard self.window != nil else { return }
             self.mountIfNeeded()
         }
     }
@@ -147,6 +153,10 @@ class SimulaNativeAdHostView: UIView {
 
     deinit {
         removeInitObserver()
+        // Containment must not outlive the view: if deinit runs without a preceding
+        // willMove(toWindow: nil) pass, the parent VC would otherwise keep the hosting
+        // controller in its children for the life of the screen.
+        detachFromParentIfNeeded()
     }
 
     private func mountIfNeeded() {
@@ -256,6 +266,11 @@ class SimulaNativeAdHostView: UIView {
     /// or if there's no hosting controller yet.
     private func attachToParentIfNeeded() {
         guard !isHostingControllerContained, let controller = hostingController else { return }
+        // Only contain while in a window: a view clipped out of a virtualized list can
+        // still reach a view controller through the responder chain, and containing then
+        // leaks the controller exactly like the deferred-mount race above (willMove
+        // already ran with nil and won't run again until the next detach).
+        guard window != nil else { return }
         guard let parentVC = nearestViewController() else { return }
         parentVC.addChild(controller)
         controller.didMove(toParent: parentVC)
@@ -274,10 +289,10 @@ class SimulaNativeAdHostView: UIView {
 
     /// Walks the responder chain to find the view controller currently managing this
     /// view's hierarchy (RN doesn't hand native views a specific "container VC" — this is
-    /// the standard way to find one for a view nested arbitrarily deep in a screen). `nil`
-    /// before the view is attached to a window; `mountIfNeeded` re-runs on `didMoveToWindow`
-    /// so a first call this early just skips containment (the hosted view still renders —
-    /// only the VC-lifecycle propagation is deferred).
+    /// the standard way to find one for a view nested arbitrarily deep in a screen). Only
+    /// called in-window (mounts and containment are window-gated), so a `nil` here means
+    /// the hierarchy is mid-attach; containment is retried on the next layout/attach pass
+    /// (the hosted view still renders — only the VC-lifecycle propagation is deferred).
     private func nearestViewController() -> UIViewController? {
         var responder: UIResponder? = self
         while let current = responder {
