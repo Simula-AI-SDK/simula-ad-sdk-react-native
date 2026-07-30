@@ -167,10 +167,18 @@ class SimulaNativeAdHostView: UIView {
             // SimulaAds.initialize hasn't run yet (the provider's init effect races view
             // creation). Wait for the one-shot readiness notification instead of polling
             // `shared` on a main-queue timer; stay collapsed until then (a props change
-            // re-arms `needsMount` and re-runs this path).
+            // re-arms `needsMount` and re-runs this path). Arm FIRST, then re-check: if
+            // initialize completed between the check above and the registration, its
+            // notification was already posted and would be missed (both happen on the
+            // serial main queue today so the window can't interleave — but that ordering
+            // is an SDK implementation detail, not a contract).
             observeDidInitializeOnce()
+            if MainActor.assumeIsolated({ SimulaAds.shared != nil }) { scheduleMountIfNeeded() }
             return
         }
+        // A previously-armed readiness observer has served its purpose once a live provider
+        // exists (shared never becomes nil again) — don't keep the registration until deinit.
+        removeInitObserver()
         needsMount = false
         mountGeneration += 1
         let generation = mountGeneration

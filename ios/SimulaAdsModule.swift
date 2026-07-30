@@ -365,37 +365,48 @@ class SimulaAdsModule: RCTEventEmitter {
 
     // MARK: - Privacy
 
+    // SimulaPrivacy itself is lock-guarded (callable from any queue); these hop anyway
+    // so JS call ORDER is preserved against the main-hopped SDK calls (e.g. an
+    // `initialize({privacy})` followed by `applyConsent` must apply in that order —
+    // running consent writes straight on moduleQueue would let a later initialize's
+    // seed clobber them out of order).
     @objc
     func applyConsent(_ config: NSDictionary) {
         let resolved = convertPrivacyConfig(config) ?? SimulaPrivacyConfig()
-        SimulaPrivacy.shared.apply(resolved)
+        runOnMain {
+            SimulaPrivacy.shared.apply(resolved)
+        }
     }
 
     @objc
     func updateConsent(_ partial: NSDictionary) {
-        SimulaPrivacy.shared.update(
-            hasPrivacyConsent: partial["hasPrivacyConsent"] as? Bool,
-            tcString: partial["tcString"] as? String,
-            uspString: partial["uspString"] as? String,
-            gppString: partial["gppString"] as? String,
-            gppSid: partial["gppSid"] as? String,
-            gdprApplies: partial["gdprApplies"] as? Bool,
-            tcfPurpose1Consent: partial["tcfPurpose1Consent"] as? Bool,
-            coppaApplies: partial["coppaApplies"] as? Bool,
-            enableAdvertisingId: partial["enableAdvertisingId"] as? Bool
-        )
+        runOnMain {
+            SimulaPrivacy.shared.update(
+                hasPrivacyConsent: partial["hasPrivacyConsent"] as? Bool,
+                tcString: partial["tcString"] as? String,
+                uspString: partial["uspString"] as? String,
+                gppString: partial["gppString"] as? String,
+                gppSid: partial["gppSid"] as? String,
+                gdprApplies: partial["gdprApplies"] as? Bool,
+                tcfPurpose1Consent: partial["tcfPurpose1Consent"] as? Bool,
+                coppaApplies: partial["coppaApplies"] as? Bool,
+                enableAdvertisingId: partial["enableAdvertisingId"] as? Bool
+            )
+        }
     }
 
     @objc
     func clearConsent(_ flags: NSDictionary) {
-        SimulaPrivacy.shared.clearConsent(
-            tcString: flags["tcString"] as? Bool ?? false,
-            uspString: flags["uspString"] as? Bool ?? false,
-            gppString: flags["gppString"] as? Bool ?? false,
-            gppSid: flags["gppSid"] as? Bool ?? false,
-            gdprApplies: flags["gdprApplies"] as? Bool ?? false,
-            tcfPurpose1Consent: flags["tcfPurpose1Consent"] as? Bool ?? false
-        )
+        runOnMain {
+            SimulaPrivacy.shared.clearConsent(
+                tcString: flags["tcString"] as? Bool ?? false,
+                uspString: flags["uspString"] as? Bool ?? false,
+                gppString: flags["gppString"] as? Bool ?? false,
+                gppSid: flags["gppSid"] as? Bool ?? false,
+                gdprApplies: flags["gdprApplies"] as? Bool ?? false,
+                tcfPurpose1Consent: flags["tcfPurpose1Consent"] as? Bool ?? false
+            )
+        }
     }
 
     @objc
@@ -417,7 +428,9 @@ class SimulaAdsModule: RCTEventEmitter {
     func getTrackingAuthorizationStatus(_ resolve: @escaping RCTPromiseResolveBlock,
                                         reject: @escaping RCTPromiseRejectBlock) {
         #if os(iOS)
-        resolve(Self.attStatusString(SimulaPrivacy.shared.trackingAuthorizationStatus))
+        runOnMain {
+            resolve(Self.attStatusString(SimulaPrivacy.shared.trackingAuthorizationStatus))
+        }
         #else
         resolve("unavailable")
         #endif

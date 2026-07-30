@@ -36,6 +36,10 @@ class SimulaMiniGameButtonHostView: UIView {
     private var lastReportedHeight: CGFloat = -1
     // Coalesces mount requests onto one pending runloop hop — see `scheduleMountIfNeeded`.
     private var mountScheduled = false
+    // Bumped on every (re)mount. Height callbacks capture the generation they were mounted
+    // with; a torn-down root reporting a late GeometryReader height is ignored instead of
+    // being attributed to the new button (same guard as SimulaNativeAdHostView).
+    private var mountGeneration = 0
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -61,6 +65,8 @@ class SimulaMiniGameButtonHostView: UIView {
 
     private func mountIfNeeded() {
         needsMount = false
+        mountGeneration += 1
+        let generation = mountGeneration
 
         hostingController?.view.removeFromSuperview()
         hostingController = nil
@@ -71,7 +77,7 @@ class SimulaMiniGameButtonHostView: UIView {
             showBadge: showBadge,
             theme: SimulaMiniGameButtonHostView.convertTheme(theme),
             onClick: { [weak self] in self?.onButtonPress?(nil) },
-            onHeight: { [weak self] height in self?.reportHeight(height) }
+            onHeight: { [weak self] height in self?.reportHeight(height, generation: generation) }
         )
 
         let controller = UIHostingController(rootView: root)
@@ -81,6 +87,10 @@ class SimulaMiniGameButtonHostView: UIView {
 
         // Pin width to the host; the reported content height drives the height
         // constraint (seeded at the provisional 48pt to avoid a first-frame collapse).
+        // Reset the dedupe watermark so the next report always goes through: a remounted
+        // button can measure the same height as the torn-down one, and the dedupe would
+        // otherwise swallow the report and leave the provisional seed in place.
+        lastReportedHeight = -1
         let height = controller.view.heightAnchor.constraint(equalToConstant: 48)
         height.priority = .defaultHigh
         NSLayoutConstraint.activate([
@@ -94,7 +104,11 @@ class SimulaMiniGameButtonHostView: UIView {
         heightConstraint = height
     }
 
-    private func reportHeight(_ height: CGFloat) {
+    private func reportHeight(_ height: CGFloat, generation: Int) {
+        // A root from a previous mount can still emit GeometryReader callbacks while (or
+        // after) a prop change swaps the button; attributing its height to the new button
+        // would fight the new root's own measurement.
+        guard generation == mountGeneration else { return }
         let rounded = height.rounded()
         guard rounded > 0, abs(rounded - lastReportedHeight) >= 1 else { return }
         lastReportedHeight = rounded
