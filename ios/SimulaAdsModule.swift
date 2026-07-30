@@ -31,6 +31,13 @@ class SimulaAdsModule: RCTEventEmitter {
 
     private var hasListeners = false
 
+    // Main-thread only. Set synchronously inside invalidate's main hop; checked by the
+    // create* blocks so a call whose async main hop lands AFTER teardown (its moduleQueue
+    // work was preempted before runOnMain could enqueue, letting invalidate's sync hop
+    // overtake it) can't recreate ad objects/delegates on a dead bridge. load/show/destroy
+    // then no-op on the already-empty entries map.
+    private var didInvalidate = false
+
     // Retains each ad and its delegate proxy (the SDK `delegate` is weak). Keyed by
     // the JS-generated instanceId. Touched only on the main thread.
     private var entries: [String: AdEntry] = [:]
@@ -121,8 +128,11 @@ class SimulaAdsModule: RCTEventEmitter {
     override func invalidate() {
         // Drop every ad + proxy BEFORE super.invalidate(), synchronously on the main thread —
         // so no delegate proxy can fire an event into a tearing-down bridge (the guarantee
-        // the pre-moduleQueue code had when invalidate ran on main).
+        // the pre-moduleQueue code had when invalidate ran on main). The flag is set FIRST:
+        // a create* hop that loses the race to this block (enqueued behind it) bails on the
+        // flag instead of recreating entries behind the teardown.
         syncOnMain {
+            self.didInvalidate = true
             for entry in self.entries.values {
                 entry.interstitial?.delegate = nil
                 entry.rewarded?.delegate = nil
@@ -275,6 +285,9 @@ class SimulaAdsModule: RCTEventEmitter {
     @objc
     func createInterstitial(_ instanceId: String, adUnitId: String) {
         runOnMain {
+            // This hop may have been enqueued behind invalidate's sync teardown (see
+            // didInvalidate) — never recreate ads on a dead bridge.
+            guard !self.didInvalidate else { return }
             let ad = SimulaInterstitialAd(adUnitId: adUnitId)
             let proxy = InterstitialDelegateProxy(module: self, instanceId: instanceId)
             ad.delegate = proxy
@@ -285,6 +298,8 @@ class SimulaAdsModule: RCTEventEmitter {
     @objc
     func createRewarded(_ instanceId: String, adUnitId: String) {
         runOnMain {
+            // See createInterstitial / didInvalidate.
+            guard !self.didInvalidate else { return }
             let ad = SimulaRewardedAd(adUnitId: adUnitId)
             let proxy = RewardedDelegateProxy(module: self, instanceId: instanceId)
             ad.delegate = proxy
