@@ -20,6 +20,7 @@ describe("SimulaAds.initialize", () => {
       privacy: null,
       adContext: null,
     });
+    expect(native.getDeviceId).not.toHaveBeenCalled();
   });
 
   it("passes privacy through with undefined keys dropped", async () => {

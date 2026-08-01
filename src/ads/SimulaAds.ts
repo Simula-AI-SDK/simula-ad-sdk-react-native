@@ -186,8 +186,9 @@ export const SimulaAds = {
   },
 
   /**
-   * The SDK's device identifier (`X-Device-Id`). Resolves `null` before
-   * `initialize` or when the native module isn't linked.
+   * A nonblocking snapshot of the SDK's device identifier (`X-Device-Id`). May
+   * resolve `null` while native resolution is pending, before `initialize`, or
+   * when the native module isn't linked. It does not wait for native resolution.
    */
   async deviceId(): Promise<string | null> {
     if (!isAdsModuleAvailable()) return null;

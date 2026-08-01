@@ -95,10 +95,9 @@ dependencies {
     // React Native
     implementation 'com.facebook.react:react-android:+'
 
-    // Simula Ad SDK (native Kotlin SDK from Maven Central). 1.1.5 defers SDK init
-    // I/O (SharedPreferences/SQLite), telemetry install, and the WebView prewarm off the
-    // calling thread (deferred startup), plus prior native-ad height / retained-WebView fixes.
-    implementation 'ad.simula:ad-sdk:1.1.5'
+    // Simula Ad SDK (native Kotlin SDK from Maven Central). 1.1.6 keeps device-ID
+    // resolution off the init path and aligns provider/imperative telemetry startup.
+    implementation 'ad.simula:ad-sdk:1.1.6'
 
     // Jetpack Compose (needed to host MiniGameMenu composable)
     implementation platform('androidx.compose:compose-bom:2024.02.00')

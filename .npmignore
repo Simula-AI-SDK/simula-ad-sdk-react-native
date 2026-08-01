@@ -17,6 +17,7 @@ jest.config.js
 
 # Ignore build tools
 node_modules/
+android/build/
 .git/
 .gitignore
 
