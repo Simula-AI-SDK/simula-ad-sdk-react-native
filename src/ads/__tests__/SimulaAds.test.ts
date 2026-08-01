@@ -89,6 +89,14 @@ describe("SimulaAds native-ad imperatives", () => {
     expect(native.destroyPreloadedAd).toHaveBeenCalledWith("ad_xyz");
   });
 
+  it("destroyPreloadedAd throws a TypeError for an invalid id before any native call", () => {
+    expect(() =>
+      SimulaAds.destroyPreloadedAd(null as unknown as string),
+    ).toThrow(TypeError);
+    expect(() => SimulaAds.destroyPreloadedAd("")).toThrow(TypeError);
+    expect(native.destroyPreloadedAd).not.toHaveBeenCalled();
+  });
+
   it("rejects an empty apiKey", async () => {
     await expect(SimulaAds.initialize({ apiKey: "" })).rejects.toThrow(/apiKey/);
     expect(native.initialize).not.toHaveBeenCalled();
@@ -147,6 +155,14 @@ describe("SimulaAds.checkFrequencyCap", () => {
   it("fails open (false) when the native call rejects", async () => {
     native.checkFrequencyCap.mockRejectedValueOnce(new Error("bridge down"));
     await expect(SimulaAds.checkFrequencyCap("unit_1")).resolves.toBe(false);
+  });
+
+  it("throws a TypeError for an invalid adUnitId before any native call", async () => {
+    await expect(
+      SimulaAds.checkFrequencyCap(undefined as unknown as string),
+    ).rejects.toThrow(TypeError);
+    await expect(SimulaAds.checkFrequencyCap("")).rejects.toThrow(TypeError);
+    expect(native.checkFrequencyCap).not.toHaveBeenCalled();
   });
 });
 

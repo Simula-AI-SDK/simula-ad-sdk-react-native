@@ -17,6 +17,7 @@ import ad.simula.ad.sdk.model.AdValue
 import ad.simula.ad.sdk.model.SimulaAdContext
 import ad.simula.ad.sdk.privacy.SimulaPrivacy
 import ad.simula.ad.sdk.privacy.SimulaPrivacyConfig
+import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -40,6 +41,10 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
 
     override fun getName(): String = "SimulaAdsModule"
 
+    private companion object {
+        const val TAG = "SimulaAdsModule"
+    }
+
     private data class AdEntry(
         val adType: String,
         val interstitial: SimulaInterstitialAd? = null,
@@ -48,42 +53,68 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
 
     private val entries = ConcurrentHashMap<String, AdEntry>()
 
+    // ── Crash barrier ─────────────────────────────────────────────────────────
+    //
+    // Every @ReactMethod body runs inside this guard. A mistyped or null host prop
+    // throws inside the bridge (typed ReadableMap reads), and without a catch the
+    // exception escapes on the NativeModules thread and kills the host process —
+    // iOS coerces the same payloads with `as?` and never throws, so these arrive
+    // as Android-only crash reports. Reject the promise (or log for the
+    // fire-and-forget methods) instead of crashing. `inline` so `return` /
+    // `return@guard` inside method bodies keep their original meaning.
+
+    private inline fun guard(promise: Promise?, block: () -> Unit) {
+        try {
+            block()
+        } catch (t: Throwable) {
+            if (promise != null) {
+                promise.reject("ERR_SIMULA_BRIDGE", t)
+            } else {
+                Log.w(TAG, "SimulaAdsModule call failed", t)
+            }
+        }
+    }
+
     // ── Lifecycle ───────────────────────────────────────────────────────────
 
     @ReactMethod
     fun initialize(config: ReadableMap, promise: Promise) {
-        val apiKey = config.getStringOrNull("apiKey")
-        if (apiKey.isNullOrBlank()) {
-            promise.reject("INVALID_CONFIG", "Missing required config: apiKey")
-            return
-        }
-        val devMode = config.getBooleanOrNull("devMode") ?: false
-        val primaryUserID = config.getStringOrNull("primaryUserID")
-        val hasPrivacyConsent = config.getBooleanOrNull("hasPrivacyConsent") ?: true
-        val telemetryEnabled = config.getBooleanOrNull("telemetryEnabled") ?: true
-        val privacy = if (config.hasKey("privacy") && !config.isNull("privacy"))
-            convertPrivacyConfig(config.getMap("privacy")) else null
-        val adContext = if (config.hasKey("adContext") && !config.isNull("adContext"))
-            convertAdContext(config.getMap("adContext")) else null
+        guard(promise) {
+            val apiKey = config.getStringOrNull("apiKey")
+            if (apiKey.isNullOrBlank()) {
+                promise.reject("INVALID_CONFIG", "Missing required config: apiKey")
+                return@guard
+            }
+            val devMode = config.getBooleanOrNull("devMode") ?: false
+            val primaryUserID = config.getStringOrNull("primaryUserID")
+            val hasPrivacyConsent = config.getBooleanOrNull("hasPrivacyConsent") ?: true
+            val telemetryEnabled = config.getBooleanOrNull("telemetryEnabled") ?: true
+            val privacy = if (config.hasKey("privacy") && !config.isNull("privacy"))
+                convertPrivacyConfig(config.getMap("privacy")) else null
+            val adContext = if (config.hasKey("adContext") && !config.isNull("adContext"))
+                convertAdContext(config.getMap("adContext")) else null
 
-        // Idempotent natively (first valid call wins); any-context is fine (the SDK
-        // retains the application context).
-        SimulaAds.initialize(
-            context = reactApplicationContext,
-            apiKey = apiKey,
-            devMode = devMode,
-            primaryUserID = primaryUserID,
-            hasPrivacyConsent = hasPrivacyConsent,
-            privacy = privacy,
-            telemetryEnabled = telemetryEnabled,
-            adContext = adContext,
-        )
-        promise.resolve(null)
+            // Idempotent natively (first valid call wins); any-context is fine (the SDK
+            // retains the application context).
+            SimulaAds.initialize(
+                context = reactApplicationContext,
+                apiKey = apiKey,
+                devMode = devMode,
+                primaryUserID = primaryUserID,
+                hasPrivacyConsent = hasPrivacyConsent,
+                privacy = privacy,
+                telemetryEnabled = telemetryEnabled,
+                adContext = adContext,
+            )
+            promise.resolve(null)
+        }
     }
 
     @ReactMethod
     fun isInitialized(promise: Promise) {
-        promise.resolve(SimulaAds.isInitialized)
+        guard(promise) {
+            promise.resolve(SimulaAds.isInitialized)
+        }
     }
 
     /**
@@ -92,7 +123,9 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
      */
     @ReactMethod
     fun updateContext(context: ReadableMap) {
-        SimulaAds.updateContext(convertAdContext(context))
+        guard(null) {
+            SimulaAds.updateContext(convertAdContext(context))
+        }
     }
 
     /**
@@ -101,7 +134,9 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
      */
     @ReactMethod
     fun updatePrimaryUserID(id: String?) {
-        SimulaAds.updatePrimaryUserID(id?.takeIf { it.isNotBlank() })
+        guard(null) {
+            SimulaAds.updatePrimaryUserID(id?.takeIf { it.isNotBlank() })
+        }
     }
 
     /**
@@ -110,65 +145,101 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
      * SDK's callback overload, which delivers the result on the main thread.
      */
     @ReactMethod
-    fun checkFrequencyCap(adUnitId: String, primaryUserID: String?, promise: Promise) {
-        SimulaAds.checkFrequencyCap(adUnitId, primaryUserID?.takeIf { it.isNotBlank() }) { capped ->
-            promise.resolve(capped)
+    fun checkFrequencyCap(adUnitId: String?, primaryUserID: String?, promise: Promise) {
+        guard(promise) {
+            if (adUnitId.isNullOrBlank()) {
+                promise.reject("INVALID_CONFIG", "adUnitId must be a non-empty string")
+                return@guard
+            }
+            SimulaAds.checkFrequencyCap(adUnitId, primaryUserID?.takeIf { it.isNotBlank() }) { capped ->
+                promise.resolve(capped)
+            }
         }
     }
 
     @ReactMethod
     fun getUserAgent(promise: Promise) {
-        promise.resolve(SimulaAds.userAgent)
+        guard(promise) {
+            promise.resolve(SimulaAds.userAgent)
+        }
     }
 
     @ReactMethod
     fun getDeviceId(promise: Promise) {
-        promise.resolve(SimulaAds.deviceId)
+        guard(promise) {
+            promise.resolve(SimulaAds.deviceId)
+        }
     }
 
     // ── Native ad (imperative) ────────────────────────────────────────────────
 
     @ReactMethod
     fun preloadNativeAd(adUnitId: String?, position: Int, theme: String?, promise: Promise) {
-        promise.resolve(SimulaAds.preloadNativeAd(adUnitId, position, theme))
+        guard(promise) {
+            promise.resolve(SimulaAds.preloadNativeAd(adUnitId, position, theme))
+        }
     }
 
     @ReactMethod
-    fun destroyPreloadedAd(preloadedAdId: String) {
-        SimulaAds.destroyPreloadedAd(preloadedAdId)
+    fun destroyPreloadedAd(preloadedAdId: String?) {
+        guard(null) {
+            if (preloadedAdId.isNullOrBlank()) {
+                Log.w(TAG, "destroyPreloadedAd ignored: preloadedAdId must be a non-empty string")
+                return@guard
+            }
+            SimulaAds.destroyPreloadedAd(preloadedAdId)
+        }
     }
 
     @ReactMethod
     fun invalidateNativeAd(adUnitId: String?, position: Int) {
-        SimulaAds.invalidateNativeAd(adUnitId, position)
+        guard(null) {
+            SimulaAds.invalidateNativeAd(adUnitId, position)
+        }
     }
 
     @ReactMethod
     fun invalidateNativeAds() {
-        SimulaAds.invalidateNativeAds()
+        guard(null) {
+            SimulaAds.invalidateNativeAds()
+        }
     }
 
     // ── Create / destroy ──────────────────────────────────────────────────────
 
     @ReactMethod
-    fun createInterstitial(instanceId: String, adUnitId: String) {
-        val ad = SimulaInterstitialAd(adUnitId)
-        ad.listener = interstitialListener(instanceId)
-        entries[instanceId] = AdEntry(adType = "interstitial", interstitial = ad)
+    fun createInterstitial(instanceId: String, adUnitId: String?) {
+        guard(null) {
+            if (adUnitId.isNullOrBlank()) {
+                Log.w(TAG, "createInterstitial ignored: adUnitId must be a non-empty string")
+                return@guard
+            }
+            val ad = SimulaInterstitialAd(adUnitId)
+            ad.listener = interstitialListener(instanceId)
+            entries[instanceId] = AdEntry(adType = "interstitial", interstitial = ad)
+        }
     }
 
     @ReactMethod
-    fun createRewarded(instanceId: String, adUnitId: String) {
-        val ad = SimulaRewardedAd(adUnitId)
-        ad.listener = rewardedListener(instanceId)
-        entries[instanceId] = AdEntry(adType = "rewarded", rewarded = ad)
+    fun createRewarded(instanceId: String, adUnitId: String?) {
+        guard(null) {
+            if (adUnitId.isNullOrBlank()) {
+                Log.w(TAG, "createRewarded ignored: adUnitId must be a non-empty string")
+                return@guard
+            }
+            val ad = SimulaRewardedAd(adUnitId)
+            ad.listener = rewardedListener(instanceId)
+            entries[instanceId] = AdEntry(adType = "rewarded", rewarded = ad)
+        }
     }
 
     @ReactMethod
     fun destroyAd(instanceId: String) {
-        entries.remove(instanceId)?.let { entry ->
-            entry.interstitial?.listener = null
-            entry.rewarded?.listener = null
+        guard(null) {
+            entries.remove(instanceId)?.let { entry ->
+                entry.interstitial?.listener = null
+                entry.rewarded?.listener = null
+            }
         }
     }
 
@@ -176,93 +247,109 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun loadAd(instanceId: String, options: ReadableMap) {
-        val entry = entries[instanceId] ?: return
-        val charId = options.getStringOrNull("charId")
-        val charName = options.getStringOrNull("charName")
-        val charImage = options.getStringOrNull("charImage")
-        val charDesc = options.getStringOrNull("charDesc")
-        entry.interstitial?.load(charId, charName, charImage, charDesc)
-        entry.rewarded?.load(charId, charName, charImage, charDesc)
+        guard(null) {
+            val entry = entries[instanceId] ?: return@guard
+            val charId = options.getStringOrNull("charId")
+            val charName = options.getStringOrNull("charName")
+            val charImage = options.getStringOrNull("charImage")
+            val charDesc = options.getStringOrNull("charDesc")
+            entry.interstitial?.load(charId, charName, charImage, charDesc)
+            entry.rewarded?.load(charId, charName, charImage, charDesc)
+        }
     }
 
     @ReactMethod
     fun showAd(instanceId: String) {
-        val entry = entries[instanceId] ?: return
-        val activity = reactApplicationContext.currentActivity
-        if (activity != null) {
-            entry.interstitial?.show(activity)
-            entry.rewarded?.show(activity)
-        } else {
-            entry.interstitial?.show()
-            entry.rewarded?.show()
+        guard(null) {
+            val entry = entries[instanceId] ?: return@guard
+            val activity = reactApplicationContext.currentActivity
+            if (activity != null) {
+                entry.interstitial?.show(activity)
+                entry.rewarded?.show(activity)
+            } else {
+                entry.interstitial?.show()
+                entry.rewarded?.show()
+            }
         }
     }
 
     @ReactMethod
     fun showAdPreview(instanceId: String, options: ReadableMap) {
-        val entry = entries[instanceId] ?: return
-        val activity = reactApplicationContext.currentActivity ?: return
-        entry.interstitial?.showPreview(
-            activity = activity,
-            closeTreatment = options.getStringOrNull("closeTreatment") ?: "hidden",
-            closePosition = options.getStringOrNull("closePosition") ?: "top_right",
-            delaySeconds = options.getIntOrNull("delaySeconds") ?: 5,
-            progressBarColor = options.getStringOrNull("progressBarColor") ?: "#FFFFFF",
-            adUnitType = options.getStringOrNull("adUnitType") ?: "interstitial",
-            storePrompt = options.getBooleanOrNull("storePrompt") ?: false,
-            installBanner = options.getBooleanOrNull("installBanner") ?: false,
-        )
-        entry.rewarded?.showPreview(
-            activity = activity,
-            durationSeconds = options.getIntOrNull("durationSeconds") ?: 8,
-            storePrompt = options.getBooleanOrNull("storePrompt") ?: true,
-            storePromptPlatform = options.getStringOrNull("storePromptPlatform") ?: "android",
-        )
+        guard(null) {
+            val entry = entries[instanceId] ?: return@guard
+            val activity = reactApplicationContext.currentActivity ?: return@guard
+            entry.interstitial?.showPreview(
+                activity = activity,
+                closeTreatment = options.getStringOrNull("closeTreatment") ?: "hidden",
+                closePosition = options.getStringOrNull("closePosition") ?: "top_right",
+                delaySeconds = options.getIntOrNull("delaySeconds") ?: 5,
+                progressBarColor = options.getStringOrNull("progressBarColor") ?: "#FFFFFF",
+                adUnitType = options.getStringOrNull("adUnitType") ?: "interstitial",
+                storePrompt = options.getBooleanOrNull("storePrompt") ?: false,
+                installBanner = options.getBooleanOrNull("installBanner") ?: false,
+            )
+            entry.rewarded?.showPreview(
+                activity = activity,
+                durationSeconds = options.getIntOrNull("durationSeconds") ?: 8,
+                storePrompt = options.getBooleanOrNull("storePrompt") ?: true,
+                storePromptPlatform = options.getStringOrNull("storePromptPlatform") ?: "android",
+            )
+        }
     }
 
     // ── Privacy ─────────────────────────────────────────────────────────────────
 
     @ReactMethod
     fun applyConsent(config: ReadableMap) {
-        SimulaPrivacy.apply(convertPrivacyConfig(config))
+        guard(null) {
+            SimulaPrivacy.apply(convertPrivacyConfig(config))
+        }
     }
 
     @ReactMethod
     fun updateConsent(partial: ReadableMap) {
-        SimulaPrivacy.update(
-            hasPrivacyConsent = partial.getBooleanOrNull("hasPrivacyConsent"),
-            tcString = partial.getStringOrNull("tcString"),
-            uspString = partial.getStringOrNull("uspString"),
-            gppString = partial.getStringOrNull("gppString"),
-            gppSid = partial.getStringOrNull("gppSid"),
-            gdprApplies = partial.getBooleanOrNull("gdprApplies"),
-            tcfPurpose1Consent = partial.getBooleanOrNull("tcfPurpose1Consent"),
-            coppaApplies = partial.getBooleanOrNull("coppaApplies"),
-            enableAdvertisingId = partial.getBooleanOrNull("enableAdvertisingId"),
-        )
+        guard(null) {
+            SimulaPrivacy.update(
+                hasPrivacyConsent = partial.getBooleanOrNull("hasPrivacyConsent"),
+                tcString = partial.getStringOrNull("tcString"),
+                uspString = partial.getStringOrNull("uspString"),
+                gppString = partial.getStringOrNull("gppString"),
+                gppSid = partial.getStringOrNull("gppSid"),
+                gdprApplies = partial.getBooleanOrNull("gdprApplies"),
+                tcfPurpose1Consent = partial.getBooleanOrNull("tcfPurpose1Consent"),
+                coppaApplies = partial.getBooleanOrNull("coppaApplies"),
+                enableAdvertisingId = partial.getBooleanOrNull("enableAdvertisingId"),
+            )
+        }
     }
 
     @ReactMethod
     fun clearConsent(flags: ReadableMap) {
-        SimulaPrivacy.clearConsent(
-            tcString = flags.getBooleanOrNull("tcString") ?: false,
-            uspString = flags.getBooleanOrNull("uspString") ?: false,
-            gppString = flags.getBooleanOrNull("gppString") ?: false,
-            gppSid = flags.getBooleanOrNull("gppSid") ?: false,
-            gdprApplies = flags.getBooleanOrNull("gdprApplies") ?: false,
-            tcfPurpose1Consent = flags.getBooleanOrNull("tcfPurpose1Consent") ?: false,
-        )
+        guard(null) {
+            SimulaPrivacy.clearConsent(
+                tcString = flags.getBooleanOrNull("tcString") ?: false,
+                uspString = flags.getBooleanOrNull("uspString") ?: false,
+                gppString = flags.getBooleanOrNull("gppString") ?: false,
+                gppSid = flags.getBooleanOrNull("gppSid") ?: false,
+                gdprApplies = flags.getBooleanOrNull("gdprApplies") ?: false,
+                tcfPurpose1Consent = flags.getBooleanOrNull("tcfPurpose1Consent") ?: false,
+            )
+        }
     }
 
     /** Android has no App Tracking Transparency — always resolves "unavailable". */
     @ReactMethod
     fun requestTrackingAuthorization(promise: Promise) {
-        promise.resolve("unavailable")
+        guard(promise) {
+            promise.resolve("unavailable")
+        }
     }
 
     @ReactMethod
     fun getTrackingAuthorizationStatus(promise: Promise) {
-        promise.resolve("unavailable")
+        guard(promise) {
+            promise.resolve("unavailable")
+        }
     }
 
     // ── Listeners → events ──────────────────────────────────────────────────────
@@ -447,12 +534,16 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun addListener(eventName: String) {
-        // Required for NativeEventEmitter
+        guard(null) {
+            // Required for NativeEventEmitter
+        }
     }
 
     @ReactMethod
     fun removeListeners(count: Int) {
-        // Required for NativeEventEmitter
+        guard(null) {
+            // Required for NativeEventEmitter
+        }
     }
 
     override fun invalidate() {

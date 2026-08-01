@@ -69,6 +69,14 @@ export abstract class SimulaBaseAd {
     adUnitId: string,
     idPrefix: string,
   ) {
+    // Runtime guard (TS types are erased at runtime): a missing/invalid placement
+    // id — e.g. from an untyped remote config — would otherwise cross the bridge
+    // as null and trap the native module instead of failing loudly here.
+    if (typeof adUnitId !== "string" || adUnitId.trim() === "") {
+      throw new TypeError(
+        `Simula ${adType} ad requires a non-empty string adUnitId (received ${typeof adUnitId}).`,
+      );
+    }
     this.adType = adType;
     this.adUnitId = adUnitId;
     this.instanceId = nextInstanceId(idPrefix);

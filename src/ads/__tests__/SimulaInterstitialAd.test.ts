@@ -161,3 +161,24 @@ describe("SimulaRewardedAd", () => {
     ad.destroy();
   });
 });
+
+describe("adUnitId runtime validation", () => {
+  it("create() throws a TypeError for a missing/invalid adUnitId before any native call", () => {
+    expect(() =>
+      SimulaInterstitialAd.create(undefined as unknown as string),
+    ).toThrow(TypeError);
+    expect(() => SimulaInterstitialAd.create("" as string)).toThrow(TypeError);
+    expect(() => SimulaInterstitialAd.create("   ")).toThrow(TypeError);
+    expect(() =>
+      SimulaInterstitialAd.create(42 as unknown as string),
+    ).toThrow(TypeError);
+    expect(native.createInterstitial).not.toHaveBeenCalled();
+  });
+
+  it("rewarded create() validates the same way", () => {
+    expect(() =>
+      SimulaRewardedAd.create(null as unknown as string),
+    ).toThrow(TypeError);
+    expect(native.createRewarded).not.toHaveBeenCalled();
+  });
+});

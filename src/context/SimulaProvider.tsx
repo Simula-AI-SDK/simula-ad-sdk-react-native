@@ -12,6 +12,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef } from "re
 import { SimulaProviderProps, SimulaContextValue } from "../types";
 import { SimulaAds } from "../ads/SimulaAds";
 import { SimulaPrivacy } from "../privacy/SimulaPrivacy";
+import { safeStringify } from "../internal/safeStringify";
 
 const SimulaContext = createContext<SimulaContextValue | null>(null);
 
@@ -41,10 +42,10 @@ export function SimulaProvider({
 
   // Stable identity for the (otherwise inline) privacy object so the effects below
   // re-run only on a real consent change, not on every render.
-  const privacyKey = useMemo(() => JSON.stringify(privacy ?? null), [privacy]);
+  const privacyKey = useMemo(() => safeStringify(privacy ?? null), [privacy]);
   // Same, for the ad-targeting context.
   const adContextKey = useMemo(
-    () => JSON.stringify(adContext ?? null),
+    () => safeStringify(adContext ?? null),
     [adContext],
   );
 

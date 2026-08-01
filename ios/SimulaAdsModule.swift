@@ -195,11 +195,16 @@ class SimulaAdsModule: RCTEventEmitter {
     /// Read-only frequency-cap check. Resolves `true` when the cap is reached;
     /// `false` when eligible, pre-init, or on any failure (the SDK fails open).
     @objc
-    func checkFrequencyCap(_ adUnitId: NSString,
+    func checkFrequencyCap(_ adUnitId: NSString?,
                            primaryUserID: NSString?,
                            resolve: @escaping RCTPromiseResolveBlock,
                            reject: @escaping RCTPromiseRejectBlock) {
-        let unitId = adUnitId as String
+        // Host-supplied string (TS types are erased at runtime): JS null/undefined would
+        // bridge to nil and trap a non-optional param — reject instead (Android parity).
+        guard let unitId = adUnitId as String?, !unitId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            reject("INVALID_CONFIG", "adUnitId must be a non-empty string", nil)
+            return
+        }
         // Match Android (`isNotBlank`): a blank id is treated as omitted so the SDK
         // falls back to its current PPID — same JS call, same result on both platforms.
         let ppid = (primaryUserID as String?).flatMap {
@@ -236,9 +241,14 @@ class SimulaAdsModule: RCTEventEmitter {
     }
 
     @objc
-    func destroyPreloadedAd(_ preloadedAdId: NSString) {
+    func destroyPreloadedAd(_ preloadedAdId: NSString?) {
+        // Host-supplied string: nil would trap a non-optional param (see checkFrequencyCap).
+        guard let preloadedAdId = preloadedAdId as String?, !preloadedAdId.isEmpty else {
+            NSLog("[SimulaAds] destroyPreloadedAd ignored: preloadedAdId must be a non-empty string")
+            return
+        }
         runOnMain {
-            SimulaAds.destroyPreloadedAd(preloadedAdId as String)
+            SimulaAds.destroyPreloadedAd(preloadedAdId)
         }
     }
 
@@ -283,7 +293,13 @@ class SimulaAdsModule: RCTEventEmitter {
     // MARK: - Create / destroy
 
     @objc
-    func createInterstitial(_ instanceId: String, adUnitId: String) {
+    func createInterstitial(_ instanceId: String, adUnitId: String?) {
+        // Host-supplied string (TS types are erased): JS null/undefined would trap a
+        // non-optional param — skip with a log instead (the JS wrapper validates loudly).
+        guard let adUnitId = adUnitId, !adUnitId.isEmpty else {
+            NSLog("[SimulaAds] createInterstitial ignored: adUnitId must be a non-empty string")
+            return
+        }
         runOnMain {
             // This hop may have been enqueued behind invalidate's sync teardown (see
             // didInvalidate) — never recreate ads on a dead bridge.
@@ -296,7 +312,12 @@ class SimulaAdsModule: RCTEventEmitter {
     }
 
     @objc
-    func createRewarded(_ instanceId: String, adUnitId: String) {
+    func createRewarded(_ instanceId: String, adUnitId: String?) {
+        // See createInterstitial.
+        guard let adUnitId = adUnitId, !adUnitId.isEmpty else {
+            NSLog("[SimulaAds] createRewarded ignored: adUnitId must be a non-empty string")
+            return
+        }
         runOnMain {
             // See createInterstitial / didInvalidate.
             guard !self.didInvalidate else { return }

@@ -119,6 +119,13 @@ export const SimulaAds = {
       warnAdsUnavailable("checkFrequencyCap");
       return false;
     }
+    // Runtime guard (TS types are erased): an invalid id must fail loudly in JS,
+    // not trap the native bridge.
+    if (typeof adUnitId !== "string" || adUnitId.trim() === "") {
+      throw new TypeError(
+        `SimulaAds.checkFrequencyCap requires a non-empty string adUnitId (received ${typeof adUnitId}).`,
+      );
+    }
     // Fail open on an unexpected bridge rejection too — a transport/bridge
     // hiccup must never hide a surface that would otherwise have served.
     return NativeAds!.checkFrequencyCap(adUnitId, primaryUserID ?? null).catch(
@@ -152,6 +159,13 @@ export const SimulaAds = {
   /** Release a preloaded native ad that was never consumed (cancels an in-flight request). */
   destroyPreloadedAd(preloadedAdId: string): void {
     if (!isAdsModuleAvailable()) return warnAdsUnavailable("destroyPreloadedAd");
+    // Runtime guard (TS types are erased): an invalid id must fail loudly in JS,
+    // not trap the native bridge.
+    if (typeof preloadedAdId !== "string" || preloadedAdId.trim() === "") {
+      throw new TypeError(
+        `SimulaAds.destroyPreloadedAd requires a non-empty string preloadedAdId (received ${typeof preloadedAdId}).`,
+      );
+    }
     NativeAds!.destroyPreloadedAd(preloadedAdId);
   },
 

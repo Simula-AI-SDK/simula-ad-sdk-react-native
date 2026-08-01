@@ -2,6 +2,7 @@ package com.simulaads.reactnative
 
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -42,6 +43,32 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     override fun getName(): String = "SimulaMiniGameModule"
 
+    private companion object {
+        const val TAG = "SimulaMiniGameModule"
+    }
+
+    // ── Crash barrier ─────────────────────────────────────────────────────────
+    //
+    // Every @ReactMethod body runs inside this guard. A mistyped or null host prop
+    // throws inside the bridge (typed ReadableMap reads), and without a catch the
+    // exception escapes on the NativeModules thread and kills the host process —
+    // iOS coerces the same payloads with `as?` and never throws, so these arrive
+    // as Android-only crash reports. Reject the promise (or log for the
+    // fire-and-forget methods) instead of crashing. `inline` so `return` /
+    // `return@guard` inside method bodies keep their original meaning.
+
+    private inline fun guard(promise: Promise?, block: () -> Unit) {
+        try {
+            block()
+        } catch (t: Throwable) {
+            if (promise != null) {
+                promise.reject("ERR_SIMULA_BRIDGE", t)
+            } else {
+                Log.w(TAG, "SimulaMiniGameModule call failed", t)
+            }
+        }
+    }
+
     // ── Menu state ──────────────────────────────────────────────────────
     private var menuComposeView: ComposeView? = null
     private var isMenuOpen by mutableStateOf(false)
@@ -66,86 +93,89 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun showMiniGameMenu(props: ReadableMap, promise: Promise) {
-        val activity = reactApplicationContext.currentActivity
-        if (activity == null) {
-            promise.reject("NO_ACTIVITY", "No current activity")
-            return
-        }
-
-        val apiKey = props.getString("apiKey")
-        val charName = props.getString("charName")
-        val charID = props.getString("charID")
-        if (apiKey == null || charName == null || charID == null) {
-            promise.reject("INVALID_PROPS", "Missing required props: apiKey, charName, or charID")
-            return
-        }
-        val charImage = props.getString("charImage") ?: ""
-        val charDesc = props.getStringOrNull("charDesc")
-        val delegateChar = if (props.hasKey("delegateChar")) props.getBoolean("delegateChar") else true
-        val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
-            props.getBoolean("hasPrivacyConsent") else true
-        val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
-        val primaryUserID = props.getStringOrNull("primaryUserID")
-        // Coerce to one of the supported values (parity with iOS convertMaxGamesToShow).
-        val maxGamesToShow = when (
-            if (props.hasKey("maxGamesToShow") && !props.isNull("maxGamesToShow"))
-                props.getInt("maxGamesToShow") else 6
-        ) {
-            3 -> 3
-            9 -> 9
-            else -> 6
-        }
-
-        val messages = if (props.hasKey("messages") && !props.isNull("messages"))
-            convertMessages(props.getArray("messages")) else emptyList()
-        val theme = if (props.hasKey("theme") && !props.isNull("theme"))
-            convertTheme(props.getMap("theme")) else MiniGameTheme()
-
-        activity.runOnUiThread {
-            removeComposeView(menuComposeView)
-
-            isMenuOpen = true
-
-            val view = ComposeView(activity).apply {
-                setContent {
-                    SimulaProvider(
-                        apiKey = apiKey,
-                        hasPrivacyConsent = hasPrivacyConsent,
-                        devMode = devMode,
-                        primaryUserID = primaryUserID,
-                    ) {
-                        MiniGameMenu(
-                            isOpen = isMenuOpen,
-                            onClose = {
-                                isMenuOpen = false
-                                activity.runOnUiThread { removeComposeView(menuComposeView); menuComposeView = null }
-                                sendEvent("onMiniGameMenuClose", null)
-                            },
-                            charName = charName,
-                            charID = charID,
-                            charImage = charImage,
-                            messages = messages,
-                            charDesc = charDesc,
-                            maxGamesToShow = maxGamesToShow,
-                            theme = theme,
-                            delegateChar = delegateChar,
-                        )
-                    }
-                }
+        guard(promise) {
+            val activity = reactApplicationContext.currentActivity
+            if (activity == null) {
+                promise.reject("NO_ACTIVITY", "No current activity")
+                return@guard
             }
 
-            menuComposeView = view
-            addOverlay(activity, view)
-            promise.resolve(null)
+            val apiKey = props.getString("apiKey")
+            val charName = props.getString("charName")
+            val charID = props.getString("charID")
+            if (apiKey == null || charName == null || charID == null) {
+                promise.reject("INVALID_PROPS", "Missing required props: apiKey, charName, or charID")
+                return@guard
+            }
+            val charImage = props.getString("charImage") ?: ""
+            val charDesc = props.getStringOrNull("charDesc")
+            val delegateChar = props.getBooleanOrNull("delegateChar") ?: true
+            val hasPrivacyConsent = props.getBooleanOrNull("hasPrivacyConsent") ?: true
+            val devMode = props.getBooleanOrNull("devMode") ?: false
+            val primaryUserID = props.getStringOrNull("primaryUserID")
+            // Coerce to one of the supported values (parity with iOS convertMaxGamesToShow).
+            val maxGamesToShow = when (
+                if (props.hasKey("maxGamesToShow") && !props.isNull("maxGamesToShow"))
+                    props.getInt("maxGamesToShow") else 6
+            ) {
+                3 -> 3
+                9 -> 9
+                else -> 6
+            }
+
+            val messages = if (props.hasKey("messages") && !props.isNull("messages"))
+                convertMessages(props.getArray("messages")) else emptyList()
+            val theme = if (props.hasKey("theme") && !props.isNull("theme"))
+                convertTheme(props.getMap("theme")) else MiniGameTheme()
+
+            activity.runOnUiThread {
+                removeComposeView(menuComposeView)
+
+                isMenuOpen = true
+
+                val view = ComposeView(activity).apply {
+                    setContent {
+                        SimulaProvider(
+                            apiKey = apiKey,
+                            hasPrivacyConsent = hasPrivacyConsent,
+                            devMode = devMode,
+                            primaryUserID = primaryUserID,
+                        ) {
+                            MiniGameMenu(
+                                isOpen = isMenuOpen,
+                                onClose = {
+                                    isMenuOpen = false
+                                    activity.runOnUiThread { removeComposeView(menuComposeView); menuComposeView = null }
+                                    sendEvent("onMiniGameMenuClose", null)
+                                },
+                                charName = charName,
+                                charID = charID,
+                                charImage = charImage,
+                                messages = messages,
+                                charDesc = charDesc,
+                                maxGamesToShow = maxGamesToShow,
+                                theme = theme,
+                                delegateChar = delegateChar,
+                            )
+                        }
+                    }
+                }
+
+                menuComposeView = view
+                addOverlay(activity, view)
+                promise.resolve(null)
+            }
         }
     }
 
     @ReactMethod
     fun hideMiniGameMenu() {
-        reactApplicationContext.currentActivity?.runOnUiThread {
-            isMenuOpen = false
-            removeComposeView(menuComposeView)
-            menuComposeView = null
+        guard(null) {
+            reactApplicationContext.currentActivity?.runOnUiThread {
+                isMenuOpen = false
+                removeComposeView(menuComposeView)
+                menuComposeView = null
+            }
         }
     }
 
@@ -155,65 +185,68 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun showMiniGameButton(props: ReadableMap, promise: Promise) {
-        val activity = reactApplicationContext.currentActivity
-        if (activity == null) {
-            promise.reject("NO_ACTIVITY", "No current activity")
-            return
-        }
-
-        val apiKey = props.getString("apiKey")
-        if (apiKey == null) {
-            promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
-            return
-        }
-        val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
-            props.getBoolean("hasPrivacyConsent") else true
-        val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
-        val primaryUserID = props.getStringOrNull("primaryUserID")
-
-        val text = props.getStringOrNull("text")
-        val showPulsate = if (props.hasKey("showPulsate")) props.getBoolean("showPulsate") else false
-        val showBadge = if (props.hasKey("showBadge")) props.getBoolean("showBadge") else false
-        val theme = if (props.hasKey("theme") && !props.isNull("theme"))
-            convertButtonTheme(props.getMap("theme")) else MiniGameButtonTheme()
-        val width = props.getDimensionOrNull("width")
-
-        activity.runOnUiThread {
-            removeComposeView(buttonComposeView)
-
-            val view = ComposeView(activity).apply {
-                setContent {
-                    SimulaProvider(
-                        apiKey = apiKey,
-                        hasPrivacyConsent = hasPrivacyConsent,
-                        devMode = devMode,
-                        primaryUserID = primaryUserID,
-                    ) {
-                        MiniGameButton(
-                            text = text,
-                            showPulsate = showPulsate,
-                            showBadge = showBadge,
-                            theme = theme,
-                            width = width,
-                            onClick = {
-                                sendEvent("onMiniGameButtonClick", null)
-                            },
-                        )
-                    }
-                }
+        guard(promise) {
+            val activity = reactApplicationContext.currentActivity
+            if (activity == null) {
+                promise.reject("NO_ACTIVITY", "No current activity")
+                return@guard
             }
 
-            buttonComposeView = view
-            addOverlay(activity, view)
-            promise.resolve(null)
+            val apiKey = props.getString("apiKey")
+            if (apiKey == null) {
+                promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
+                return@guard
+            }
+            val hasPrivacyConsent = props.getBooleanOrNull("hasPrivacyConsent") ?: true
+            val devMode = props.getBooleanOrNull("devMode") ?: false
+            val primaryUserID = props.getStringOrNull("primaryUserID")
+
+            val text = props.getStringOrNull("text")
+            val showPulsate = props.getBooleanOrNull("showPulsate") ?: false
+            val showBadge = props.getBooleanOrNull("showBadge") ?: false
+            val theme = if (props.hasKey("theme") && !props.isNull("theme"))
+                convertButtonTheme(props.getMap("theme")) else MiniGameButtonTheme()
+            val width = props.getDimensionOrNull("width")
+
+            activity.runOnUiThread {
+                removeComposeView(buttonComposeView)
+
+                val view = ComposeView(activity).apply {
+                    setContent {
+                        SimulaProvider(
+                            apiKey = apiKey,
+                            hasPrivacyConsent = hasPrivacyConsent,
+                            devMode = devMode,
+                            primaryUserID = primaryUserID,
+                        ) {
+                            MiniGameButton(
+                                text = text,
+                                showPulsate = showPulsate,
+                                showBadge = showBadge,
+                                theme = theme,
+                                width = width,
+                                onClick = {
+                                    sendEvent("onMiniGameButtonClick", null)
+                                },
+                            )
+                        }
+                    }
+                }
+
+                buttonComposeView = view
+                addOverlay(activity, view)
+                promise.resolve(null)
+            }
         }
     }
 
     @ReactMethod
     fun hideMiniGameButton() {
-        reactApplicationContext.currentActivity?.runOnUiThread {
-            removeComposeView(buttonComposeView)
-            buttonComposeView = null
+        guard(null) {
+            reactApplicationContext.currentActivity?.runOnUiThread {
+                removeComposeView(buttonComposeView)
+                buttonComposeView = null
+            }
         }
     }
 
@@ -223,92 +256,95 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun showMiniGameInvitation(props: ReadableMap, promise: Promise) {
-        val activity = reactApplicationContext.currentActivity
-        if (activity == null) {
-            promise.reject("NO_ACTIVITY", "No current activity")
-            return
-        }
-
-        val apiKey = props.getString("apiKey")
-        if (apiKey == null) {
-            promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
-            return
-        }
-        val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
-            props.getBoolean("hasPrivacyConsent") else true
-        val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
-        val primaryUserID = props.getStringOrNull("primaryUserID")
-
-        val titleText = props.getStringOrNull("titleText") ?: "Want to play a game?"
-        val subText = props.getStringOrNull("subText") ?: "Take a break and challenge yourself!"
-        val ctaText = props.getStringOrNull("ctaText") ?: "Play a Game"
-        val charImage = props.getString("charImage")
-        if (charImage == null) {
-            promise.reject("INVALID_PROPS", "Missing required prop: charImage")
-            return
-        }
-        val animation = if (props.hasKey("animation") && !props.isNull("animation"))
-            MiniGameInvitationAnimation.fromString(props.getString("animation") ?: "auto")
-            else MiniGameInvitationAnimation.AUTO
-        val theme = if (props.hasKey("theme") && !props.isNull("theme"))
-            convertInvitationTheme(props.getMap("theme")) else MiniGameInvitationTheme()
-        val autoCloseDuration = if (props.hasKey("autoCloseDuration") && !props.isNull("autoCloseDuration"))
-            props.getDouble("autoCloseDuration").toLong() else null
-        val width = props.getDimensionOrNull("width")
-        val top = props.getDimensionOrNull("top")
-
-        activity.runOnUiThread {
-            removeComposeView(invitationComposeView)
-
-            isInvitationOpen = true
-
-            val view = ComposeView(activity).apply {
-                setContent {
-                    SimulaProvider(
-                        apiKey = apiKey,
-                        hasPrivacyConsent = hasPrivacyConsent,
-                        devMode = devMode,
-                        primaryUserID = primaryUserID,
-                    ) {
-                        MiniGameInvitation(
-                            titleText = titleText,
-                            subText = subText,
-                            ctaText = ctaText,
-                            charImage = charImage,
-                            animation = animation,
-                            theme = theme,
-                            isOpen = isInvitationOpen,
-                            autoCloseDuration = autoCloseDuration,
-                            width = width,
-                            top = top,
-                            onClick = {
-                                sendEvent("onMiniGameInvitationClick", null)
-                            },
-                            onClose = {
-                                isInvitationOpen = false
-                                activity.runOnUiThread {
-                                    removeComposeView(invitationComposeView)
-                                    invitationComposeView = null
-                                }
-                                sendEvent("onMiniGameInvitationClose", null)
-                            },
-                        )
-                    }
-                }
+        guard(promise) {
+            val activity = reactApplicationContext.currentActivity
+            if (activity == null) {
+                promise.reject("NO_ACTIVITY", "No current activity")
+                return@guard
             }
 
-            invitationComposeView = view
-            addOverlay(activity, view)
-            promise.resolve(null)
+            val apiKey = props.getString("apiKey")
+            if (apiKey == null) {
+                promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
+                return@guard
+            }
+            val hasPrivacyConsent = props.getBooleanOrNull("hasPrivacyConsent") ?: true
+            val devMode = props.getBooleanOrNull("devMode") ?: false
+            val primaryUserID = props.getStringOrNull("primaryUserID")
+
+            val titleText = props.getStringOrNull("titleText") ?: "Want to play a game?"
+            val subText = props.getStringOrNull("subText") ?: "Take a break and challenge yourself!"
+            val ctaText = props.getStringOrNull("ctaText") ?: "Play a Game"
+            val charImage = props.getString("charImage")
+            if (charImage == null) {
+                promise.reject("INVALID_PROPS", "Missing required prop: charImage")
+                return@guard
+            }
+            val animation = if (props.hasKey("animation") && !props.isNull("animation"))
+                MiniGameInvitationAnimation.fromString(props.getString("animation") ?: "auto")
+                else MiniGameInvitationAnimation.AUTO
+            val theme = if (props.hasKey("theme") && !props.isNull("theme"))
+                convertInvitationTheme(props.getMap("theme")) else MiniGameInvitationTheme()
+            val autoCloseDuration = if (props.hasKey("autoCloseDuration") && !props.isNull("autoCloseDuration"))
+                props.getDouble("autoCloseDuration").toLong() else null
+            val width = props.getDimensionOrNull("width")
+            val top = props.getDimensionOrNull("top")
+
+            activity.runOnUiThread {
+                removeComposeView(invitationComposeView)
+
+                isInvitationOpen = true
+
+                val view = ComposeView(activity).apply {
+                    setContent {
+                        SimulaProvider(
+                            apiKey = apiKey,
+                            hasPrivacyConsent = hasPrivacyConsent,
+                            devMode = devMode,
+                            primaryUserID = primaryUserID,
+                        ) {
+                            MiniGameInvitation(
+                                titleText = titleText,
+                                subText = subText,
+                                ctaText = ctaText,
+                                charImage = charImage,
+                                animation = animation,
+                                theme = theme,
+                                isOpen = isInvitationOpen,
+                                autoCloseDuration = autoCloseDuration,
+                                width = width,
+                                top = top,
+                                onClick = {
+                                    sendEvent("onMiniGameInvitationClick", null)
+                                },
+                                onClose = {
+                                    isInvitationOpen = false
+                                    activity.runOnUiThread {
+                                        removeComposeView(invitationComposeView)
+                                        invitationComposeView = null
+                                    }
+                                    sendEvent("onMiniGameInvitationClose", null)
+                                },
+                            )
+                        }
+                    }
+                }
+
+                invitationComposeView = view
+                addOverlay(activity, view)
+                promise.resolve(null)
+            }
         }
     }
 
     @ReactMethod
     fun hideMiniGameInvitation() {
-        reactApplicationContext.currentActivity?.runOnUiThread {
-            isInvitationOpen = false
-            removeComposeView(invitationComposeView)
-            invitationComposeView = null
+        guard(null) {
+            reactApplicationContext.currentActivity?.runOnUiThread {
+                isInvitationOpen = false
+                removeComposeView(invitationComposeView)
+                invitationComposeView = null
+            }
         }
     }
 
@@ -318,81 +354,84 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun showMiniGameInterstitial(props: ReadableMap, promise: Promise) {
-        val activity = reactApplicationContext.currentActivity
-        if (activity == null) {
-            promise.reject("NO_ACTIVITY", "No current activity")
-            return
-        }
-
-        val apiKey = props.getString("apiKey")
-        if (apiKey == null) {
-            promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
-            return
-        }
-        val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
-            props.getBoolean("hasPrivacyConsent") else true
-        val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
-        val primaryUserID = props.getStringOrNull("primaryUserID")
-
-        val charImage = props.getString("charImage")
-        if (charImage == null) {
-            promise.reject("INVALID_PROPS", "Missing required prop: charImage")
-            return
-        }
-        val invitationText = props.getStringOrNull("invitationText") ?: "Want to play a game?"
-        val ctaText = props.getStringOrNull("ctaText") ?: "Play a Game"
-        val backgroundImage = props.getStringOrNull("backgroundImage")
-        val theme = if (props.hasKey("theme") && !props.isNull("theme"))
-            convertInterstitialTheme(props.getMap("theme")) else MiniGameInterstitialTheme()
-
-        activity.runOnUiThread {
-            removeComposeView(interstitialComposeView)
-
-            isInterstitialOpen = true
-
-            val view = ComposeView(activity).apply {
-                setContent {
-                    SimulaProvider(
-                        apiKey = apiKey,
-                        hasPrivacyConsent = hasPrivacyConsent,
-                        devMode = devMode,
-                        primaryUserID = primaryUserID,
-                    ) {
-                        MiniGameInterstitial(
-                            charImage = charImage,
-                            invitationText = invitationText,
-                            ctaText = ctaText,
-                            backgroundImage = backgroundImage,
-                            theme = theme,
-                            isOpen = isInterstitialOpen,
-                            onClick = {
-                                sendEvent("onMiniGameInterstitialClick", null)
-                            },
-                            onClose = {
-                                isInterstitialOpen = false
-                                activity.runOnUiThread {
-                                    removeComposeView(interstitialComposeView)
-                                    interstitialComposeView = null
-                                }
-                                sendEvent("onMiniGameInterstitialClose", null)
-                            },
-                        )
-                    }
-                }
+        guard(promise) {
+            val activity = reactApplicationContext.currentActivity
+            if (activity == null) {
+                promise.reject("NO_ACTIVITY", "No current activity")
+                return@guard
             }
 
-            interstitialComposeView = view
-            addOverlay(activity, view)
-            promise.resolve(null)
+            val apiKey = props.getString("apiKey")
+            if (apiKey == null) {
+                promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
+                return@guard
+            }
+            val hasPrivacyConsent = props.getBooleanOrNull("hasPrivacyConsent") ?: true
+            val devMode = props.getBooleanOrNull("devMode") ?: false
+            val primaryUserID = props.getStringOrNull("primaryUserID")
+
+            val charImage = props.getString("charImage")
+            if (charImage == null) {
+                promise.reject("INVALID_PROPS", "Missing required prop: charImage")
+                return@guard
+            }
+            val invitationText = props.getStringOrNull("invitationText") ?: "Want to play a game?"
+            val ctaText = props.getStringOrNull("ctaText") ?: "Play a Game"
+            val backgroundImage = props.getStringOrNull("backgroundImage")
+            val theme = if (props.hasKey("theme") && !props.isNull("theme"))
+                convertInterstitialTheme(props.getMap("theme")) else MiniGameInterstitialTheme()
+
+            activity.runOnUiThread {
+                removeComposeView(interstitialComposeView)
+
+                isInterstitialOpen = true
+
+                val view = ComposeView(activity).apply {
+                    setContent {
+                        SimulaProvider(
+                            apiKey = apiKey,
+                            hasPrivacyConsent = hasPrivacyConsent,
+                            devMode = devMode,
+                            primaryUserID = primaryUserID,
+                        ) {
+                            MiniGameInterstitial(
+                                charImage = charImage,
+                                invitationText = invitationText,
+                                ctaText = ctaText,
+                                backgroundImage = backgroundImage,
+                                theme = theme,
+                                isOpen = isInterstitialOpen,
+                                onClick = {
+                                    sendEvent("onMiniGameInterstitialClick", null)
+                                },
+                                onClose = {
+                                    isInterstitialOpen = false
+                                    activity.runOnUiThread {
+                                        removeComposeView(interstitialComposeView)
+                                        interstitialComposeView = null
+                                    }
+                                    sendEvent("onMiniGameInterstitialClose", null)
+                                },
+                            )
+                        }
+                    }
+                }
+
+                interstitialComposeView = view
+                addOverlay(activity, view)
+                promise.resolve(null)
+            }
         }
     }
 
     @ReactMethod
     fun hideMiniGameInterstitial() {
-        reactApplicationContext.currentActivity?.runOnUiThread {
-            isInterstitialOpen = false
-            removeComposeView(interstitialComposeView)
-            interstitialComposeView = null
+        guard(null) {
+            reactApplicationContext.currentActivity?.runOnUiThread {
+                isInterstitialOpen = false
+                removeComposeView(interstitialComposeView)
+                interstitialComposeView = null
+            }
         }
     }
 
@@ -408,24 +447,25 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
      */
     @ReactMethod
     fun preload(props: ReadableMap, promise: Promise) {
-        val apiKey = props.getString("apiKey")
-        if (apiKey.isNullOrBlank()) {
-            promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
-            return
-        }
-        val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
-        val primaryUserID = props.getStringOrNull("primaryUserID")
-        val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
-            props.getBoolean("hasPrivacyConsent") else true
+        guard(promise) {
+            val apiKey = props.getString("apiKey")
+            if (apiKey.isNullOrBlank()) {
+                promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
+                return@guard
+            }
+            val devMode = props.getBooleanOrNull("devMode") ?: false
+            val primaryUserID = props.getStringOrNull("primaryUserID")
+            val hasPrivacyConsent = props.getBooleanOrNull("hasPrivacyConsent") ?: true
 
-        SimulaAds.initialize(
-            context = reactApplicationContext,
-            apiKey = apiKey,
-            devMode = devMode,
-            primaryUserID = primaryUserID,
-            hasPrivacyConsent = hasPrivacyConsent,
-        )
-        promise.resolve(null)
+            SimulaAds.initialize(
+                context = reactApplicationContext,
+                apiKey = apiKey,
+                devMode = devMode,
+                primaryUserID = primaryUserID,
+                hasPrivacyConsent = hasPrivacyConsent,
+            )
+            promise.resolve(null)
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -438,84 +478,87 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun showCharacterSelector(props: ReadableMap, promise: Promise) {
-        val activity = reactApplicationContext.currentActivity
-        if (activity == null) {
-            promise.reject("NO_ACTIVITY", "No current activity")
-            return
-        }
-        val apiKey = props.getString("apiKey")
-        if (apiKey == null) {
-            promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
-            return
-        }
-        val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
-            props.getBoolean("hasPrivacyConsent") else true
-        val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
-        val primaryUserID = props.getStringOrNull("primaryUserID")
-        val title = props.getStringOrNull("title") ?: "Select Your Game Partner"
-        val ctaText = props.getStringOrNull("ctaText") ?: "🚀 Launch Game"
-        val characters = convertCharacters(
-            if (props.hasKey("characters") && !props.isNull("characters"))
-                props.getArray("characters") else null,
-        )
-        val theme = if (props.hasKey("theme") && !props.isNull("theme"))
-            convertCharacterSelectorTheme(props.getMap("theme")) else CharacterSelectorTheme()
+        guard(promise) {
+            val activity = reactApplicationContext.currentActivity
+            if (activity == null) {
+                promise.reject("NO_ACTIVITY", "No current activity")
+                return@guard
+            }
+            val apiKey = props.getString("apiKey")
+            if (apiKey == null) {
+                promise.reject("INVALID_PROPS", "Missing required prop: apiKey")
+                return@guard
+            }
+            val hasPrivacyConsent = props.getBooleanOrNull("hasPrivacyConsent") ?: true
+            val devMode = props.getBooleanOrNull("devMode") ?: false
+            val primaryUserID = props.getStringOrNull("primaryUserID")
+            val title = props.getStringOrNull("title") ?: "Select Your Game Partner"
+            val ctaText = props.getStringOrNull("ctaText") ?: "🚀 Launch Game"
+            val characters = convertCharacters(
+                if (props.hasKey("characters") && !props.isNull("characters"))
+                    props.getArray("characters") else null,
+            )
+            val theme = if (props.hasKey("theme") && !props.isNull("theme"))
+                convertCharacterSelectorTheme(props.getMap("theme")) else CharacterSelectorTheme()
 
-        activity.runOnUiThread {
-            removeComposeView(characterSelectorComposeView)
-            isCharacterSelectorOpen = true
+            activity.runOnUiThread {
+                removeComposeView(characterSelectorComposeView)
+                isCharacterSelectorOpen = true
 
-            val view = ComposeView(activity).apply {
-                setContent {
-                    SimulaProvider(
-                        apiKey = apiKey,
-                        hasPrivacyConsent = hasPrivacyConsent,
-                        devMode = devMode,
-                        primaryUserID = primaryUserID,
-                    ) {
-                        CharacterSelector(
-                            isOpen = isCharacterSelectorOpen,
-                            onClose = {
-                                isCharacterSelectorOpen = false
-                                activity.runOnUiThread {
-                                    removeComposeView(characterSelectorComposeView)
-                                    characterSelectorComposeView = null
-                                }
-                                sendEvent("onCharacterSelectorClose", null)
-                            },
-                            onCharacterSelected = { character ->
-                                // Selection closes the selector.
-                                isCharacterSelectorOpen = false
-                                activity.runOnUiThread {
-                                    removeComposeView(characterSelectorComposeView)
-                                    characterSelectorComposeView = null
-                                }
-                                sendEvent("onCharacterSelectorSelect", characterToMap(character))
-                            },
-                            onCharacterPreview = { character ->
-                                sendEvent("onCharacterSelectorPreview", characterToMap(character))
-                            },
-                            title = title,
-                            ctaText = ctaText,
-                            characters = characters,
-                            theme = theme,
-                        )
+                val view = ComposeView(activity).apply {
+                    setContent {
+                        SimulaProvider(
+                            apiKey = apiKey,
+                            hasPrivacyConsent = hasPrivacyConsent,
+                            devMode = devMode,
+                            primaryUserID = primaryUserID,
+                        ) {
+                            CharacterSelector(
+                                isOpen = isCharacterSelectorOpen,
+                                onClose = {
+                                    isCharacterSelectorOpen = false
+                                    activity.runOnUiThread {
+                                        removeComposeView(characterSelectorComposeView)
+                                        characterSelectorComposeView = null
+                                    }
+                                    sendEvent("onCharacterSelectorClose", null)
+                                },
+                                onCharacterSelected = { character ->
+                                    // Selection closes the selector.
+                                    isCharacterSelectorOpen = false
+                                    activity.runOnUiThread {
+                                        removeComposeView(characterSelectorComposeView)
+                                        characterSelectorComposeView = null
+                                    }
+                                    sendEvent("onCharacterSelectorSelect", characterToMap(character))
+                                },
+                                onCharacterPreview = { character ->
+                                    sendEvent("onCharacterSelectorPreview", characterToMap(character))
+                                },
+                                title = title,
+                                ctaText = ctaText,
+                                characters = characters,
+                                theme = theme,
+                            )
+                        }
                     }
                 }
-            }
 
-            characterSelectorComposeView = view
-            addOverlay(activity, view)
-            promise.resolve(null)
+                characterSelectorComposeView = view
+                addOverlay(activity, view)
+                promise.resolve(null)
+            }
         }
     }
 
     @ReactMethod
     fun hideCharacterSelector() {
-        reactApplicationContext.currentActivity?.runOnUiThread {
-            isCharacterSelectorOpen = false
-            removeComposeView(characterSelectorComposeView)
-            characterSelectorComposeView = null
+        guard(null) {
+            reactApplicationContext.currentActivity?.runOnUiThread {
+                isCharacterSelectorOpen = false
+                removeComposeView(characterSelectorComposeView)
+                characterSelectorComposeView = null
+            }
         }
     }
 
@@ -680,6 +723,11 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         return if (hasKey(key) && !isNull(key)) getInt(key) else null
     }
 
+    /** Null-safe boolean read (mirrors the iOS `as? Bool` coercion): explicit JS null → null. */
+    private fun ReadableMap.getBooleanOrNull(key: String): Boolean? {
+        return if (hasKey(key) && !isNull(key)) getBoolean(key) else null
+    }
+
     private fun ReadableMap.getPlayableHeight(): Any? {
         if (!hasKey("playableHeight") || isNull("playableHeight")) return null
         return try {
@@ -749,11 +797,15 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun addListener(eventName: String) {
-        // Required for NativeEventEmitter
+        guard(null) {
+            // Required for NativeEventEmitter
+        }
     }
 
     @ReactMethod
     fun removeListeners(count: Int) {
-        // Required for NativeEventEmitter
+        guard(null) {
+            // Required for NativeEventEmitter
+        }
     }
 }
