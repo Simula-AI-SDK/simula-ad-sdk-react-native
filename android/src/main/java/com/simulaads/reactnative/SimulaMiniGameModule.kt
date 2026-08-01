@@ -2,7 +2,6 @@ package com.simulaads.reactnative
 
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -43,29 +42,23 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     override fun getName(): String = "SimulaMiniGameModule"
 
-    private companion object {
-        const val TAG = "SimulaMiniGameModule"
-    }
-
     // ── Crash barrier ─────────────────────────────────────────────────────────
     //
     // Every @ReactMethod body runs inside this guard. A mistyped or null host prop
     // throws inside the bridge (typed ReadableMap reads), and without a catch the
     // exception escapes on the NativeModules thread and kills the host process —
     // iOS coerces the same payloads with `as?` and never throws, so these arrive
-    // as Android-only crash reports. Reject the promise (or log for the
-    // fire-and-forget methods) instead of crashing. `inline` so `return` /
-    // `return@guard` inside method bodies keep their original meaning.
+    // as Android-only crash reports. Reject the promise so the JS layer surfaces
+    // the error. No console logging (rule): the RN bridge has no telemetry surface
+    // (the native facade is SDK-internal), so fire-and-forget methods fail
+    // silently here. `inline` so `return` / `return@guard` inside method bodies
+    // keep their original meaning.
 
     private inline fun guard(promise: Promise?, block: () -> Unit) {
         try {
             block()
         } catch (t: Throwable) {
-            if (promise != null) {
-                promise.reject("ERR_SIMULA_BRIDGE", t)
-            } else {
-                Log.w(TAG, "SimulaMiniGameModule call failed", t)
-            }
+            promise?.reject("ERR_SIMULA_BRIDGE", t)
         }
     }
 

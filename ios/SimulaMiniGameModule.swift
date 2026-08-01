@@ -644,8 +644,9 @@ class SimulaMiniGameModule: RCTEventEmitter {
     func preload(_ props: NSDictionary,
                  resolve: @escaping RCTPromiseResolveBlock,
                  reject: @escaping RCTPromiseRejectBlock) {
+        let once = SimulaOnceResolver(resolve: resolve, reject: reject)
         guard let apiKey = props["apiKey"] as? String else {
-            reject("INVALID_PROPS", "Missing required prop: apiKey", nil)
+            once.reject("INVALID_PROPS", "Missing required prop: apiKey", nil)
             return
         }
         let devMode = props["devMode"] as? Bool ?? false
@@ -677,7 +678,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
         // by the host's Xcode; the task lives inside the prebuilt SDK binary, SDK >= 1.1.4).
         MainActor.assumeIsolated { // methodQueue = .main
             provider.createSession {
-                resolve(nil)
+                once.resolve(nil)
             }
         }
     }

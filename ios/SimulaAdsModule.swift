@@ -29,14 +29,28 @@ class SimulaAdsModule: RCTEventEmitter {
 
     private static let eventName = "SimulaAds_onAdEvent"
 
-    private var hasListeners = false
+    /// Guards the two cross-thread flags below (written on `moduleQueue`, read on main).
+    /// Lock-guarded reads/writes only — never a main.sync on the observer/invalidate path:
+    /// RN blocks the JS thread (10 s cap) waiting for module invalidate, so a congested main
+    /// would freeze the JS thread (RN-2).
+    private let stateLock = NSLock()
+    private var _hasListeners = false
+    private var _didInvalidate = false
 
-    // Main-thread only. Set synchronously inside invalidate's main hop; checked by the
-    // create* blocks so a call whose async main hop lands AFTER teardown (its moduleQueue
-    // work was preempted before runOnMain could enqueue, letting invalidate's sync hop
-    // overtake it) can't recreate ad objects/delegates on a dead bridge. load/show/destroy
-    // then no-op on the already-empty entries map.
-    private var didInvalidate = false
+    /// JS has ≥1 event listener. Written on `moduleQueue` (observers), read on main (`canEmit`).
+    private var hasListeners: Bool {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _hasListeners }
+        set { stateLock.lock(); _hasListeners = newValue; stateLock.unlock() }
+    }
+
+    /// Set on `moduleQueue` (invalidate) the moment teardown begins; checked by the create*
+    /// blocks (on main) so a call whose async main hop lands AFTER teardown can't recreate ad
+    /// objects/delegates on a dead bridge. load/show/destroy then no-op on the already-empty
+    /// entries map.
+    private var didInvalidate: Bool {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _didInvalidate }
+        set { stateLock.lock(); _didInvalidate = newValue; stateLock.unlock() }
+    }
 
     // Retains each ad and its delegate proxy (the SDK `delegate` is weak). Keyed by
     // the JS-generated instanceId. Touched only on the main thread.
@@ -89,30 +103,23 @@ class SimulaAdsModule: RCTEventEmitter {
 
     override func supportedEvents() -> [String]! { [SimulaAdsModule.eventName] }
 
-    /// Runs `work` on the main thread SYNCHRONOUSLY (caller's semantics preserved). Only
-    /// safe because `moduleQueue` is never the main queue and nothing on main ever blocks
-    /// on it — the isMainThread fast path additionally guards a future main-thread call
-    /// site against a main.sync self-deadlock. `work` is @MainActor-isolated (so SDK calls
-    /// type-check) and non-async.
-    private func syncOnMain(_ work: @MainActor () -> Void) {
-        if Thread.isMainThread {
-            MainActor.assumeIsolated { work() }
-        } else {
-            DispatchQueue.main.sync {
-                MainActor.assumeIsolated { work() }
-            }
-        }
+    /// Runs `work` on the main thread WITHOUT ever trapping: synchronous when already main
+    /// (today's delegate-delivery timing, FIFO order preserved), an async hop otherwise.
+    /// Delegate events must degrade to a hop — never a release-mode `assumeIsolated` abort —
+    /// if the binary SDK ever delivers one off-main (RN-5).
+    private func enforceMain(_ work: () -> Void) {
+        if Thread.isMainThread { work() } else { DispatchQueue.main.async(execute: work) }
     }
 
     override func startObserving() {
-        // `hasListeners` is read on the main thread (canEmit). A SYNC set so the flag is
-        // updated before this method returns — an async hop could drop an event emitted
-        // right after JS subscribes.
-        syncOnMain { self.hasListeners = true }
+        // `hasListeners` is lock-guarded, so the flag is set before this method returns with
+        // NO main hop — an event emitted right after JS subscribes still can't be dropped,
+        // and the JS thread is never blocked on a congested main (RN-2).
+        hasListeners = true
     }
 
     override func stopObserving() {
-        syncOnMain { self.hasListeners = false }
+        hasListeners = false
     }
 
     /// Hop to the main thread for an @MainActor SDK touch. This file is compiled by the
@@ -126,13 +133,14 @@ class SimulaAdsModule: RCTEventEmitter {
     }
 
     override func invalidate() {
-        // Drop every ad + proxy BEFORE super.invalidate(), synchronously on the main thread —
-        // so no delegate proxy can fire an event into a tearing-down bridge (the guarantee
-        // the pre-moduleQueue code had when invalidate ran on main). The flag is set FIRST:
-        // a create* hop that loses the race to this block (enqueued behind it) bails on the
-        // flag instead of recreating entries behind the teardown.
-        syncOnMain {
-            self.didInvalidate = true
+        // Drop every ad + proxy BEFORE super.invalidate(). The flag is set FIRST, under the
+        // lock on THIS (module) queue — never via main.sync (RN-2): a create* hop that loses
+        // the race bails on the flag instead of recreating entries behind the teardown.
+        didInvalidate = true
+        // Teardown hops async (runOnMain): entries/proxies are main-confined, and a delegate
+        // proxy racing the window can't fire into a tearing-down bridge — stopObserving has
+        // already cleared hasListeners, so canEmit suppresses emissions in the gap.
+        runOnMain {
             for entry in self.entries.values {
                 entry.interstitial?.delegate = nil
                 entry.rewarded?.delegate = nil
@@ -199,10 +207,11 @@ class SimulaAdsModule: RCTEventEmitter {
                            primaryUserID: NSString?,
                            resolve: @escaping RCTPromiseResolveBlock,
                            reject: @escaping RCTPromiseRejectBlock) {
+        let once = SimulaOnceResolver(resolve: resolve, reject: reject)
         // Host-supplied string (TS types are erased at runtime): JS null/undefined would
         // bridge to nil and trap a non-optional param — reject instead (Android parity).
         guard let unitId = adUnitId as String?, !unitId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            reject("INVALID_CONFIG", "adUnitId must be a non-empty string", nil)
+            once.reject("INVALID_CONFIG", "adUnitId must be a non-empty string", nil)
             return
         }
         // Match Android (`isNotBlank`): a blank id is treated as omitted so the SDK
@@ -216,7 +225,7 @@ class SimulaAdsModule: RCTEventEmitter {
         // which is prebuilt with a pinned pre-regression toolchain (SDK >= 1.1.4).
         runOnMain {
             SimulaAds.checkFrequencyCap(adUnitId: unitId, primaryUserID: ppid) { capped in
-                resolve(capped)
+                once.resolve(capped)
             }
         }
     }
@@ -229,13 +238,14 @@ class SimulaAdsModule: RCTEventEmitter {
                          theme: NSString?,
                          resolve: @escaping RCTPromiseResolveBlock,
                          reject: @escaping RCTPromiseRejectBlock) {
+        let once = SimulaOnceResolver(resolve: resolve, reject: reject)
         let unitId = adUnitId as String?
         let pos = position.intValue
         let themeName = theme as String?
         // Completion-based SDK call — no bridge-created task (see checkFrequencyCap above).
         runOnMain {
             SimulaAds.preloadNativeAd(adUnitId: unitId, position: pos, theme: themeName) { preloadedAdId in
-                resolve(preloadedAdId)
+                once.resolve(preloadedAdId)
             }
         }
     }
@@ -243,10 +253,8 @@ class SimulaAdsModule: RCTEventEmitter {
     @objc
     func destroyPreloadedAd(_ preloadedAdId: NSString?) {
         // Host-supplied string: nil would trap a non-optional param (see checkFrequencyCap).
-        guard let preloadedAdId = preloadedAdId as String?, !preloadedAdId.isEmpty else {
-            NSLog("[SimulaAds] destroyPreloadedAd ignored: preloadedAdId must be a non-empty string")
-            return
-        }
+        // Silent no-op natively (no console logging) — the JS wrapper throws TypeError.
+        guard let preloadedAdId = preloadedAdId as String?, !preloadedAdId.isEmpty else { return }
         runOnMain {
             SimulaAds.destroyPreloadedAd(preloadedAdId)
         }
@@ -295,11 +303,9 @@ class SimulaAdsModule: RCTEventEmitter {
     @objc
     func createInterstitial(_ instanceId: String, adUnitId: String?) {
         // Host-supplied string (TS types are erased): JS null/undefined would trap a
-        // non-optional param — skip with a log instead (the JS wrapper validates loudly).
-        guard let adUnitId = adUnitId, !adUnitId.isEmpty else {
-            NSLog("[SimulaAds] createInterstitial ignored: adUnitId must be a non-empty string")
-            return
-        }
+        // non-optional param — silent no-op natively (no console logging); the JS
+        // wrapper validates loudly (TypeError) before the call reaches native.
+        guard let adUnitId = adUnitId, !adUnitId.isEmpty else { return }
         runOnMain {
             // This hop may have been enqueued behind invalidate's sync teardown (see
             // didInvalidate) — never recreate ads on a dead bridge.
@@ -314,10 +320,7 @@ class SimulaAdsModule: RCTEventEmitter {
     @objc
     func createRewarded(_ instanceId: String, adUnitId: String?) {
         // See createInterstitial.
-        guard let adUnitId = adUnitId, !adUnitId.isEmpty else {
-            NSLog("[SimulaAds] createRewarded ignored: adUnitId must be a non-empty string")
-            return
-        }
+        guard let adUnitId = adUnitId, !adUnitId.isEmpty else { return }
         runOnMain {
             // See createInterstitial / didInvalidate.
             guard !self.didInvalidate else { return }
@@ -449,10 +452,11 @@ class SimulaAdsModule: RCTEventEmitter {
     func requestTrackingAuthorization(_ resolve: @escaping RCTPromiseResolveBlock,
                                       reject: @escaping RCTPromiseRejectBlock) {
         #if os(iOS)
+        let once = SimulaOnceResolver(resolve: resolve, reject: reject)
         // Completion-based SDK call — no bridge-created task (see checkFrequencyCap above).
         runOnMain {
             SimulaPrivacy.shared.requestTrackingAuthorization { status in
-                resolve(Self.attStatusString(status))
+                once.resolve(Self.attStatusString(status))
             }
         }
         #else
@@ -477,10 +481,11 @@ class SimulaAdsModule: RCTEventEmitter {
     /// Tracks each unit's on-screen window (DISPLAYED → CLOSED) and finalizes a deferred
     /// destroy once the unit fully closes. Independent of the listener guard, so the state
     /// stays correct even while JS has no listeners attached.
+    ///
+    /// Reachable ONLY through an `enforceMain` hop (the emit* helpers), so its
+    /// `assumeIsolated` — required by the compiler to mutate @MainActor-isolated SDK
+    /// `delegate` properties — is provably on-main and can never trap.
     private func noteLifecycle(_ instanceId: String, _ type: String) {
-        // Delegate proxies invoke us on the main thread (the SDK delivers delegate callbacks
-        // there); assumeIsolated is required to mutate @MainActor-isolated SDK `delegate`
-        // properties.
         MainActor.assumeIsolated {
             guard let entry = entries[instanceId] else { return }
             switch type {
@@ -507,57 +512,68 @@ class SimulaAdsModule: RCTEventEmitter {
     }
 
     fileprivate func emitSimple(_ instanceId: String, _ adType: String, _ type: String) {
-        // Evaluate the guard BEFORE noteLifecycle: the CLOSED that finalizes a deferred
-        // destroy removes the entry, which must not un-suppress its own emission.
-        let emit = canEmit(instanceId)
-        noteLifecycle(instanceId, type)
-        guard emit else { return }
-        sendEvent(withName: SimulaAdsModule.eventName, body: [
-            "instanceId": instanceId, "adType": adType, "type": type,
-        ])
+        // One enforceMain hop for the whole guard→mutate→emit sequence (RN-5): the guard is
+        // evaluated BEFORE noteLifecycle because the CLOSED that finalizes a deferred destroy
+        // removes the entry, which must not un-suppress its own emission.
+        enforceMain {
+            let emit = self.canEmit(instanceId)
+            self.noteLifecycle(instanceId, type)
+            guard emit else { return }
+            self.sendEvent(withName: SimulaAdsModule.eventName, body: [
+                "instanceId": instanceId, "adType": adType, "type": type,
+            ])
+        }
     }
 
     fileprivate func emitError(_ instanceId: String, _ adType: String, _ type: String, _ error: SimulaAdError) {
-        guard canEmit(instanceId) else { return }
-        let mapped = SimulaAdsModule.describe(error)
-        var body: [String: Any] = [
-            "instanceId": instanceId, "adType": adType, "type": type,
-            "code": mapped.code, "message": mapped.message,
-        ]
-        if let retry = mapped.retry { body["retryInSeconds"] = retry }
-        sendEvent(withName: SimulaAdsModule.eventName, body: body)
+        enforceMain {
+            guard self.canEmit(instanceId) else { return }
+            let mapped = SimulaAdsModule.describe(error)
+            var body: [String: Any] = [
+                "instanceId": instanceId, "adType": adType, "type": type,
+                "code": mapped.code, "message": mapped.message,
+            ]
+            if let retry = mapped.retry { body["retryInSeconds"] = retry }
+            self.sendEvent(withName: SimulaAdsModule.eventName, body: body)
+        }
     }
 
     fileprivate func emitVerificationFailed(_ instanceId: String, _ error: Error) {
-        guard canEmit(instanceId) else { return }
-        sendEvent(withName: SimulaAdsModule.eventName, body: [
-            "instanceId": instanceId, "adType": "rewarded",
-            "type": "REWARD_VERIFICATION_FAILED",
-            "code": "verification_failed",
-            "message": error.localizedDescription,
-        ])
+        enforceMain {
+            guard self.canEmit(instanceId) else { return }
+            self.sendEvent(withName: SimulaAdsModule.eventName, body: [
+                "instanceId": instanceId, "adType": "rewarded",
+                "type": "REWARD_VERIFICATION_FAILED",
+                "code": "verification_failed",
+                "message": error.localizedDescription,
+            ])
+        }
     }
 
     fileprivate func emitRewardVerified(_ instanceId: String, _ token: String?) {
-        guard canEmit(instanceId) else { return }
-        sendEvent(withName: SimulaAdsModule.eventName, body: [
-            "instanceId": instanceId, "adType": "rewarded",
-            "type": "REWARD_VERIFIED",
-            "token": token as Any? ?? NSNull(),
-        ])
+        enforceMain {
+            guard self.canEmit(instanceId) else { return }
+            self.sendEvent(withName: SimulaAdsModule.eventName, body: [
+                "instanceId": instanceId, "adType": "rewarded",
+                "type": "REWARD_VERIFIED",
+                "token": token as Any? ?? NSNull(),
+            ])
+        }
     }
 
     /// PAID event — flattens the `AdValue` estimate onto the wire (see `eventRouter`).
     fileprivate func emitPaid(_ instanceId: String, _ adType: String, _ value: AdValue) {
-        guard canEmit(instanceId) else { return }
-        sendEvent(withName: SimulaAdsModule.eventName, body: [
-            "instanceId": instanceId, "adType": adType, "type": "PAID",
-            "valueMicros": value.valueMicros,
-            "currencyCode": value.currencyCode,
-            "precisionType": value.precisionType.rawValue,
-            "expectedCpm": value.expectedCpm,
-            "expectedRevenue": value.expectedRevenue,
-        ])
+        enforceMain {
+            guard self.canEmit(instanceId) else { return }
+            self.sendEvent(withName: SimulaAdsModule.eventName, body: [
+                "instanceId": instanceId, "adType": adType, "type": "PAID",
+                "valueMicros": value.valueMicros,
+                "currencyCode": value.currencyCode,
+                "precisionType": value.precisionType.rawValue,
+                "expectedCpm": value.expectedCpm,
+                "expectedRevenue": value.expectedRevenue,
+            ])
+        }
     }
 
     // MARK: - Helpers

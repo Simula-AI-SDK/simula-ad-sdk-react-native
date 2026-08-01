@@ -14,6 +14,7 @@ import {
 import { SimulaPrivacyConfig } from "../privacy/types";
 import { SimulaAdContext, toNativeAdContext } from "./context";
 import { forgetNativeAdHeights } from "../nativeAd/heightCache";
+import { withTimeout, NATIVE_COMPLETION_TIMEOUT_MS } from "../internal/withTimeout";
 import type { SimulaNativeAdTheme } from "../nativeAd/types";
 
 export interface SimulaInitConfig {
@@ -126,11 +127,14 @@ export const SimulaAds = {
         `SimulaAds.checkFrequencyCap requires a non-empty string adUnitId (received ${typeof adUnitId}).`,
       );
     }
-    // Fail open on an unexpected bridge rejection too — a transport/bridge
-    // hiccup must never hide a surface that would otherwise have served.
-    return NativeAds!.checkFrequencyCap(adUnitId, primaryUserID ?? null).catch(
+    // Bounded: a dropped native completion must not strand the caller (RN-6).
+    // Fail open on a timeout or an unexpected bridge rejection — a hiccup must
+    // never hide a surface that would otherwise have served.
+    return withTimeout(
+      NativeAds!.checkFrequencyCap(adUnitId, primaryUserID ?? null),
+      NATIVE_COMPLETION_TIMEOUT_MS,
       () => false,
-    );
+    ).catch(() => false);
   },
 
   /**
@@ -149,10 +153,16 @@ export const SimulaAds = {
       warnAdsUnavailable("preloadNativeAd");
       return null;
     }
-    return NativeAds!.preloadNativeAd(
-      options?.adUnitId ?? null,
-      options?.position ?? 0,
-      options?.theme ?? null,
+    // Bounded: a dropped native completion must not strand the caller (RN-6);
+    // a timeout resolves null, same as pre-init / cache-full.
+    return withTimeout(
+      NativeAds!.preloadNativeAd(
+        options?.adUnitId ?? null,
+        options?.position ?? 0,
+        options?.theme ?? null,
+      ),
+      NATIVE_COMPLETION_TIMEOUT_MS,
+      () => null,
     );
   },
 

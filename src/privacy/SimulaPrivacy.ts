@@ -12,6 +12,7 @@ import {
   isAdsModuleAvailable,
   warnAdsUnavailable,
 } from "../internal/nativeModules";
+import { withTimeout, NATIVE_COMPLETION_TIMEOUT_MS } from "../internal/withTimeout";
 import { toNativePrivacy } from "../ads/SimulaAds";
 import {
   SimulaPrivacyConfig,
@@ -52,7 +53,13 @@ export const SimulaPrivacy = {
       warnAdsUnavailable("requestTrackingAuthorization");
       return "unavailable";
     }
-    return (await NativeAds!.requestTrackingAuthorization()) as TrackingAuthorizationStatus;
+    // Bounded: iOS can defer the ATT prompt (e.g. app not active) and the
+    // completion may never fire — don't strand the caller's await (RN-6).
+    return withTimeout(
+      NativeAds!.requestTrackingAuthorization() as Promise<TrackingAuthorizationStatus>,
+      NATIVE_COMPLETION_TIMEOUT_MS,
+      () => "unavailable",
+    );
   },
 
   /** Current ATT status without prompting. Android resolves `'unavailable'`. */
@@ -61,6 +68,10 @@ export const SimulaPrivacy = {
       warnAdsUnavailable("getTrackingAuthorizationStatus");
       return "unavailable";
     }
-    return (await NativeAds!.getTrackingAuthorizationStatus()) as TrackingAuthorizationStatus;
+    return withTimeout(
+      NativeAds!.getTrackingAuthorizationStatus() as Promise<TrackingAuthorizationStatus>,
+      NATIVE_COMPLETION_TIMEOUT_MS,
+      () => "unavailable",
+    );
   },
 };

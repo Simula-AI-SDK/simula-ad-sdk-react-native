@@ -35,9 +35,17 @@ Full integration guides, API references, and examples are available at:
 
 Create and manage ad units, view analytics, and configure server-side verification at [publisher.simula.ad](https://publisher.simula.ad).
 
+## Diagnostics
+
+`SimulaAds.userAgent()` resolves the native User-Agent string. `SimulaAds.deviceId()` is a
+**nonblocking snapshot**: it resolves the current cached value immediately and may resolve
+`null` while native resolution is still pending, before initialization, or when the native
+module is unavailable. It never waits for device-ID resolution — call it freely at startup.
+
 ## Support
 
 - Documentation: [docs.simula.ad](https://docs.simula.ad)
+- Telemetry wire contract: [TELEMETRY_CONTRACT_V3.md](https://github.com/Simula-AI-SDK/simula-ad-sdk-react-native/blob/main/docs/TELEMETRY_CONTRACT_V3.md)
 - Email: admin@simula.ad
 - Website: [simula.ad](https://simula.ad)
 

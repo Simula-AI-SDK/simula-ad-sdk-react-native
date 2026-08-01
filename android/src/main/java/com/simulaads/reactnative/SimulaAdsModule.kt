@@ -17,7 +17,6 @@ import ad.simula.ad.sdk.model.AdValue
 import ad.simula.ad.sdk.model.SimulaAdContext
 import ad.simula.ad.sdk.privacy.SimulaPrivacy
 import ad.simula.ad.sdk.privacy.SimulaPrivacyConfig
-import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -41,10 +40,6 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
 
     override fun getName(): String = "SimulaAdsModule"
 
-    private companion object {
-        const val TAG = "SimulaAdsModule"
-    }
-
     private data class AdEntry(
         val adType: String,
         val interstitial: SimulaInterstitialAd? = null,
@@ -59,19 +54,18 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
     // throws inside the bridge (typed ReadableMap reads), and without a catch the
     // exception escapes on the NativeModules thread and kills the host process —
     // iOS coerces the same payloads with `as?` and never throws, so these arrive
-    // as Android-only crash reports. Reject the promise (or log for the
-    // fire-and-forget methods) instead of crashing. `inline` so `return` /
-    // `return@guard` inside method bodies keep their original meaning.
+    // as Android-only crash reports. Reject the promise so the JS layer surfaces
+    // the error. No console logging (rule): the RN bridge has no telemetry surface
+    // (the native facade is SDK-internal), so fire-and-forget methods fail
+    // silently here — the JS wrappers validate host input loudly (TypeError)
+    // before it ever reaches native. `inline` so `return` / `return@guard` inside
+    // method bodies keep their original meaning.
 
     private inline fun guard(promise: Promise?, block: () -> Unit) {
         try {
             block()
         } catch (t: Throwable) {
-            if (promise != null) {
-                promise.reject("ERR_SIMULA_BRIDGE", t)
-            } else {
-                Log.w(TAG, "SimulaAdsModule call failed", t)
-            }
+            promise?.reject("ERR_SIMULA_BRIDGE", t)
         }
     }
 
@@ -183,10 +177,8 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun destroyPreloadedAd(preloadedAdId: String?) {
         guard(null) {
-            if (preloadedAdId.isNullOrBlank()) {
-                Log.w(TAG, "destroyPreloadedAd ignored: preloadedAdId must be a non-empty string")
-                return@guard
-            }
+            // Invalid host input is a silent no-op natively; the JS wrapper throws TypeError.
+            if (preloadedAdId.isNullOrBlank()) return@guard
             SimulaAds.destroyPreloadedAd(preloadedAdId)
         }
     }
@@ -210,10 +202,8 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun createInterstitial(instanceId: String, adUnitId: String?) {
         guard(null) {
-            if (adUnitId.isNullOrBlank()) {
-                Log.w(TAG, "createInterstitial ignored: adUnitId must be a non-empty string")
-                return@guard
-            }
+            // Invalid host input is a silent no-op natively; the JS wrapper throws TypeError.
+            if (adUnitId.isNullOrBlank()) return@guard
             val ad = SimulaInterstitialAd(adUnitId)
             ad.listener = interstitialListener(instanceId)
             entries[instanceId] = AdEntry(adType = "interstitial", interstitial = ad)
@@ -223,10 +213,8 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun createRewarded(instanceId: String, adUnitId: String?) {
         guard(null) {
-            if (adUnitId.isNullOrBlank()) {
-                Log.w(TAG, "createRewarded ignored: adUnitId must be a non-empty string")
-                return@guard
-            }
+            // Invalid host input is a silent no-op natively; the JS wrapper throws TypeError.
+            if (adUnitId.isNullOrBlank()) return@guard
             val ad = SimulaRewardedAd(adUnitId)
             ad.listener = rewardedListener(instanceId)
             entries[instanceId] = AdEntry(adType = "rewarded", rewarded = ad)
