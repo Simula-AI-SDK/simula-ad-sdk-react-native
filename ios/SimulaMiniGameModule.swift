@@ -1158,9 +1158,15 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
 
     /// Ends a resolve and releases the retained session.
     private static func endResolving() {
-        stateLock.lock(); defer { stateLock.unlock() }
+        stateLock.lock()
         _isResolving = false
+        let session = _activeSession
         _activeSession = nil
+        stateLock.unlock()
+        // A URLSession created with a delegate retains it (plus its operation queue and
+        // ephemeral storage) until invalidated — nil'ing the reference alone leaks one
+        // session per external-link tap (RN-8). Invalidated outside the lock.
+        session?.finishTasksAndInvalidate()
     }
 
     private static func setActiveSession(_ session: URLSession?) {
@@ -1170,10 +1176,14 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
 
     /// Clears all link-handling state when an overlay is torn down.
     static func resetLinkHandlingState() {
-        stateLock.lock(); defer { stateLock.unlock() }
+        stateLock.lock()
         _isHandlingExternalLink = false
         _isResolving = false
+        let session = _activeSession
         _activeSession = nil
+        stateLock.unlock()
+        // See endResolving — delegate sessions must be invalidated, not just released (RN-8).
+        session?.finishTasksAndInvalidate()
     }
 
     init(original: WKNavigationDelegate?) {
