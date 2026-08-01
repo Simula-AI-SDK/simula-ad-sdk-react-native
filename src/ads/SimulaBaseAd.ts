@@ -202,7 +202,6 @@ export abstract class SimulaBaseAd {
 
   protected requireNative(method: string): boolean {
     if (this.destroyed) {
-      console.warn(`[SimulaAds] ${method}() called on a destroyed ad — ignored.`);
       return false;
     }
     if (!isAdsModuleAvailable()) {

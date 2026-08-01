@@ -28,15 +28,8 @@ const NativeMiniGameButton =
     ? NativeMiniGameButtonComponent
     : null;
 
-let warnedUnavailable = false;
 function warnUnavailable(): void {
-  if (warnedUnavailable) return;
-  warnedUnavailable = true;
-  console.warn(
-    `[SimulaMiniGame] <MiniGameButton> native view unavailable; rendering nothing. ` +
-      `Did you rebuild the app after adding @simula/ads-react-native? ` +
-      `(platform: ${Platform?.OS})`,
-  );
+  // Blank/no-op by contract when the native view is unavailable; never console-log.
 }
 
 export const MiniGameButton: React.FC<MiniGameButtonProps> = ({

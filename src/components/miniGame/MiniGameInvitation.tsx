@@ -51,9 +51,7 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
         autoCloseDuration: autoCloseDuration ?? null,
         width: width ?? null,
         top: top ?? null,
-      }).catch((error: any) => {
-        console.error('[SimulaMiniGame] showMiniGameInvitation failed:', error?.message || error);
-      });
+      }).catch(() => {});
     } else if (!isOpen && wasOpenRef.current) {
       SimulaMiniGameModule.hideMiniGameInvitation();
     }

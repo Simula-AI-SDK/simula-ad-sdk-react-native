@@ -51,13 +51,7 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
             description: c.description,
           })) ?? null,
         theme,
-      }).catch((error: unknown) => {
-        const err = error as { message?: string };
-        console.error(
-          "[SimulaCharacterSelector] show failed:",
-          err?.message || error,
-        );
-      });
+      }).catch(() => {});
     } else if (!isOpen && wasOpenRef.current) {
       SimulaMiniGameModule.hideCharacterSelector();
     }

@@ -23,13 +23,7 @@ const mountedSurfaces = new Set<string>();
 
 export function warnIfDuplicateSurface(surface: string): () => void {
   if (!__DEV__) return () => {};
-  if (mountedSurfaces.has(surface)) {
-    console.warn(
-      `[SimulaMiniGame] Multiple <${surface}> instances are mounted at once. ` +
-        `Each surface is a singleton natively (one view, one event channel); ` +
-        `mount only one at a time to avoid missed or cross-routed events.`,
-    );
-  }
+  // Still track singleton mounts for deterministic cleanup, but never console-log.
   mountedSurfaces.add(surface);
   return () => {
     mountedSurfaces.delete(surface);

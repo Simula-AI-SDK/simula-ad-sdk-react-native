@@ -62,9 +62,7 @@ export function SimulaProvider({
       privacy,
       telemetryEnabled,
       adContext,
-    }).catch((error: unknown) => {
-      console.error("[Simula] initialize failed:", error);
-    });
+    }).catch(() => {});
     // privacyKey / adContextKey stand in for the (deep) privacy / adContext objects.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [

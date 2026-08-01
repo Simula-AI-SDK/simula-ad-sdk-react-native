@@ -15,7 +15,7 @@
  * This module is written codegen-shaped (flat params, promise/void methods, a
  * single event) so a future TurboModule migration is mechanical.
  */
-import { NativeModules, NativeEventEmitter, Platform } from "react-native";
+import { NativeModules, NativeEventEmitter } from "react-native";
 
 /** The single event name the imperative ad surface emits on. */
 export const AD_EVENT_NAME = "SimulaAds_onAdEvent";
@@ -96,11 +96,5 @@ export function isAdsModuleAvailable(): boolean {
   return SimulaAdsModule != null;
 }
 
-/** Logs a one-time-style warning when the native module is missing. */
-export function warnAdsUnavailable(method: string): void {
-  console.warn(
-    `[SimulaAds] Native module unavailable; ${method} is a no-op. ` +
-      `Did you rebuild the app after adding @simula/ads-react-native? ` +
-      `(platform: ${Platform.OS})`,
-  );
-}
+/** Native module missing: fail silently (blank/no-op), never console-log. */
+export function warnAdsUnavailable(_method: string): void {}
