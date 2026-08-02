@@ -66,6 +66,7 @@ export type {
   SimulaAdErrorCode,
   SimulaAdError,
   SimulaAdLoadOptions,
+  SimulaExtraParameters,
   SimulaAdEvent,
   AdValue,
   AdValuePrecision,

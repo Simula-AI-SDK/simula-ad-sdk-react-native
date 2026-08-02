@@ -36,6 +36,11 @@ RCT_EXTERN_METHOD(createInterstitial:(NSString *)instanceId
                   adUnitId:(NSString *)adUnitId)
 RCT_EXTERN_METHOD(createRewarded:(NSString *)instanceId
                   adUnitId:(NSString *)adUnitId)
+RCT_EXTERN_METHOD(setExtraParameter:(NSString *)instanceId
+                  key:(NSString *)key
+                  value:(NSString *)value)
+RCT_EXTERN_METHOD(setExtraParameters:(NSString *)instanceId
+                  parametersJson:(NSString *)parametersJson)
 RCT_EXTERN_METHOD(loadAd:(NSString *)instanceId
                   options:(NSDictionary *)options)
 RCT_EXTERN_METHOD(showAd:(NSString *)instanceId)

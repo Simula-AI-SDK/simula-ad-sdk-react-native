@@ -10,7 +10,12 @@
  */
 import { useEffect, useRef, useState, useCallback } from "react";
 import { SimulaInterstitialAd } from "../ads/SimulaInterstitialAd";
-import { SimulaAdLoadOptions, SimulaAdError, AdValue } from "../ads/types";
+import {
+  SimulaAdLoadOptions,
+  SimulaAdError,
+  SimulaExtraParameters,
+  AdValue,
+} from "../ads/types";
 
 export interface UseInterstitialAd {
   isLoaded: boolean;
@@ -22,6 +27,8 @@ export interface UseInterstitialAd {
   error: SimulaAdError | undefined;
   load: (options?: SimulaAdLoadOptions) => void;
   show: () => void;
+  setExtraParameter: (key: string, value: string) => void;
+  setExtraParameters: (parameters: SimulaExtraParameters) => void;
 }
 
 export function useInterstitialAd(adUnitId: string): UseInterstitialAd {
@@ -103,5 +110,26 @@ export function useInterstitialAd(adUnitId: string): UseInterstitialAd {
     adRef.current?.show();
   }, []);
 
-  return { isLoaded, isClosed, impressionRecorded, adValue, error, load, show };
+  const setExtraParameter = useCallback((key: string, value: string) => {
+    adRef.current?.setExtraParameter(key, value);
+  }, []);
+
+  const setExtraParameters = useCallback(
+    (parameters: SimulaExtraParameters) => {
+      adRef.current?.setExtraParameters(parameters);
+    },
+    [],
+  );
+
+  return {
+    isLoaded,
+    isClosed,
+    impressionRecorded,
+    adValue,
+    error,
+    load,
+    show,
+    setExtraParameter,
+    setExtraParameters,
+  };
 }

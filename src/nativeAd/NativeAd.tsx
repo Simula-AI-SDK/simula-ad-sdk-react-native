@@ -18,6 +18,7 @@ import NativeAdViewComponent, {
 } from "./NativeAdNativeComponent";
 import type { NativeAdProps, NativeAdError } from "./types";
 import type { AdValue } from "../ads/types";
+import { serializeExtraParameters } from "../internal/extraParameters";
 import {
   getLastKnownHeight,
   nativeAdHeightKey,
@@ -60,6 +61,7 @@ export function NativeAd({
   adUnitId,
   position = 0,
   theme,
+  extraParameters,
   preloadedAdId,
   previewHtml,
   onImpression,
@@ -68,6 +70,11 @@ export function NativeAd({
   onError,
   width,
 }: NativeAdProps): React.JSX.Element | null {
+  const extraParametersJson = useMemo(
+    () => serializeExtraParameters(extraParameters) ?? undefined,
+    [extraParameters],
+  );
+
   // Same identity as the native per-slot cache, so the remembered height always describes the
   // ad the native side will re-render. Previews are debug-only and never cached.
   const heightKey =
@@ -170,6 +177,7 @@ export function NativeAd({
       // reserved RN layout prop name (see NativeAdNativeComponent.ts).
       adPosition={position}
       theme={theme}
+      extraParametersJson={extraParametersJson}
       preloadedAdId={preloadedAdId}
       previewHtml={previewHtml}
       onAdSizeChange={handleSize}
