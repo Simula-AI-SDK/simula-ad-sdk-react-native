@@ -39,6 +39,11 @@ class SimulaNativeAdViewManager : SimulaNativeAdViewManagerSpec() {
         view.theme = value
     }
 
+    @ReactProp(name = "extraParametersJson")
+    override fun setExtraParametersJson(view: SimulaNativeAdView, value: String?) {
+        view.extraParametersJson = value
+    }
+
     @ReactProp(name = "preloadedAdId")
     override fun setPreloadedAdId(view: SimulaNativeAdView, value: String?) {
         view.preloadedAdId = value

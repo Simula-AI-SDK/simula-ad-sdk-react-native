@@ -17,6 +17,7 @@ import ad.simula.ad.sdk.model.AdValue
 import ad.simula.ad.sdk.model.SimulaAdContext
 import ad.simula.ad.sdk.privacy.SimulaPrivacy
 import ad.simula.ad.sdk.privacy.SimulaPrivacyConfig
+import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -162,6 +163,32 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
         val ad = SimulaRewardedAd(adUnitId)
         ad.listener = rewardedListener(instanceId)
         entries[instanceId] = AdEntry(adType = "rewarded", rewarded = ad)
+    }
+
+    @ReactMethod
+    fun setExtraParameter(instanceId: String, key: String, value: String) {
+        val entry = entries[instanceId] ?: return
+        entry.interstitial?.setExtraParameter(key, value)
+        entry.rewarded?.setExtraParameter(key, value)
+    }
+
+    @ReactMethod
+    fun setExtraParameters(instanceId: String, parametersJson: String) {
+        val parameters = parseExtraParameters(parametersJson) ?: return
+        val entry = entries[instanceId] ?: return
+        entry.interstitial?.setExtraParameters(parameters)
+        entry.rewarded?.setExtraParameters(parameters)
+    }
+
+    private fun parseExtraParameters(json: String): Map<String, String>? = try {
+        val objectValue = JSONObject(json)
+        objectValue.keys().asSequence()
+            .sorted()
+            .mapNotNull { key -> objectValue.opt(key)?.let { value -> (value as? String)?.let { key to it } } }
+            .take(10)
+            .toMap()
+    } catch (_: Exception) {
+        null
     }
 
     @ReactMethod

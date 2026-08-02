@@ -38,6 +38,32 @@ describe("SimulaInterstitialAd", () => {
     ad.destroy();
   });
 
+  it("routes single upserts and deterministic bulk replacements", () => {
+    const ad = SimulaInterstitialAd.create("unit");
+    const instanceId = native.createInterstitial.mock.calls[0][0];
+
+    ad.setExtraParameter("experiment", "variant_b");
+    ad.setExtraParameters({ z: "last", a: "first" });
+    ad.setExtraParameters({});
+
+    expect(native.setExtraParameter).toHaveBeenCalledWith(
+      instanceId,
+      "experiment",
+      "variant_b",
+    );
+    expect(native.setExtraParameters).toHaveBeenNthCalledWith(
+      1,
+      instanceId,
+      '{"a":"first","z":"last"}',
+    );
+    expect(native.setExtraParameters).toHaveBeenNthCalledWith(
+      2,
+      instanceId,
+      "{}",
+    );
+    ad.destroy();
+  });
+
   it("routes events to listeners and maintains the loaded mirror", () => {
     const ad = SimulaInterstitialAd.create("unit");
     const instanceId = native.createInterstitial.mock.calls[0][0];
@@ -118,13 +144,19 @@ describe("SimulaInterstitialAd", () => {
     expect(seen).not.toHaveBeenCalled();
   });
 
-  it("ignores load()/show() after destroy()", () => {
+  it("ignores load()/show()/metadata setters after destroy()", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
     const ad = SimulaInterstitialAd.create("unit");
     ad.destroy();
     ad.load();
     ad.show();
+    ad.setExtraParameter("key", "value");
+    ad.setExtraParameters({ key: "value" });
     expect(native.loadAd).not.toHaveBeenCalled();
     expect(native.showAd).not.toHaveBeenCalled();
+    expect(native.setExtraParameter).not.toHaveBeenCalled();
+    expect(native.setExtraParameters).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 
@@ -134,6 +166,25 @@ describe("SimulaRewardedAd", () => {
     expect(native.createRewarded).toHaveBeenCalledWith(
       expect.any(String),
       "reward",
+    );
+    ad.destroy();
+  });
+
+  it("routes inherited metadata setters to the rewarded native instance", () => {
+    const ad = SimulaRewardedAd.create("reward");
+    const instanceId = native.createRewarded.mock.calls[0][0];
+
+    ad.setExtraParameter("reward", "coins");
+    ad.setExtraParameters({ reward: "coins", source: "daily" });
+
+    expect(native.setExtraParameter).toHaveBeenCalledWith(
+      instanceId,
+      "reward",
+      "coins",
+    );
+    expect(native.setExtraParameters).toHaveBeenCalledWith(
+      instanceId,
+      '{"reward":"coins","source":"daily"}',
     );
     ad.destroy();
   });

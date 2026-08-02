@@ -10,7 +10,12 @@
  */
 import { useEffect, useRef, useState, useCallback } from "react";
 import { SimulaRewardedAd } from "../ads/SimulaRewardedAd";
-import { SimulaAdLoadOptions, SimulaAdError, AdValue } from "../ads/types";
+import {
+  SimulaAdLoadOptions,
+  SimulaAdError,
+  SimulaExtraParameters,
+  AdValue,
+} from "../ads/types";
 
 export interface UseRewardedAd {
   isLoaded: boolean;
@@ -25,6 +30,8 @@ export interface UseRewardedAd {
   error: SimulaAdError | undefined;
   load: (options?: SimulaAdLoadOptions) => void;
   show: () => void;
+  setExtraParameter: (key: string, value: string) => void;
+  setExtraParameters: (parameters: SimulaExtraParameters) => void;
 }
 
 export function useRewardedAd(adUnitId: string): UseRewardedAd {
@@ -127,6 +134,17 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
     adRef.current?.show();
   }, []);
 
+  const setExtraParameter = useCallback((key: string, value: string) => {
+    adRef.current?.setExtraParameter(key, value);
+  }, []);
+
+  const setExtraParameters = useCallback(
+    (parameters: SimulaExtraParameters) => {
+      adRef.current?.setExtraParameters(parameters);
+    },
+    [],
+  );
+
   return {
     isLoaded,
     isClosed,
@@ -138,5 +156,7 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
     error,
     load,
     show,
+    setExtraParameter,
+    setExtraParameters,
   };
 }

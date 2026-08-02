@@ -17,9 +17,11 @@ import {
   warnAdsUnavailable,
 } from "../internal/nativeModules";
 import { registerInstance } from "./eventRouter";
+import { serializeExtraParameters } from "../internal/extraParameters";
 import {
   SimulaAdEvent,
   SimulaAdLoadOptions,
+  SimulaExtraParameters,
   SimulaAdType,
   SimulaAnyAdEventType,
   SimulaUnsubscribe,
@@ -158,6 +160,21 @@ export abstract class SimulaBaseAd {
   }
 
   // ── Native passthrough ────────────────────────────────────────────────
+
+  /** Upserts one metadata value for future impressions. Native validation is authoritative. */
+  setExtraParameter(key: string, value: string): void {
+    if (!this.requireNative("setExtraParameter")) return;
+    NativeAds!.setExtraParameter(this.instanceId, key, value);
+  }
+
+  /** Replaces all metadata for future impressions. Invalid entries are dropped fail-safe. */
+  setExtraParameters(parameters: SimulaExtraParameters): void {
+    if (!this.requireNative("setExtraParameters")) return;
+    NativeAds!.setExtraParameters(
+      this.instanceId,
+      serializeExtraParameters(parameters) ?? "{}",
+    );
+  }
 
   /** Preloads an ad. Fire-and-forget — outcome arrives as LOADED / LOAD_FAILED. */
   load(options: SimulaAdLoadOptions = {}): void {

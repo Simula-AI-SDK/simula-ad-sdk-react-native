@@ -308,6 +308,37 @@ class SimulaAdsModule: RCTEventEmitter {
     }
 
     @objc
+    func setExtraParameter(_ instanceId: String, key: String, value: String) {
+        runOnMain {
+            guard let entry = self.entries[instanceId] else { return }
+            entry.interstitial?.setExtraParameter(key, value)
+            entry.rewarded?.setExtraParameter(key, value)
+        }
+    }
+
+    @objc
+    func setExtraParameters(_ instanceId: String, parametersJson: String) {
+        guard let parameters = Self.parseExtraParameters(parametersJson) else { return }
+        runOnMain {
+            guard let entry = self.entries[instanceId] else { return }
+            entry.interstitial?.setExtraParameters(parameters)
+            entry.rewarded?.setExtraParameters(parameters)
+        }
+    }
+
+    private static func parseExtraParameters(_ json: String) -> [String: String]? {
+        guard let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let dictionary = object as? [String: Any] else { return nil }
+
+        let pairs = dictionary.keys.sorted().compactMap { key -> (String, String)? in
+            guard let value = dictionary[key] as? String else { return nil }
+            return (key, value)
+        }.prefix(10)
+        return Dictionary(uniqueKeysWithValues: pairs)
+    }
+
+    @objc
     func destroyAd(_ instanceId: String) {
         runOnMain {
             guard let entry = self.entries[instanceId] else { return }

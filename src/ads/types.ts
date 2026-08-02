@@ -9,6 +9,9 @@
 /** Which imperative ad format an event/instance belongs to. */
 export type SimulaAdType = "interstitial" | "rewarded";
 
+/** Per-impression publisher metadata. Native SDKs validate and snapshot these values. */
+export type SimulaExtraParameters = Readonly<Record<string, string>>;
+
 /**
  * Lifecycle events common to both interstitial and rewarded ads. The string
  * values are the canonical cross-platform event names emitted by both native

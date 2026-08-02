@@ -5,7 +5,9 @@ import android.widget.FrameLayout
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -19,6 +21,7 @@ import ad.simula.ad.sdk.model.NativeAdData
 import ad.simula.ad.sdk.nativead.NativeAdError
 import ad.simula.ad.sdk.nativead.NativeAdSlot
 import kotlinx.coroutines.delay
+import org.json.JSONObject
 
 /**
  * Native view backing the React Native `<NativeAd>` component.
@@ -53,10 +56,12 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
     var adUnitId: String? = null
     var position: Int = 0
     var theme: String? = null
+    var extraParametersJson: String? = null
     var preloadedAdId: String? = null
     var previewHtml: String? = null
 
     private var committedKey: String? = null
+    private var committedExtraParameters by mutableStateOf<Map<String, String>>(emptyMap())
     private var contentHeightPx: Int = 0
     private var lastReportedHeightDp: Int = Int.MIN_VALUE
 
@@ -78,6 +83,7 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
 
     /** Called by the view manager after a batch of prop updates. Re-composes only on a real change. */
     fun commitProps() {
+        committedExtraParameters = parseExtraParameters(extraParametersJson)
         if (committedKey == propKey) return
         committedKey = propKey
         // FlashList / RecyclerView rebinds this view to a new slot without recreating it.
@@ -101,6 +107,7 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
                         position = position,
                         theme = theme,
                         preloadedAdId = preloadedAdId,
+                        extraParameters = committedExtraParameters,
                         previewHtml = previewHtml,
                         onImpression = { emitImpression(it) },
                         onPaid = { emitPaid(it) },
@@ -109,6 +116,20 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
                     )
                 }
             }
+        }
+    }
+
+    private fun parseExtraParameters(json: String?): Map<String, String> {
+        if (json.isNullOrBlank()) return emptyMap()
+        return try {
+            val objectValue = JSONObject(json)
+            objectValue.keys().asSequence()
+                .sorted()
+                .mapNotNull { key -> objectValue.opt(key)?.let { value -> (value as? String)?.let { key to it } } }
+                .take(10)
+                .toMap()
+        } catch (_: Exception) {
+            emptyMap()
         }
     }
 
