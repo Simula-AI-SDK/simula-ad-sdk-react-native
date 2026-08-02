@@ -97,7 +97,7 @@ dependencies {
 
     // Simula Ad SDK (native Kotlin SDK from Maven Central). 1.1.7 adds per-impression
     // K/V metadata and includes the deferred-startup and retained-WebView fixes.
-    implementation 'ad.simula:ad-sdk:1.1.7'
+    implementation 'ad.simula:ad-sdk:1.1.7-dev.1'
 
     // Jetpack Compose (needed to host MiniGameMenu composable)
     implementation platform('androidx.compose:compose-bom:2024.02.00')
