@@ -1156,17 +1156,26 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
         return true
     }
 
-    /// Ends a resolve and releases the retained session.
-    private static func endResolving() {
+    /// Ends a resolve and releases the retained session — but only when `session` is
+    /// still the active one. After `resetLinkHandlingState` (overlay teardown) a late
+    /// completion from the torn-down resolve must neither clobber nor invalidate a
+    /// NEWER resolve's session. Returns true only when this completion still owns the
+    /// resolving slot — callers must gate routing/presentation on it.
+    @discardableResult
+    private static func endResolving(session: URLSession) -> Bool {
         stateLock.lock()
+        guard _activeSession === session else {
+            stateLock.unlock()
+            return false
+        }
         _isResolving = false
-        let session = _activeSession
         _activeSession = nil
         stateLock.unlock()
         // A URLSession created with a delegate retains it (plus its operation queue and
         // ephemeral storage) until invalidated — nil'ing the reference alone leaks one
         // session per external-link tap (RN-8). Invalidated outside the lock.
-        session?.finishTasksAndInvalidate()
+        session.finishTasksAndInvalidate()
+        return true
     }
 
     private static func setActiveSession(_ session: URLSession?) {
@@ -1249,9 +1258,13 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
         guard WKNavigationDelegateProxy.beginResolving() else { return }
 
         let proxy = self
+        // Captured by reference so the completion can prove it still owns the resolving
+        // slot: after an overlay teardown + a newer resolve, this late completion must
+        // neither invalidate the newer session nor present on the current overlay.
+        var session: URLSession?
         let resolver = RedirectResolver { finalURL in
             DispatchQueue.main.async {
-                WKNavigationDelegateProxy.endResolving()
+                guard let session, WKNavigationDelegateProxy.endResolving(session: session) else { return }
 
                 if let appID = SimulaMiniGameModule.appStoreID(from: finalURL) {
                     proxy.presentStoreProduct(appID: appID)
@@ -1263,9 +1276,10 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
 
         // Use .ephemeral to bypass React Native's custom URLProtocols
         let config = URLSessionConfiguration.ephemeral
-        let session = URLSession(configuration: config, delegate: resolver, delegateQueue: nil)
-        WKNavigationDelegateProxy.setActiveSession(session)  // Retain session
-        session.dataTask(with: URLRequest(url: url)).resume()
+        let newSession = URLSession(configuration: config, delegate: resolver, delegateQueue: nil)
+        session = newSession
+        WKNavigationDelegateProxy.setActiveSession(newSession)  // Retain session
+        newSession.dataTask(with: URLRequest(url: url)).resume()
     }
 
     // MARK: - WKNavigationDelegate
