@@ -3,7 +3,7 @@
  * (Kotlin/Swift) field-for-field. Every field is optional here; the native side
  * applies its documented defaults and IAB CMP auto-read. Consent resolution
  * (IAB auto-read, debounce, ppid gating) lives entirely in the native SDKs —
- * the wrapper only forwards raw values.
+ * the wrapper allowlists/type-normalizes fields before forwarding them.
  */
 export interface SimulaPrivacyConfig {
   /** Legacy coarse consent flag. When false, suppresses PII (the ppid). */

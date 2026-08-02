@@ -38,4 +38,28 @@ describe("withTimeout", () => {
     await expect(outcome).resolves.toBe("fallback");
     settle("late"); // must not throw or warn
   });
+
+  it("delivers a late result to the cleanup callback exactly once", async () => {
+    let settle: (value: string) => void = () => {};
+    const slow = new Promise<string>((resolve) => { settle = resolve; });
+    const onLateResult = jest.fn();
+    const outcome = withTimeout(slow, 5_000, () => "fallback", onLateResult);
+
+    jest.advanceTimersByTime(5_000);
+    await expect(outcome).resolves.toBe("fallback");
+    settle("late");
+    settle("later");
+    await Promise.resolve();
+
+    expect(onLateResult).toHaveBeenCalledTimes(1);
+    expect(onLateResult).toHaveBeenCalledWith("late");
+  });
+
+  it("does not call the late-result callback for an on-time result", async () => {
+    const onLateResult = jest.fn();
+    await expect(
+      withTimeout(Promise.resolve("ok"), 5_000, () => "fallback", onLateResult),
+    ).resolves.toBe("ok");
+    expect(onLateResult).not.toHaveBeenCalled();
+  });
 });

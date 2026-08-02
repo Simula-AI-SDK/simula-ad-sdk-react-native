@@ -12,7 +12,11 @@ import { NativeModules } from 'react-native';
 import { devLogRejection } from "../../internal/nativeModules";
 import { MiniGameMenuProps } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
-import { miniGameEmitter as emitter, warnIfDuplicateSurface } from '../../internal/emitter';
+import {
+  miniGameEmitter as emitter,
+  warnIfDuplicateSurface,
+  warnMiniGameUnavailable,
+} from '../../internal/emitter';
 
 const { SimulaMiniGameModule } = NativeModules;
 
@@ -33,7 +37,10 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
 
   // Show/hide native menu based on isOpen prop
   useEffect(() => {
-    if (!SimulaMiniGameModule) return;
+    if (!SimulaMiniGameModule) {
+      warnMiniGameUnavailable("MiniGameMenu");
+      return;
+    }
 
     if (isOpen && !wasOpenRef.current) {
       SimulaMiniGameModule.showMiniGameMenu({

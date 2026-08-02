@@ -12,6 +12,7 @@ import NativeMiniGameButtonComponent, {
   type MiniGameButtonSizeChangeEventData,
 } from "./MiniGameButtonNativeComponent";
 import { MiniGameButtonProps } from "../../types";
+import { warnNativeSurfaceUnavailable } from "../../internal/nativeModules";
 
 const COMPONENT_NAME = "SimulaMiniGameButtonView";
 
@@ -29,7 +30,7 @@ const NativeMiniGameButton =
     : null;
 
 function warnUnavailable(): void {
-  // Blank/no-op by contract when the native view is unavailable; never console-log.
+  warnNativeSurfaceUnavailable("MiniGameButton", COMPONENT_NAME);
 }
 
 export const MiniGameButton: React.FC<MiniGameButtonProps> = ({

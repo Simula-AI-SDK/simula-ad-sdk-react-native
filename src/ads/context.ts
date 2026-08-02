@@ -1,3 +1,5 @@
+import { normalizeJson } from "../internal/safeStringify";
+
 /**
  * Native-ad targeting context.
  *
@@ -29,17 +31,91 @@ export interface SimulaAdContext {
   nsfw?: boolean;
 }
 
+const stringFields = [
+  "searchTerm",
+  "category",
+  "title",
+  "description",
+  "userProfile",
+  "userEmail",
+] as const;
+
+function readField(value: object, key: string): unknown {
+  try {
+    return (value as Record<string, unknown>)[key];
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizeTags(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  let length: number;
+  try {
+    length = value.length;
+  } catch {
+    return undefined;
+  }
+  const tags: string[] = [];
+  for (let index = 0; index < length; index += 1) {
+    let tag: unknown;
+    try {
+      tag = value[index];
+    } catch {
+      continue;
+    }
+    if (typeof tag === "string") tags.push(tag);
+  }
+  return tags;
+}
+
+function sanitizeCustomContext(
+  value: unknown,
+): Record<string, unknown> | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  let keys: string[];
+  try {
+    keys = Object.keys(value);
+  } catch {
+    return undefined;
+  }
+
+  const entries: Array<[string, unknown]> = [];
+  for (const key of keys) {
+    const normalized = normalizeJson(readField(value, key));
+    if (normalized.serializable) entries.push([key, normalized.value]);
+  }
+  return Object.fromEntries(entries);
+}
+
 /**
- * Marshals an ad context into the shape the native modules expect, dropping
- * `undefined` keys so absent fields map to native defaults. `customContext` passes
- * through as a nested object (the native side converts it to its JSON value type).
+ * Marshals known fields independently. Malformed siblings are skipped, tags keep
+ * strings, and custom-context entries are cloned one at a time through JSON.
  */
 export function toNativeAdContext(
-  context: SimulaAdContext,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(context)) {
-    if (value !== undefined) out[key] = value;
+  context: SimulaAdContext | unknown,
+): Record<string, unknown> | null {
+  if (context === null || typeof context !== "object" || Array.isArray(context)) {
+    return null;
   }
+
+  const out: Record<string, unknown> = {};
+  for (const key of stringFields) {
+    const value = readField(context, key);
+    if (typeof value === "string") out[key] = value;
+  }
+
+  const tags = sanitizeTags(readField(context, "tags"));
+  if (tags !== undefined) out.tags = tags;
+
+  const customContext = sanitizeCustomContext(readField(context, "customContext"));
+  if (customContext !== undefined) out.customContext = customContext;
+
+  const nsfw = readField(context, "nsfw");
+  if (typeof nsfw === "boolean") out.nsfw = nsfw;
+
   return out;
 }

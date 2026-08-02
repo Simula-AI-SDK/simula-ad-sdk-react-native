@@ -11,7 +11,11 @@ import { NativeModules } from 'react-native';
 import { devLogRejection } from "../../internal/nativeModules";
 import { MiniGameInterstitialProps } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
-import { miniGameEmitter as emitter, warnIfDuplicateSurface } from '../../internal/emitter';
+import {
+  miniGameEmitter as emitter,
+  warnIfDuplicateSurface,
+  warnMiniGameUnavailable,
+} from '../../internal/emitter';
 
 const { SimulaMiniGameModule } = NativeModules;
 
@@ -31,7 +35,10 @@ export const MiniGameInterstitial: React.FC<MiniGameInterstitialProps> = ({
 
   // Show/hide native interstitial based on isOpen prop
   useEffect(() => {
-    if (!SimulaMiniGameModule) return;
+    if (!SimulaMiniGameModule) {
+      warnMiniGameUnavailable("MiniGameInterstitial");
+      return;
+    }
 
     if (isOpen && !wasOpenRef.current) {
       SimulaMiniGameModule.showMiniGameInterstitial({

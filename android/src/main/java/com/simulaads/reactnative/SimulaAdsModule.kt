@@ -491,10 +491,8 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
      */
     private fun convertAdContext(map: ReadableMap?): SimulaAdContext? {
         if (map == null || !map.keySetIterator().hasNextKey()) return null
-        val tags = map.getArray("tags")?.toArrayList()?.filterIsInstance<String>()
-        @Suppress("UNCHECKED_CAST")
-        val customContext = if (map.hasKey("customContext") && !map.isNull("customContext"))
-            map.getMap("customContext")?.toHashMap() as? Map<String, Any> else null
+        val tags = map.getStringListOrNull("tags")
+        val customContext = map.getStringAnyMapOrNull("customContext")
         return SimulaAdContext(
             searchTerm = map.getStringOrNull("searchTerm"),
             tags = tags,

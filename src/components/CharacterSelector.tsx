@@ -14,6 +14,7 @@ import { useSimulaContext } from "../context/SimulaProvider";
 import {
   miniGameEmitter as emitter,
   warnIfDuplicateSurface,
+  warnMiniGameUnavailable,
 } from "../internal/emitter";
 
 const { SimulaMiniGameModule } = NativeModules;
@@ -34,7 +35,10 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
 
   // Show / hide the native selector based on isOpen.
   useEffect(() => {
-    if (!SimulaMiniGameModule) return;
+    if (!SimulaMiniGameModule) {
+      warnMiniGameUnavailable("CharacterSelector");
+      return;
+    }
 
     if (isOpen && !wasOpenRef.current) {
       SimulaMiniGameModule.showCharacterSelector({

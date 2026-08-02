@@ -2,7 +2,7 @@
  * Runtime privacy / consent control. Thin pass-through to the native
  * `SimulaPrivacy` store (Kotlin/Swift), which is the single source of truth:
  * it auto-reads IAB CMP keys, merges explicit overrides, debounces, and re-syncs
- * the session. This wrapper only forwards calls.
+ * the session. This wrapper performs field-local bridge sanitation, then forwards.
  *
  *   SimulaPrivacy.update({ tcString, gdprApplies: true });
  *   const status = await SimulaPrivacy.requestTrackingAuthorization(); // iOS
@@ -13,7 +13,7 @@ import {
   warnAdsUnavailable,
 } from "../internal/nativeModules";
 import { withTimeout, NATIVE_COMPLETION_TIMEOUT_MS } from "../internal/withTimeout";
-import { toNativePrivacy } from "../ads/SimulaAds";
+import { sanitizePrivacy } from "./sanitize";
 import {
   SimulaPrivacyConfig,
   SimulaClearConsentFlags,
@@ -24,13 +24,13 @@ export const SimulaPrivacy = {
   /** Replace the explicit configuration wholesale (provider init / CMP handoff). */
   apply(config: SimulaPrivacyConfig): void {
     if (!isAdsModuleAvailable()) return warnAdsUnavailable("apply");
-    NativeAds!.applyConsent(toNativePrivacy(config));
+    NativeAds!.applyConsent(sanitizePrivacy(config));
   },
 
   /** Merge a partial runtime update. Absent fields are left unchanged. */
   update(partial: SimulaPrivacyConfig): void {
     if (!isAdsModuleAvailable()) return warnAdsUnavailable("update");
-    NativeAds!.updateConsent(toNativePrivacy(partial));
+    NativeAds!.updateConsent(sanitizePrivacy(partial));
   },
 
   /** Clear named explicit overrides back to "unset" (falls back to auto-read IAB values). */
@@ -53,13 +53,9 @@ export const SimulaPrivacy = {
       warnAdsUnavailable("requestTrackingAuthorization");
       return "unavailable";
     }
-    // Bounded: iOS can defer the ATT prompt (e.g. app not active) and the
-    // completion may never fire — don't strand the caller's await (RN-6).
-    return withTimeout(
-      NativeAds!.requestTrackingAuthorization() as Promise<TrackingAuthorizationStatus>,
-      NATIVE_COMPLETION_TIMEOUT_MS,
-      () => "unavailable",
-    );
+    // Deliberately unbounded: the native prompt is user-driven and taking longer
+    // than a transport deadline does not mean ATT is unavailable.
+    return NativeAds!.requestTrackingAuthorization() as Promise<TrackingAuthorizationStatus>;
   },
 
   /** Current ATT status without prompting. Android resolves `'unavailable'`. */

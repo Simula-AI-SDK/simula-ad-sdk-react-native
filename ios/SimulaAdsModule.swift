@@ -142,9 +142,9 @@ class SimulaAdsModule: RCTEventEmitter {
         // lock on THIS (module) queue — never via main.sync (RN-2): a create* hop that loses
         // the race bails on the flag instead of recreating entries behind the teardown.
         didInvalidate = true
-        // Teardown hops async (runOnMain): entries/proxies are main-confined, and a delegate
-        // proxy racing the window can't fire into a tearing-down bridge — stopObserving has
-        // already cleared hasListeners, so canEmit suppresses emissions in the gap.
+        // Teardown hops async (runOnMain): entries/proxies are main-confined. A delegate
+        // proxy racing this window is suppressed immediately because canEmit checks the
+        // lock-guarded didInvalidate flag set above; it does not depend on stopObserving.
         runOnMain {
             for entry in self.entries.values {
                 entry.interstitial?.delegate = nil
@@ -509,11 +509,11 @@ class SimulaAdsModule: RCTEventEmitter {
         }
     }
 
-    /// False once a deferred destroy is pending: the JS instance is gone, so no further
-    /// events may reach the bridge (the native object stays alive only to finish its
-    /// close flow).
+    /// False as soon as bridge invalidation starts or a deferred destroy is pending. In
+    /// either case the JS receiver is gone, even if the native object remains alive long
+    /// enough to finish teardown/close work.
     private func canEmit(_ instanceId: String) -> Bool {
-        hasListeners && entries[instanceId]?.destroyPending != true
+        !didInvalidate && hasListeners && entries[instanceId]?.destroyPending != true
     }
 
     fileprivate func emitSimple(_ instanceId: String, _ adType: String, _ type: String) {

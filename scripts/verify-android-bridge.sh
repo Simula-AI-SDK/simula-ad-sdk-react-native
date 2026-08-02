@@ -57,4 +57,5 @@ PROPERTIES
 "$KOTLIN_SDK_PATH/gradlew" \
   -p "$TMP" \
   :simula-ads-react-native:compileDebugKotlin \
+  :simula-ads-react-native:testDebugUnitTest \
   --console=plain

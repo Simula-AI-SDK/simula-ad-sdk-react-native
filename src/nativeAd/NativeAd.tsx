@@ -18,6 +18,7 @@ import NativeAdViewComponent, {
 } from "./NativeAdNativeComponent";
 import type { NativeAdProps, NativeAdError } from "./types";
 import type { AdValue } from "../ads/types";
+import { warnNativeSurfaceUnavailable } from "../internal/nativeModules";
 import {
   getLastKnownHeight,
   nativeAdHeightKey,
@@ -46,7 +47,7 @@ const NativeAdView =
     : null;
 
 function warnNativeAdUnavailable(): void {
-  // Blank/no-op by contract when the native view is unavailable; never console-log.
+  warnNativeSurfaceUnavailable("NativeAd", COMPONENT_NAME);
 }
 
 export function NativeAd({

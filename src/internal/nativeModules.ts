@@ -97,6 +97,7 @@ export function isAdsModuleAvailable(): boolean {
 }
 
 const warnedMethods = new Set<string>();
+const warnedNativeSurfaces = new Set<string>();
 
 /**
  * Native module missing: no-op in production (blank/silent surface, never a crash),
@@ -110,6 +111,19 @@ export function warnAdsUnavailable(method: string): void {
   console.warn(
     `[Simula] SimulaAdsModule is not linked — "${method}" is a no-op. ` +
       "Check the native dependency is installed (pods/gradle sync) for this platform.",
+  );
+}
+
+/** Missing declarative native module/view: one actionable warning per surface in dev. */
+export function warnNativeSurfaceUnavailable(
+  surface: string,
+  nativeName: string,
+): void {
+  if (!__DEV__ || warnedNativeSurfaces.has(surface)) return;
+  warnedNativeSurfaces.add(surface);
+  console.warn(
+    `[Simula] ${surface} is unavailable because ${nativeName} is not registered. ` +
+      "Check the native dependency installation and rebuild the app.",
   );
 }
 

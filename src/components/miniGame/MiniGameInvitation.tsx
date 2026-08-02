@@ -11,7 +11,11 @@ import { NativeModules } from 'react-native';
 import { devLogRejection } from "../../internal/nativeModules";
 import { MiniGameInvitationProps } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
-import { miniGameEmitter as emitter, warnIfDuplicateSurface } from '../../internal/emitter';
+import {
+  miniGameEmitter as emitter,
+  warnIfDuplicateSurface,
+  warnMiniGameUnavailable,
+} from '../../internal/emitter';
 
 const { SimulaMiniGameModule } = NativeModules;
 
@@ -35,7 +39,10 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
 
   // Show/hide native invitation based on isOpen prop
   useEffect(() => {
-    if (!SimulaMiniGameModule) return;
+    if (!SimulaMiniGameModule) {
+      warnMiniGameUnavailable("MiniGameInvitation");
+      return;
+    }
 
     if (isOpen && !wasOpenRef.current) {
       SimulaMiniGameModule.showMiniGameInvitation({

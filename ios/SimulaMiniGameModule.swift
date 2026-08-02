@@ -44,23 +44,9 @@ class SimulaMiniGameModule: RCTEventEmitter {
     private var cachedProviderKey: String?
     private var hasListeners = false
 
-    // MARK: - UIApplication.open() interceptor
-    //
-    // Swizzles UIApplication.open(_:options:completionHandler:) so that App Store
-    // URLs are caught before they leave the app. When our overlay is active, we
-    // present SKStoreProductViewController ourselves instead of letting the system
-    // open the App Store externally. This is both a diagnostic and a fix.
-
+    // Used only by navigation proxies installed in this module's game WebViews.
+    // No process-wide UIApplication method interception is installed.
     static weak var activeHostingController: UIViewController?
-
-    private static let installInterceptor: Void = {
-        let cls: AnyClass = UIApplication.self
-        let originalSel = NSSelectorFromString("openURL:options:completionHandler:")
-        let swizzledSel = #selector(UIApplication.simula_openURL(_:options:completionHandler:))
-        guard let original = class_getInstanceMethod(cls, originalSel),
-              let swizzled = class_getInstanceMethod(cls, swizzledSel) else { return }
-        method_exchangeImplementations(original, swizzled)
-    }()
 
     static func appStoreID(from url: URL) -> String? {
         let scheme = url.scheme?.lowercased() ?? ""
@@ -76,11 +62,6 @@ class SimulaMiniGameModule: RCTEventEmitter {
             return String(url.path[range].dropFirst(3))
         }
         return nil
-    }
-
-    override init() {
-        super.init()
-        _ = SimulaMiniGameModule.installInterceptor
     }
 
     // All exported methods run on the main thread, so their bodies present
@@ -199,7 +180,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
         stopWebViewScanning()
         // Reset global proxy state
         WKNavigationDelegateProxy.resetLinkHandlingState()
-        // Disable interceptor if this is the active overlay
+        // Detach this overlay from WebView-scoped link presentation.
         if SimulaMiniGameModule.activeHostingController === vc {
             SimulaMiniGameModule.activeHostingController = nil
         }
@@ -224,7 +205,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
         // Scan periodically — SwiftUI creates WKWebViews lazily as views appear
         webViewScanTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self, weak hostingVC] _ in
             guard let self = self, let hvc = hostingVC else { return }
-            self.scanAndProxyWebViews(in: hvc.view)
+            self.scanAndProxyWebViews(in: hvc.view, hostingController: hvc)
         }
     }
 
@@ -234,12 +215,15 @@ class SimulaMiniGameModule: RCTEventEmitter {
         installedProxies.removeAll()
     }
 
-    private func scanAndProxyWebViews(in view: UIView) {
+    private func scanAndProxyWebViews(in view: UIView, hostingController: UIViewController) {
         if let webView = view as? WKWebView {
             let alreadyProxied = installedProxies.contains { $0 === webView.navigationDelegate }
             if !alreadyProxied {
                 let originalDelegate = webView.navigationDelegate
-                let proxy = WKNavigationDelegateProxy(original: originalDelegate)
+                let proxy = WKNavigationDelegateProxy(
+                    original: originalDelegate,
+                    hostingController: hostingController
+                )
                 webView.navigationDelegate = proxy
                 webView.uiDelegate = proxy
                 installedProxies.append(proxy)
@@ -247,7 +231,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
             return
         }
         for subview in view.subviews {
-            scanAndProxyWebViews(in: subview)
+            scanAndProxyWebViews(in: subview, hostingController: hostingController)
         }
     }
 
@@ -356,8 +340,6 @@ class SimulaMiniGameModule: RCTEventEmitter {
     func showMiniGameMenu(_ props: NSDictionary,
                           resolve: @escaping RCTPromiseResolveBlock,
                           reject: @escaping RCTPromiseRejectBlock) {
-        _ = SimulaMiniGameModule.installInterceptor
-
         guard let apiKey = props["apiKey"] as? String,
               let charName = props["charName"] as? String,
               let charID = props["charID"] as? String else {
@@ -1117,6 +1099,7 @@ private struct CharacterSelectorWrapper: View {
 class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, SKStoreProductViewControllerDelegate, SFSafariViewControllerDelegate {
     weak var original: WKNavigationDelegate?
     weak var originalUI: WKUIDelegate?
+    weak var hostingController: UIViewController?
 
     private let internalSchemes: Set<String> = ["about", "data", "blob"]
 
@@ -1129,14 +1112,17 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
     // thread, and robust against a future change in the delegate callback queue.
     private static let stateLock = NSLock()
     private static var _isHandlingExternalLink = false
-    private static var _isResolving = false
+    private final class ResolveToken {}
+    private static var _activeResolveToken: ResolveToken?
     private static var _activeSession: URLSession?
+    private static let redirectRequestTimeout: TimeInterval = 15
+    private static let redirectResourceTimeout: TimeInterval = 30
 
     /// True while an external link is being presented or a redirect chain is
     /// being resolved.
     private static func isBusy() -> Bool {
         stateLock.lock(); defer { stateLock.unlock() }
-        return _isHandlingExternalLink || _isResolving
+        return _isHandlingExternalLink || _activeResolveToken != nil
     }
 
     /// Atomically claims the external-link slot. Returns false if already taken.
@@ -1153,26 +1139,25 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
     }
 
     /// Atomically claims the resolving slot, but only if nothing is in flight.
-    private static func beginResolving() -> Bool {
+    private static func beginResolving() -> ResolveToken? {
         stateLock.lock(); defer { stateLock.unlock() }
-        if _isResolving || _isHandlingExternalLink { return false }
-        _isResolving = true
-        return true
+        if _activeResolveToken != nil || _isHandlingExternalLink { return nil }
+        let token = ResolveToken()
+        _activeResolveToken = token
+        return token
     }
 
-    /// Ends a resolve and releases the retained session — but only when `session` is
-    /// still the active one. After `resetLinkHandlingState` (overlay teardown) a late
-    /// completion from the torn-down resolve must neither clobber nor invalidate a
-    /// NEWER resolve's session. Returns true only when this completion still owns the
-    /// resolving slot — callers must gate routing/presentation on it.
+    /// Ends a resolve and releases the retained session only when both its unique token
+    /// and session are still active. After teardown + a newer resolve, an old completion
+    /// can match neither owner even if state has cycled idle → active again (ABA).
     @discardableResult
-    private static func endResolving(session: URLSession) -> Bool {
+    private static func endResolving(session: URLSession, token: ResolveToken) -> Bool {
         stateLock.lock()
-        guard _activeSession === session else {
+        guard _activeResolveToken === token, _activeSession === session else {
             stateLock.unlock()
             return false
         }
-        _isResolving = false
+        _activeResolveToken = nil
         _activeSession = nil
         stateLock.unlock()
         // A URLSession created with a delegate retains it (plus its operation queue and
@@ -1182,33 +1167,41 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
         return true
     }
 
-    private static func setActiveSession(_ session: URLSession?) {
+    /// Installs a session only while this resolve still owns the slot. Teardown may
+    /// race session construction, in which case the caller cancels the orphan.
+    private static func setActiveSession(_ session: URLSession, token: ResolveToken) -> Bool {
         stateLock.lock(); defer { stateLock.unlock() }
+        guard _activeResolveToken === token, _activeSession == nil else { return false }
         _activeSession = session
+        return true
     }
 
     /// Clears all link-handling state when an overlay is torn down.
     static func resetLinkHandlingState() {
         stateLock.lock()
         _isHandlingExternalLink = false
-        _isResolving = false
+        _activeResolveToken = nil
         let session = _activeSession
         _activeSession = nil
         stateLock.unlock()
-        // See endResolving — delegate sessions must be invalidated, not just released (RN-8).
-        session?.finishTasksAndInvalidate()
+        // Overlay teardown must actively stop redirects. Their cancellation completion
+        // cannot present because endResolving requires both token and session identity.
+        session?.invalidateAndCancel()
     }
 
-    init(original: WKNavigationDelegate?) {
+    init(original: WKNavigationDelegate?, hostingController: UIViewController) {
         self.original = original
         self.originalUI = original as? WKUIDelegate
+        self.hostingController = hostingController
     }
 
     /// Returns false when no active overlay exists to present from. Callers that
     /// claimed a link-handling slot must release it on failure — the presented VC's
     /// delegate (the usual release path) will never fire for a VC never presented.
     private func presentViewController(_ vc: UIViewController) -> Bool {
-        guard let hostingVC = SimulaMiniGameModule.activeHostingController else { return false }
+        guard let hostingVC = hostingController,
+              SimulaMiniGameModule.activeHostingController === hostingVC,
+              hostingVC.presentingViewController != nil else { return false }
         var topVC: UIViewController = hostingVC
         while let presented = topVC.presentedViewController {
             topVC = presented
@@ -1259,7 +1252,7 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
             return
         }
 
-        guard WKNavigationDelegateProxy.beginResolving() else { return }
+        guard let resolveToken = WKNavigationDelegateProxy.beginResolving() else { return }
 
         let proxy = self
         // Captured by reference so the completion can prove it still owns the resolving
@@ -1268,7 +1261,11 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
         var session: URLSession?
         let resolver = RedirectResolver { finalURL in
             DispatchQueue.main.async {
-                guard let session, WKNavigationDelegateProxy.endResolving(session: session) else { return }
+                guard let session,
+                      WKNavigationDelegateProxy.endResolving(
+                          session: session,
+                          token: resolveToken
+                      ) else { return }
 
                 if let appID = SimulaMiniGameModule.appStoreID(from: finalURL) {
                     proxy.presentStoreProduct(appID: appID)
@@ -1278,12 +1275,23 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
             }
         }
 
-        // Use .ephemeral to bypass React Native's custom URLProtocols
+        // Use .ephemeral to bypass React Native's custom URLProtocols. Explicit
+        // request/resource deadlines bound both a stalled hop and the whole chain.
         let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = WKNavigationDelegateProxy.redirectRequestTimeout
+        config.timeoutIntervalForResource = WKNavigationDelegateProxy.redirectResourceTimeout
         let newSession = URLSession(configuration: config, delegate: resolver, delegateQueue: nil)
         session = newSession
-        WKNavigationDelegateProxy.setActiveSession(newSession)  // Retain session
-        newSession.dataTask(with: URLRequest(url: url)).resume()
+        guard WKNavigationDelegateProxy.setActiveSession(newSession, token: resolveToken) else {
+            newSession.invalidateAndCancel()
+            return
+        }
+        let request = URLRequest(
+            url: url,
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: WKNavigationDelegateProxy.redirectRequestTimeout
+        )
+        newSession.dataTask(with: request).resume()
     }
 
     // MARK: - WKNavigationDelegate
@@ -1408,8 +1416,8 @@ class RedirectResolver: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         // Fall back to the original URL so `finish` always fires: it releases the
-        // module's `_isResolving` slot — if it never ran, external-link handling
-        // would stay blocked until the overlay is torn down.
+        // active resolve token — if it never ran, external-link handling would stay
+        // blocked until the overlay is torn down.
         if let finalURL = task.currentRequest?.url ?? task.originalRequest?.url {
             finish(with: finalURL)
         }
@@ -1419,35 +1427,5 @@ class RedirectResolver: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate
         guard !completed else { return }
         completed = true
         completion(url)
-    }
-}
-
-// MARK: - UIApplication.open() interceptor
-//
-// Catches App Store URLs that would otherwise leave the app and presents
-// SKStoreProductViewController in-app instead.
-
-extension UIApplication {
-    @objc func simula_openURL(_ url: URL, options: [String: Any], completionHandler: ((Bool) -> Void)?) {
-        if let hostingVC = SimulaMiniGameModule.activeHostingController,
-           let appID = SimulaMiniGameModule.appStoreID(from: url) {
-            DispatchQueue.main.async {
-                let storeVC = SKStoreProductViewController()
-                storeVC.loadProduct(withParameters: [
-                    SKStoreProductParameterITunesItemIdentifier: NSNumber(value: Int(appID) ?? 0)
-                ])
-                var topVC: UIViewController = hostingVC
-                while let presented = topVC.presentedViewController {
-                    topVC = presented
-                }
-                topVC.present(storeVC, animated: true)
-            }
-            completionHandler?(true)
-            return
-        }
-
-        // Not intercepted — call original (implementations are swapped, so this
-        // calls the real UIApplication.open)
-        simula_openURL(url, options: options, completionHandler: completionHandler)
     }
 }

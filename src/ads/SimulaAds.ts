@@ -16,6 +16,8 @@ import { SimulaAdContext, toNativeAdContext } from "./context";
 import { forgetNativeAdHeights } from "../nativeAd/heightCache";
 import { withTimeout, NATIVE_COMPLETION_TIMEOUT_MS } from "../internal/withTimeout";
 import type { SimulaNativeAdTheme } from "../nativeAd/types";
+import { warnUnserializableOnce } from "../internal/safeStringify";
+import { resolvePrivacyConsent, sanitizePrivacy } from "../privacy/sanitize";
 
 export interface SimulaInitConfig {
   apiKey: string;
@@ -35,26 +37,29 @@ export interface SimulaInitConfig {
 
 /** Marshals an init config into the flat shape the native modules expect. */
 function toNativeConfig(config: SimulaInitConfig): Record<string, unknown> {
+  const privacy = config.privacy ? toNativePrivacy(config.privacy) : null;
+  const adContext = config.adContext
+    ? toNativeAdContext(config.adContext)
+    : null;
+  if (config.adContext && adContext === null) {
+    warnUnserializableOnce("SimulaAds.initialize adContext");
+  }
   return {
     apiKey: config.apiKey,
     devMode: config.devMode ?? false,
     primaryUserID: config.primaryUserID ?? null,
-    hasPrivacyConsent: config.hasPrivacyConsent ?? true,
+    hasPrivacyConsent: resolvePrivacyConsent(privacy, config.hasPrivacyConsent),
     telemetryEnabled: config.telemetryEnabled ?? true,
-    privacy: config.privacy ? toNativePrivacy(config.privacy) : null,
-    adContext: config.adContext ? toNativeAdContext(config.adContext) : null,
+    privacy,
+    adContext,
   };
 }
 
-/** Drops undefined keys so absent fields map to native defaults / "unchanged". */
+/** Allowlists each privacy field so malformed siblings cannot suppress valid consent. */
 export function toNativePrivacy(
   privacy: SimulaPrivacyConfig,
 ): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(privacy)) {
-    if (value !== undefined) out[key] = value;
-  }
-  return out;
+  return sanitizePrivacy(privacy);
 }
 
 export const SimulaAds = {
@@ -87,7 +92,16 @@ export const SimulaAds = {
    */
   updateContext(context?: SimulaAdContext | null): void {
     if (!isAdsModuleAvailable()) return warnAdsUnavailable("updateContext");
-    NativeAds!.updateContext(context ? toNativeAdContext(context) : {});
+    if (!context) {
+      NativeAds!.updateContext({});
+      return;
+    }
+    const normalized = toNativeAdContext(context);
+    if (normalized === null) {
+      warnUnserializableOnce("SimulaAds.updateContext adContext");
+      return;
+    }
+    NativeAds!.updateContext(normalized);
   },
 
   /**
@@ -165,6 +179,11 @@ export const SimulaAds = {
       ),
       NATIVE_COMPLETION_TIMEOUT_MS,
       () => null,
+      (preloadedAdId) => {
+        if (typeof preloadedAdId === "string" && preloadedAdId.trim() !== "") {
+          NativeAds!.destroyPreloadedAd(preloadedAdId);
+        }
+      },
     );
   },
 

@@ -1,4 +1,8 @@
-import { safeStringify, UNSERIALIZABLE_SENTINEL } from "../safeStringify";
+import {
+  normalizeJson,
+  safeStringify,
+  UNSERIALIZABLE_SENTINEL,
+} from "../safeStringify";
 
 describe("safeStringify", () => {
   it("stringifies plain values like JSON.stringify", () => {
@@ -25,5 +29,27 @@ describe("safeStringify", () => {
       },
     };
     expect(safeStringify(evil)).toBe(UNSERIALIZABLE_SENTINEL);
+  });
+});
+
+describe("normalizeJson", () => {
+  it("returns a detached deep clone containing JSON-compatible values only", () => {
+    const source = {
+      nested: { keep: true, drop: undefined },
+      list: [1, undefined, Number.NaN],
+    };
+    const normalized = normalizeJson(source);
+    expect(normalized.serializable).toBe(true);
+    if (!normalized.serializable) return;
+    expect(normalized.value).toEqual({
+      nested: { keep: true },
+      list: [1, null, null],
+    });
+    expect(normalized.value).not.toBe(source);
+    expect(normalized.value.nested).not.toBe(source.nested);
+  });
+
+  it("rejects a top-level non-JSON value", () => {
+    expect(normalizeJson(undefined).serializable).toBe(false);
   });
 });

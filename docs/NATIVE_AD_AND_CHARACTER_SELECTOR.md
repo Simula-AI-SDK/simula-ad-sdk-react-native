@@ -167,6 +167,8 @@ The id is consent/COPPA-gated natively, same as at init.
 
 ### Diagnostics
 
-`SimulaAds.userAgent()` and `SimulaAds.deviceId()` resolve the SDK's request
-User-Agent and device id (or `null` before `initialize`) — useful for server-side
-debugging / allowlisting.
+`SimulaAds.userAgent()` resolves the SDK's request User-Agent. `SimulaAds.deviceId()`
+is a nonblocking snapshot of the device id: it may resolve `null` while native
+resolution is pending, before `initialize`, or when the native module is unavailable.
+It does not wait for device-id resolution. Both are useful for server-side debugging
+and allowlisting.

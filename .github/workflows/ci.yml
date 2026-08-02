@@ -1,5 +1,12 @@
 name: CI
 
+# SimulaAdSDK 1.1.7 is still on its native PR branch. Keep this checkout aligned
+# until that PR is merged and 1.1.7 is published; native must merge/release first,
+# then this can move back to `dev` before the RN PR merges. A repository variable
+# allows maintainers to advance the ref without editing this workflow.
+# The Kotlin 1.1.6 source check follows the same ordering: merge/publish the native
+# SDK first, then point SIMULA_KOTLIN_SDK_REF back to `dev` before merging RN.
+
 on:
   pull_request:
   push:
@@ -26,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Simula-AI-SDK/simula-ad-sdk-swift
-          ref: dev
+          ref: ${{ vars.SIMULA_SWIFT_SDK_REF || 'cesar/moreImprovements' }}
           path: simula-ad-sdk-swift
       - uses: actions/setup-node@v4
         with:
@@ -46,7 +53,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Simula-AI-SDK/simula-ad-sdk-kotlin
-          ref: dev
+          ref: ${{ vars.SIMULA_KOTLIN_SDK_REF || 'cesar/moreImprovements' }}
           path: simula-ad-sdk-kotlin
       - uses: actions/setup-java@v4
         with:

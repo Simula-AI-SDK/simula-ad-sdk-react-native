@@ -32,6 +32,49 @@ describe("SimulaAds.initialize", () => {
     expect(arg.privacy).toEqual({ coppaApplies: true });
   });
 
+  it("sends detached JSON clones rather than host-owned objects", async () => {
+    const customContext = { nested: { tier: "pro" } };
+    const adContext = { customContext };
+    await SimulaAds.initialize({ apiKey: "k", adContext });
+
+    const bridged = native.initialize.mock.calls[0][0].adContext;
+    expect(bridged).toEqual(adContext);
+    expect(bridged).not.toBe(adContext);
+    expect(bridged.customContext).not.toBe(customContext);
+    expect(bridged.customContext.nested).not.toBe(customContext.nested);
+  });
+
+  it("preserves granular revocation and valid siblings beside malformed privacy fields", async () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const privacy = {
+      hasPrivacyConsent: false,
+      coppaApplies: true,
+      uspString: "1YNN",
+      gppSid: 7,
+      tcString: circular,
+      extra: BigInt(1),
+    } as unknown as Parameters<typeof toNativePrivacy>[0];
+    await SimulaAds.initialize({
+      apiKey: "k",
+      hasPrivacyConsent: true,
+      privacy,
+    });
+
+    expect(native.initialize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: "k",
+        hasPrivacyConsent: false,
+        privacy: {
+          hasPrivacyConsent: false,
+          coppaApplies: true,
+          uspString: "1YNN",
+          gppSid: "7",
+        },
+      }),
+    );
+  });
+
   it("marshals adContext with undefined keys dropped", async () => {
     await SimulaAds.initialize({
       apiKey: "k",
@@ -61,6 +104,24 @@ describe("SimulaAds.updateContext", () => {
     SimulaAds.updateContext(null);
     expect(native.updateContext).toHaveBeenCalledWith({});
   });
+
+  it("keeps valid context siblings and entries beside malformed custom context", () => {
+    const customContext: Record<string, unknown> = {
+      keep: { tier: "pro" },
+      bad: BigInt(1),
+    };
+    customContext.circular = customContext;
+    SimulaAds.updateContext({
+      category: "news",
+      tags: ["valid", 42] as unknown as string[],
+      customContext,
+    });
+    expect(native.updateContext).toHaveBeenCalledWith({
+      category: "news",
+      tags: ["valid"],
+      customContext: { keep: { tier: "pro" } },
+    });
+  });
 });
 
 describe("SimulaAds native-ad imperatives", () => {
@@ -75,6 +136,41 @@ describe("SimulaAds native-ad imperatives", () => {
   it("preloadNativeAd passes null adUnitId / theme when omitted", async () => {
     await SimulaAds.preloadNativeAd({ position: 3, theme: "dark" });
     expect(native.preloadNativeAd).toHaveBeenCalledWith(null, 3, "dark");
+  });
+
+  it("destroys a nonempty preload id that arrives after the JS timeout", async () => {
+    jest.useFakeTimers();
+    let resolveNative: (value: string | null) => void = () => {};
+    native.preloadNativeAd.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveNative = resolve; }),
+    );
+
+    const outcome = SimulaAds.preloadNativeAd();
+    jest.advanceTimersByTime(10_000);
+    await expect(outcome).resolves.toBeNull();
+    resolveNative("late_ad");
+    await Promise.resolve();
+
+    expect(native.destroyPreloadedAd).toHaveBeenCalledTimes(1);
+    expect(native.destroyPreloadedAd).toHaveBeenCalledWith("late_ad");
+    jest.useRealTimers();
+  });
+
+  it("does not destroy an empty late preload result", async () => {
+    jest.useFakeTimers();
+    let resolveNative: (value: string | null) => void = () => {};
+    native.preloadNativeAd.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveNative = resolve; }),
+    );
+
+    const outcome = SimulaAds.preloadNativeAd();
+    jest.advanceTimersByTime(10_000);
+    await outcome;
+    resolveNative(null);
+    await Promise.resolve();
+
+    expect(native.destroyPreloadedAd).not.toHaveBeenCalled();
+    jest.useRealTimers();
   });
 
   it("invalidateNativeAd defaults position to 0", () => {
@@ -112,6 +208,24 @@ describe("toNativePrivacy", () => {
         gdprApplies: true,
       }),
     ).toEqual({ hasPrivacyConsent: false, gdprApplies: true });
+  });
+
+  it("normalizes each field independently and accepts numeric gppSid", () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(
+      toNativePrivacy({
+        hasPrivacyConsent: false,
+        coppaApplies: true,
+        gppSid: 2,
+        tcString: circular,
+        extra: BigInt(1),
+      } as unknown as Parameters<typeof toNativePrivacy>[0]),
+    ).toEqual({
+      hasPrivacyConsent: false,
+      coppaApplies: true,
+      gppSid: "2",
+    });
   });
 });
 

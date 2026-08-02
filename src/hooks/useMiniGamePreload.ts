@@ -17,7 +17,10 @@ import { useCallback } from 'react';
 import { NativeModules } from 'react-native';
 import { useSimulaContext } from '../context/SimulaProvider';
 import { withTimeout, NATIVE_COMPLETION_TIMEOUT_MS } from '../internal/withTimeout';
-import { devLogRejection } from '../internal/nativeModules';
+import {
+  devLogRejection,
+  warnNativeSurfaceUnavailable,
+} from '../internal/nativeModules';
 
 const { SimulaMiniGameModule } = NativeModules;
 
@@ -25,7 +28,10 @@ export function useMiniGamePreload(): () => Promise<void> {
   const { apiKey, hasPrivacyConsent, devMode, primaryUserID } = useSimulaContext();
 
   return useCallback(async () => {
-    if (!SimulaMiniGameModule?.preload) return;
+    if (!SimulaMiniGameModule?.preload) {
+      warnNativeSurfaceUnavailable("useMiniGamePreload", "SimulaMiniGameModule.preload");
+      return;
+    }
     try {
       // Bounded like every other native completion (RN-6): a dropped native
       // completion must not strand the caller's await forever.
