@@ -156,6 +156,7 @@ describe("SimulaInterstitialAd", () => {
     expect(native.showAd).not.toHaveBeenCalled();
     expect(native.setExtraParameter).not.toHaveBeenCalled();
     expect(native.setExtraParameters).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(4);
     warn.mockRestore();
   });
 });

@@ -98,8 +98,12 @@ export function isAdsModuleAvailable(): boolean {
   return SimulaAdsModule != null;
 }
 
-/** Logs a one-time-style warning when the native module is missing. */
+let warnedAdsUnavailable = false;
+
+/** Logs once in development when the native module is missing. */
 export function warnAdsUnavailable(method: string): void {
+  if (!__DEV__ || warnedAdsUnavailable) return;
+  warnedAdsUnavailable = true;
   console.warn(
     `[SimulaAds] Native module unavailable; ${method} is a no-op. ` +
       `Did you rebuild the app after adding @simula/ads-react-native? ` +

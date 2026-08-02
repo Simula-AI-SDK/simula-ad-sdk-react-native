@@ -31,8 +31,6 @@ export function useMiniGamePreload(): () => Promise<void> {
         devMode,
         primaryUserID: primaryUserID ?? null,
       });
-    } catch (error: any) {
-      console.error('[SimulaMiniGame] preload failed:', error?.message || error);
-    }
+    } catch {}
   }, [apiKey, hasPrivacyConsent, devMode, primaryUserID]);
 }
