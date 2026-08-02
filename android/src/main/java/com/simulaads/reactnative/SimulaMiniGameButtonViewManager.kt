@@ -72,11 +72,21 @@ class SimulaMiniGameButtonViewManager : SimulaMiniGameButtonViewManagerSpec() {
         )
     }
 
-    private fun ReadableMap.getIntOrNull(key: String): Int? =
-        if (hasKey(key) && !isNull(key)) getInt(key) else null
+    private fun ReadableMap.getIntOrNull(key: String): Int? {
+        if (!hasKey(key) || isNull(key)) return null
+        return if (getType(key) == ReadableType.Number) getInt(key) else null
+    }
 
-    private fun ReadableMap.getStringOrNull(key: String): String? =
-        if (hasKey(key) && !isNull(key)) getString(key) else null
+    private fun ReadableMap.getStringOrNull(key: String): String? {
+        if (!hasKey(key) || isNull(key)) return null
+        return when (getType(key)) {
+            ReadableType.String -> getString(key)
+            ReadableType.Number -> getDouble(key).let { n ->
+                if (n == Math.floor(n) && !n.isInfinite()) n.toLong().toString() else n.toString()
+            }
+            else -> null
+        }
+    }
 
     private fun ReadableMap.getDimensionOrNull(key: String): Any? {
         if (!hasKey(key) || isNull(key)) return null

@@ -45,7 +45,6 @@ module is unavailable. It never waits for device-ID resolution — call it freel
 ## Support
 
 - Documentation: [docs.simula.ad](https://docs.simula.ad)
-- Telemetry wire contract: [TELEMETRY_CONTRACT_V3.md](https://github.com/Simula-AI-SDK/simula-ad-sdk-react-native/blob/main/docs/TELEMETRY_CONTRACT_V3.md)
 - Email: admin@simula.ad
 - Website: [simula.ad](https://simula.ad)
 

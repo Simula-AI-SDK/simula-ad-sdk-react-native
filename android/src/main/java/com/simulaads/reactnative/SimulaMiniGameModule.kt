@@ -14,6 +14,7 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReadableMap
+import com.facebook.react.bridge.ReadableType
 import ad.simula.ad.sdk.ads.SimulaAds
 import ad.simula.ad.sdk.character.CharacterSelector
 import ad.simula.ad.sdk.minigame.MiniGameMenu
@@ -707,18 +708,29 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
     }
 
     // ── ReadableMap extensions ───────────────────────────────────────────
+    // Type-TOLERANT reads (same contract as SimulaAdsModule): a mistyped prop must never
+    // throw inside a swallowing guard — coerce what's coercible, skip what isn't.
 
     private fun ReadableMap.getStringOrNull(key: String): String? {
-        return if (hasKey(key) && !isNull(key)) getString(key) else null
+        if (!hasKey(key) || isNull(key)) return null
+        return when (getType(key)) {
+            ReadableType.String -> getString(key)
+            ReadableType.Number -> getDouble(key).let { n ->
+                if (n == Math.floor(n) && !n.isInfinite()) n.toLong().toString() else n.toString()
+            }
+            else -> null
+        }
     }
 
     private fun ReadableMap.getIntOrNull(key: String): Int? {
-        return if (hasKey(key) && !isNull(key)) getInt(key) else null
+        if (!hasKey(key) || isNull(key)) return null
+        return if (getType(key) == ReadableType.Number) getInt(key) else null
     }
 
-    /** Null-safe boolean read (mirrors the iOS `as? Bool` coercion): explicit JS null → null. */
+    /** Type-tolerant boolean read (mirrors the iOS `as? Bool` coercion): explicit JS null → null. */
     private fun ReadableMap.getBooleanOrNull(key: String): Boolean? {
-        return if (hasKey(key) && !isNull(key)) getBoolean(key) else null
+        if (!hasKey(key) || isNull(key)) return null
+        return if (getType(key) == ReadableType.Boolean) getBoolean(key) else null
     }
 
     private fun ReadableMap.getPlayableHeight(): Any? {

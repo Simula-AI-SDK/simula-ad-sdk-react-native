@@ -8,6 +8,7 @@
  */
 import { useEffect, useRef } from "react";
 import { NativeModules } from "react-native";
+import { devLogRejection } from "../internal/nativeModules";
 import { CharacterSelectorProps, CharacterData } from "../types";
 import { useSimulaContext } from "../context/SimulaProvider";
 import {
@@ -51,7 +52,7 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
             description: c.description,
           })) ?? null,
         theme,
-      }).catch(() => {});
+      }).catch((e: unknown) => devLogRejection("showCharacterSelector", e));
     } else if (!isOpen && wasOpenRef.current) {
       SimulaMiniGameModule.hideCharacterSelector();
     }

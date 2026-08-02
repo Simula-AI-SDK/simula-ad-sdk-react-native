@@ -9,6 +9,7 @@
 
 import { useEffect, useRef } from 'react';
 import { NativeModules } from 'react-native';
+import { devLogRejection } from "../../internal/nativeModules";
 import { MiniGameMenuProps } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
 import { miniGameEmitter as emitter, warnIfDuplicateSurface } from '../../internal/emitter';
@@ -48,7 +49,7 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
         maxGamesToShow: maxGamesToShow ?? null,
         theme,
         delegateChar,
-      }).catch(() => {});
+      }).catch((e: unknown) => devLogRejection("showMiniGameMenu", e));
     } else if (!isOpen && wasOpenRef.current) {
       SimulaMiniGameModule.hideMiniGameMenu();
     }

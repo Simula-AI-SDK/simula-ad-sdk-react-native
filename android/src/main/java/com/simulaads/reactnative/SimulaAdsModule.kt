@@ -6,6 +6,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
+import com.facebook.react.bridge.ReadableType
 import com.facebook.react.bridge.WritableMap
 import ad.simula.ad.sdk.ads.SimulaAds
 import ad.simula.ad.sdk.ads.SimulaAdError
@@ -508,15 +509,32 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
     }
 
     // ── ReadableMap extensions ────────────────────────────────────────────────
+    // Type-TOLERANT reads: a single mistyped field (e.g. a numeric gppSid from the IAB GPP
+    // JS API, or a numeric charId from remote config) must never throw inside a swallowing
+    // guard — that would silently discard the WHOLE call (including a bundled consent
+    // revocation, or every load outcome event). Coerce what's coercible; skip what isn't;
+    // the rest of the call always applies.
 
-    private fun ReadableMap.getStringOrNull(key: String): String? =
-        if (hasKey(key) && !isNull(key)) getString(key) else null
+    private fun ReadableMap.getStringOrNull(key: String): String? {
+        if (!hasKey(key) || isNull(key)) return null
+        return when (getType(key)) {
+            ReadableType.String -> getString(key)
+            ReadableType.Number -> getDouble(key).let { n ->
+                if (n == Math.floor(n) && !n.isInfinite()) n.toLong().toString() else n.toString()
+            }
+            else -> null // fundamentally wrong type: skip this field only
+        }
+    }
 
-    private fun ReadableMap.getBooleanOrNull(key: String): Boolean? =
-        if (hasKey(key) && !isNull(key)) getBoolean(key) else null
+    private fun ReadableMap.getBooleanOrNull(key: String): Boolean? {
+        if (!hasKey(key) || isNull(key)) return null
+        return if (getType(key) == ReadableType.Boolean) getBoolean(key) else null
+    }
 
-    private fun ReadableMap.getIntOrNull(key: String): Int? =
-        if (hasKey(key) && !isNull(key)) getInt(key) else null
+    private fun ReadableMap.getIntOrNull(key: String): Int? {
+        if (!hasKey(key) || isNull(key)) return null
+        return if (getType(key) == ReadableType.Number) getInt(key) else null
+    }
 
     // ── NativeEventEmitter required methods ─────────────────────────────────────
 

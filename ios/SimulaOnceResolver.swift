@@ -1,4 +1,8 @@
+#if canImport(React)
 import React
+#elseif canImport(React_Core)
+import React_Core
+#endif
 import Foundation
 
 /// One-shot guard for completion-settled bridge promises (RN-6). The first

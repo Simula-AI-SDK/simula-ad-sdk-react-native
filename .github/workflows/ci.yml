@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [dev]
+
+jobs:
+  javascript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test -- --runInBand
+
+  ios-pod:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout native Swift SDK source
+        uses: actions/checkout@v4
+        with:
+          repository: Simula-AI-SDK/simula-ad-sdk-swift
+          ref: dev
+          path: simula-ad-sdk-swift
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Compile the RN iOS pod in a real React Native workspace
+        env:
+          SWIFT_SDK_PATH: ${{ github.workspace }}/simula-ad-sdk-swift
+        run: bash scripts/verify-ios-pod.sh
+
+  android-bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout native Kotlin SDK source
+        uses: actions/checkout@v4
+        with:
+          repository: Simula-AI-SDK/simula-ad-sdk-kotlin
+          ref: dev
+          path: simula-ad-sdk-kotlin
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Compile the RN Android bridge against the native SDK
+        env:
+          KOTLIN_SDK_PATH: ${{ github.workspace }}/simula-ad-sdk-kotlin
+        run: bash scripts/verify-android-bridge.sh

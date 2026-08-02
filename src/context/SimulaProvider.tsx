@@ -12,9 +12,20 @@ import React, { createContext, useContext, useEffect, useMemo, useRef } from "re
 import { SimulaProviderProps, SimulaContextValue } from "../types";
 import { SimulaAds } from "../ads/SimulaAds";
 import { SimulaPrivacy } from "../privacy/SimulaPrivacy";
-import { safeStringify } from "../internal/safeStringify";
+import { safeStringify, UNSERIALIZABLE_SENTINEL } from "../internal/safeStringify";
 
 const SimulaContext = createContext<SimulaContextValue | null>(null);
+
+/** Dev-only, one-time-per-surface warning for unserializable provider props. */
+const warnedUnserializable = new Set<string>();
+function warnUnserializableOnce(prop: string): void {
+  if (!__DEV__ || warnedUnserializable.has(prop)) return;
+  warnedUnserializable.add(prop);
+  console.warn(
+    `[Simula] "${prop}" prop is not JSON-serializable (circular structure or BigInt). ` +
+      "It was NOT sent to the native SDK — fix the value to enable it.",
+  );
+}
 
 export function useSimulaContext(): SimulaContextValue {
   const context = useContext(SimulaContext);
@@ -34,11 +45,14 @@ export function SimulaProvider({
   telemetryEnabled = true,
   adContext,
   initializeOnMount = true,
+  onInitError,
 }: SimulaProviderProps): React.JSX.Element {
   const contextValue = useMemo<SimulaContextValue>(
     () => ({ apiKey, hasPrivacyConsent, devMode, primaryUserID }),
     [apiKey, hasPrivacyConsent, devMode, primaryUserID],
   );
+  const onInitErrorRef = useRef(onInitError);
+  onInitErrorRef.current = onInitError;
 
   // Stable identity for the (otherwise inline) privacy object so the effects below
   // re-run only on a real consent change, not on every render.
@@ -48,6 +62,14 @@ export function SimulaProvider({
     () => safeStringify(adContext ?? null),
     [adContext],
   );
+  // An unserializable prop must NOT cross the bridge: rendering survived via the
+  // sentinel key, but the raw object would fail (or infinitely recurse, on JSI) in
+  // the native argument marshalling — and the promise rejection would be swallowed
+  // by the fire-and-forget call below. Omit it instead (and warn in dev).
+  const privacySafe = privacyKey !== UNSERIALIZABLE_SENTINEL;
+  const adContextSafe = adContextKey !== UNSERIALIZABLE_SENTINEL;
+  if (!privacySafe) warnUnserializableOnce("privacy");
+  if (!adContextSafe) warnUnserializableOnce("adContext");
 
   // Eager init: warms the native session off the first ad's critical path, and on
   // Android is the only path that enables telemetry. Native init is idempotent
@@ -59,10 +81,13 @@ export function SimulaProvider({
       devMode,
       primaryUserID,
       hasPrivacyConsent,
-      privacy,
+      privacy: privacySafe ? privacy : undefined,
       telemetryEnabled,
-      adContext,
-    }).catch(() => {});
+      adContext: adContextSafe ? adContext : undefined,
+    }).catch((error) => {
+      onInitErrorRef.current?.(error);
+      if (__DEV__) console.warn("[Simula] initialize failed:", error);
+    });
     // privacyKey / adContextKey stand in for the (deep) privacy / adContext objects.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -85,7 +110,12 @@ export function SimulaProvider({
       didMount.current = true;
       return;
     }
-    SimulaPrivacy.update({ hasPrivacyConsent, ...(privacy ?? {}) });
+    // The coarse consent flag is always pushed; only the (possibly unserializable)
+    // granular object is gated — a revocation must never be dropped with a bad prop.
+    SimulaPrivacy.update({
+      hasPrivacyConsent,
+      ...(privacySafe ? (privacy ?? {}) : {}),
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasPrivacyConsent, privacyKey]);
 
@@ -97,7 +127,7 @@ export function SimulaProvider({
       didMountContext.current = true;
       return;
     }
-    SimulaAds.updateContext(adContext ?? null);
+    if (adContextSafe) SimulaAds.updateContext(adContext ?? null);
     // adContextKey stands in for the (deep) adContext object.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adContextKey]);

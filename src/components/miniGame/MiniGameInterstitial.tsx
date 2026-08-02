@@ -8,6 +8,7 @@
 
 import { useEffect, useRef } from 'react';
 import { NativeModules } from 'react-native';
+import { devLogRejection } from "../../internal/nativeModules";
 import { MiniGameInterstitialProps } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
 import { miniGameEmitter as emitter, warnIfDuplicateSurface } from '../../internal/emitter';
@@ -43,7 +44,7 @@ export const MiniGameInterstitial: React.FC<MiniGameInterstitialProps> = ({
         ctaText: ctaText ?? null,
         backgroundImage: backgroundImage ?? null,
         theme,
-      }).catch(() => {});
+      }).catch((e: unknown) => devLogRejection("showMiniGameInterstitial", e));
     } else if (!isOpen && wasOpenRef.current) {
       SimulaMiniGameModule.hideMiniGameInterstitial();
     }

@@ -1,4 +1,8 @@
+#if canImport(React)
 import React
+#elseif canImport(React_Core)
+import React_Core
+#endif
 import Foundation
 import SimulaAdSDK
 #if os(iOS)
@@ -106,8 +110,9 @@ class SimulaAdsModule: RCTEventEmitter {
     /// Runs `work` on the main thread WITHOUT ever trapping: synchronous when already main
     /// (today's delegate-delivery timing, FIFO order preserved), an async hop otherwise.
     /// Delegate events must degrade to a hop — never a release-mode `assumeIsolated` abort —
-    /// if the binary SDK ever delivers one off-main (RN-5).
-    private func enforceMain(_ work: () -> Void) {
+    /// if the binary SDK ever delivers one off-main (RN-5). `@escaping` is required for the
+    /// async hop (the closure outlives this call when delivered off-main).
+    private func enforceMain(_ work: @escaping () -> Void) {
         if Thread.isMainThread { work() } else { DispatchQueue.main.async(execute: work) }
     }
 

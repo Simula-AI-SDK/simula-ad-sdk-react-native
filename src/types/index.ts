@@ -39,6 +39,11 @@ export interface SimulaProviderProps {
    * true. Set false if you call `SimulaAds.initialize` yourself.
    */
   initializeOnMount?: boolean;
+  /**
+   * Receives an eager native-initialization failure (invalid config, missing native
+   * module, native bridge rejection). Runs in production too; dev builds also log once.
+   */
+  onInitError?: (error: unknown) => void;
 }
 
 /**

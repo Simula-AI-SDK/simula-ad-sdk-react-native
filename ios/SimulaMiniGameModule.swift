@@ -1,4 +1,8 @@
+#if canImport(React)
 import React
+#elseif canImport(React_Core)
+import React_Core
+#endif
 import SwiftUI
 import WebKit
 import StoreKit

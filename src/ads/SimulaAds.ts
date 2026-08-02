@@ -62,7 +62,9 @@ export const SimulaAds = {
   async initialize(config: SimulaInitConfig): Promise<void> {
     if (!isAdsModuleAvailable()) {
       warnAdsUnavailable("initialize");
-      return;
+      throw new Error(
+        "[SimulaAds] SimulaAdsModule is not linked. Check the native dependency installation.",
+      );
     }
     if (!config.apiKey) {
       throw new Error("[SimulaAds] initialize requires a non-empty apiKey");

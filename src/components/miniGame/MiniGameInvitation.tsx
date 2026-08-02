@@ -8,6 +8,7 @@
 
 import { useEffect, useRef } from 'react';
 import { NativeModules } from 'react-native';
+import { devLogRejection } from "../../internal/nativeModules";
 import { MiniGameInvitationProps } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
 import { miniGameEmitter as emitter, warnIfDuplicateSurface } from '../../internal/emitter';
@@ -51,7 +52,7 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
         autoCloseDuration: autoCloseDuration ?? null,
         width: width ?? null,
         top: top ?? null,
-      }).catch(() => {});
+      }).catch((e: unknown) => devLogRejection("showMiniGameInvitation", e));
     } else if (!isOpen && wasOpenRef.current) {
       SimulaMiniGameModule.hideMiniGameInvitation();
     }

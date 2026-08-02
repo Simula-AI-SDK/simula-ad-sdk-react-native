@@ -96,5 +96,29 @@ export function isAdsModuleAvailable(): boolean {
   return SimulaAdsModule != null;
 }
 
-/** Native module missing: fail silently (blank/no-op), never console-log. */
-export function warnAdsUnavailable(_method: string): void {}
+const warnedMethods = new Set<string>();
+
+/**
+ * Native module missing: no-op in production (blank/silent surface, never a crash),
+ * but never silent in dev — an unlinked module or misconfigured pod otherwise
+ * produces a signal-free failure that looks like "ads just don't fill". One
+ * warning per method per session keeps the console readable.
+ */
+export function warnAdsUnavailable(method: string): void {
+  if (!__DEV__ || warnedMethods.has(method)) return;
+  warnedMethods.add(method);
+  console.warn(
+    `[Simula] SimulaAdsModule is not linked — "${method}" is a no-op. ` +
+      "Check the native dependency is installed (pods/gradle sync) for this platform.",
+  );
+}
+
+/**
+ * Dev-only logging for fire-and-forget promise rejections (show/preload paths whose
+ * contract is "no promise returned to the host"). Production stays silent by design;
+ * development must see why a surface never appeared.
+ */
+export function devLogRejection(surface: string, error: unknown): void {
+  if (!__DEV__) return;
+  console.warn(`[Simula] ${surface} failed:`, error);
+}

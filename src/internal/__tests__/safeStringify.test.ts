@@ -1,4 +1,4 @@
-import { safeStringify } from "../safeStringify";
+import { safeStringify, UNSERIALIZABLE_SENTINEL } from "../safeStringify";
 
 describe("safeStringify", () => {
   it("stringifies plain values like JSON.stringify", () => {
@@ -11,11 +11,11 @@ describe("safeStringify", () => {
   it("returns the stable fallback for circular structures", () => {
     const circular: Record<string, unknown> = {};
     circular.self = circular;
-    expect(safeStringify(circular)).toBe('"__simula_unserializable__"');
+    expect(safeStringify(circular)).toBe(UNSERIALIZABLE_SENTINEL);
   });
 
   it("returns the stable fallback for BigInt values", () => {
-    expect(safeStringify({ n: BigInt(1) })).toBe('"__simula_unserializable__"');
+    expect(safeStringify({ n: BigInt(1) })).toBe(UNSERIALIZABLE_SENTINEL);
   });
 
   it("never throws on a throwing toJSON", () => {
@@ -24,6 +24,6 @@ describe("safeStringify", () => {
         throw new Error("boom");
       },
     };
-    expect(safeStringify(evil)).toBe('"__simula_unserializable__"');
+    expect(safeStringify(evil)).toBe(UNSERIALIZABLE_SENTINEL);
   });
 });
