@@ -14,6 +14,7 @@ import {
   miniGameEmitter as emitter,
   warnIfDuplicateSurface,
 } from "../internal/emitter";
+import { isNonBlankString } from "../internal/identifiers";
 
 const { SimulaMiniGameModule } = NativeModules;
 
@@ -33,7 +34,7 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
 
   // Show / hide the native selector based on isOpen.
   useEffect(() => {
-    if (!SimulaMiniGameModule) return;
+    if (!SimulaMiniGameModule || !isNonBlankString(apiKey)) return;
 
     if (isOpen && !wasOpenRef.current) {
       SimulaMiniGameModule.showCharacterSelector({

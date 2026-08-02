@@ -16,6 +16,7 @@
 import { useCallback } from 'react';
 import { NativeModules } from 'react-native';
 import { useSimulaContext } from '../context/SimulaProvider';
+import { isNonBlankString } from '../internal/identifiers';
 
 const { SimulaMiniGameModule } = NativeModules;
 
@@ -23,7 +24,7 @@ export function useMiniGamePreload(): () => Promise<void> {
   const { apiKey, hasPrivacyConsent, devMode, primaryUserID } = useSimulaContext();
 
   return useCallback(async () => {
-    if (!SimulaMiniGameModule?.preload) return;
+    if (!SimulaMiniGameModule?.preload || !isNonBlankString(apiKey)) return;
     try {
       await SimulaMiniGameModule.preload({
         apiKey,

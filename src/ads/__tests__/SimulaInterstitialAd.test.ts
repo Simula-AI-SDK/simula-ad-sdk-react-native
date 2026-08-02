@@ -14,6 +14,16 @@ afterEach(() => {
 });
 
 describe("SimulaInterstitialAd", () => {
+  it.each([null, undefined, 1, "", "   "])(
+    "rejects invalid adUnitId %p before creating native instances",
+    (adUnitId) => {
+      expect(() => SimulaInterstitialAd.create(adUnitId as never)).toThrow(
+        TypeError,
+      );
+      expect(native.createInterstitial).not.toHaveBeenCalled();
+    },
+  );
+
   it("creates a native instance with a unique id", () => {
     const a = SimulaInterstitialAd.create("unit_a");
     const b = SimulaInterstitialAd.create("unit_b");
@@ -162,6 +172,11 @@ describe("SimulaInterstitialAd", () => {
 });
 
 describe("SimulaRewardedAd", () => {
+  it("rejects an invalid adUnitId before creating a native instance", () => {
+    expect(() => SimulaRewardedAd.create(" ")).toThrow(TypeError);
+    expect(native.createRewarded).not.toHaveBeenCalled();
+  });
+
   it("creates a rewarded ad for the placement", () => {
     const ad = SimulaRewardedAd.create("reward");
     expect(native.createRewarded).toHaveBeenCalledWith(
