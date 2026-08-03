@@ -18,7 +18,7 @@ import NativeAdViewComponent, {
 } from "./NativeAdNativeComponent";
 import type { NativeAdProps, NativeAdError } from "./types";
 import type { AdValue } from "../ads/types";
-import { serializeExtraParameters } from "../internal/extraParameters";
+import { serializeMetadata } from "../internal/metadata";
 import {
   getLastKnownHeight,
   nativeAdHeightKey,
@@ -62,7 +62,7 @@ export function NativeAd({
   adUnitId,
   position = 0,
   theme,
-  extraParameters,
+  metadata,
   preloadedAdId,
   previewHtml,
   onImpression,
@@ -78,9 +78,9 @@ export function NativeAd({
   const validPreloadedAdId = isNonBlankString(preloadedAdId)
     ? preloadedAdId
     : undefined;
-  const nextExtraParametersJson = useMemo(
-    () => serializeExtraParameters(extraParameters) ?? undefined,
-    [extraParameters],
+  const nextMetadataJson = useMemo(
+    () => serializeMetadata(metadata) ?? undefined,
+    [metadata],
   );
   const metadataLoadKey = JSON.stringify([
     validAdUnitId ?? null,
@@ -91,15 +91,15 @@ export function NativeAd({
   ]);
   const [metadataSnapshot, setMetadataSnapshot] = useState(() => ({
     loadKey: metadataLoadKey,
-    value: nextExtraParametersJson,
+    value: nextMetadataJson,
   }));
   if (metadataSnapshot.loadKey !== metadataLoadKey) {
     setMetadataSnapshot({
       loadKey: metadataLoadKey,
-      value: nextExtraParametersJson,
+      value: nextMetadataJson,
     });
   }
-  const extraParametersJson = metadataSnapshot.value;
+  const metadataJson = metadataSnapshot.value;
 
   // Same identity as the native per-slot cache, so the remembered height always describes the
   // ad the native side will re-render. Previews are debug-only and never cached.
@@ -205,7 +205,7 @@ export function NativeAd({
       // reserved RN layout prop name (see NativeAdNativeComponent.ts).
       adPosition={position}
       theme={theme}
-      extraParametersJson={extraParametersJson}
+      metadataJson={metadataJson}
       preloadedAdId={validPreloadedAdId}
       previewHtml={previewHtml}
       onAdSizeChange={handleSize}

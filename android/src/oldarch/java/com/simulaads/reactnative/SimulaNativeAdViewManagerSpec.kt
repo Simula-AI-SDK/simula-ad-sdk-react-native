@@ -16,7 +16,7 @@ abstract class SimulaNativeAdViewManagerSpec : SimpleViewManager<SimulaNativeAdV
     abstract fun setAdUnitId(view: SimulaNativeAdView, value: String?)
     abstract fun setAdPosition(view: SimulaNativeAdView, value: Int)
     abstract fun setTheme(view: SimulaNativeAdView, value: String?)
-    abstract fun setExtraParametersJson(view: SimulaNativeAdView, value: String?)
+    abstract fun setMetadataJson(view: SimulaNativeAdView, value: String?)
     abstract fun setPreloadedAdId(view: SimulaNativeAdView, value: String?)
     abstract fun setPreviewHtml(view: SimulaNativeAdView, value: String?)
 }

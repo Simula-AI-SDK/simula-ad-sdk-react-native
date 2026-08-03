@@ -22,8 +22,17 @@ describe("SimulaInterstitialAd", () => {
       expect(() => {
         ad = SimulaInterstitialAd.create(adUnitId as never);
       }).not.toThrow();
-      expect(native.createInterstitial).not.toHaveBeenCalled();
+      ad?.load();
+      ad?.show();
+      ad?.setMetadata("key", "value");
+      ad?.setMetadata({ key: "value" });
       ad?.destroy();
+      expect(native.createInterstitial).not.toHaveBeenCalled();
+      expect(native.loadAd).not.toHaveBeenCalled();
+      expect(native.showAd).not.toHaveBeenCalled();
+      expect(native.setMetadataValue).not.toHaveBeenCalled();
+      expect(native.setMetadata).not.toHaveBeenCalled();
+      expect(native.destroyAd).not.toHaveBeenCalled();
       warn.mockRestore();
     },
   );
@@ -56,21 +65,21 @@ describe("SimulaInterstitialAd", () => {
     const ad = SimulaInterstitialAd.create("unit");
     const instanceId = native.createInterstitial.mock.calls[0][0];
 
-    ad.setExtraParameter("experiment", "variant_b");
-    ad.setExtraParameters({ z: "last", a: "first" });
-    ad.setExtraParameters({});
+    ad.setMetadata("experiment", "variant_b");
+    ad.setMetadata({ z: "last", a: "first" });
+    ad.setMetadata({});
 
-    expect(native.setExtraParameter).toHaveBeenCalledWith(
+    expect(native.setMetadataValue).toHaveBeenCalledWith(
       instanceId,
       "experiment",
       "variant_b",
     );
-    expect(native.setExtraParameters).toHaveBeenNthCalledWith(
+    expect(native.setMetadata).toHaveBeenNthCalledWith(
       1,
       instanceId,
       '{"a":"first","z":"last"}',
     );
-    expect(native.setExtraParameters).toHaveBeenNthCalledWith(
+    expect(native.setMetadata).toHaveBeenNthCalledWith(
       2,
       instanceId,
       "{}",
@@ -83,11 +92,11 @@ describe("SimulaInterstitialAd", () => {
     const ad = SimulaInterstitialAd.create("unit");
     const instanceId = native.createInterstitial.mock.calls[0][0];
 
-    ad.setExtraParameter("", "value");
-    ad.setExtraParameter(null as never, "value");
-    ad.setExtraParameter("key", undefined as never);
+    ad.setMetadata("", "value");
+    ad.setMetadata(null as never, "value");
+    ad.setMetadata("key", undefined as never);
 
-    expect(native.setExtraParameter).not.toHaveBeenCalled();
+    expect(native.setMetadataValue).not.toHaveBeenCalled();
     expect(instanceId).toEqual(expect.any(String));
     expect(warn).toHaveBeenCalledTimes(3);
     warn.mockRestore();
@@ -180,12 +189,12 @@ describe("SimulaInterstitialAd", () => {
     ad.destroy();
     ad.load();
     ad.show();
-    ad.setExtraParameter("key", "value");
-    ad.setExtraParameters({ key: "value" });
+    ad.setMetadata("key", "value");
+    ad.setMetadata({ key: "value" });
     expect(native.loadAd).not.toHaveBeenCalled();
     expect(native.showAd).not.toHaveBeenCalled();
-    expect(native.setExtraParameter).not.toHaveBeenCalled();
-    expect(native.setExtraParameters).not.toHaveBeenCalled();
+    expect(native.setMetadataValue).not.toHaveBeenCalled();
+    expect(native.setMetadata).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledTimes(4);
     warn.mockRestore();
   });
@@ -198,8 +207,15 @@ describe("SimulaRewardedAd", () => {
     expect(() => {
       ad = SimulaRewardedAd.create(" ");
     }).not.toThrow();
-    expect(native.createRewarded).not.toHaveBeenCalled();
+    ad?.load();
+    ad?.show();
+    ad?.setMetadata("key", "value");
     ad?.destroy();
+    expect(native.createRewarded).not.toHaveBeenCalled();
+    expect(native.loadAd).not.toHaveBeenCalled();
+    expect(native.showAd).not.toHaveBeenCalled();
+    expect(native.setMetadataValue).not.toHaveBeenCalled();
+    expect(native.destroyAd).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 
@@ -216,15 +232,15 @@ describe("SimulaRewardedAd", () => {
     const ad = SimulaRewardedAd.create("reward");
     const instanceId = native.createRewarded.mock.calls[0][0];
 
-    ad.setExtraParameter("reward", "coins");
-    ad.setExtraParameters({ reward: "coins", source: "daily" });
+    ad.setMetadata("reward", "coins");
+    ad.setMetadata({ reward: "coins", source: "daily" });
 
-    expect(native.setExtraParameter).toHaveBeenCalledWith(
+    expect(native.setMetadataValue).toHaveBeenCalledWith(
       instanceId,
       "reward",
       "coins",
     );
-    expect(native.setExtraParameters).toHaveBeenCalledWith(
+    expect(native.setMetadata).toHaveBeenCalledWith(
       instanceId,
       '{"reward":"coins","source":"daily"}',
     );

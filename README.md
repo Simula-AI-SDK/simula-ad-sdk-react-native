@@ -37,16 +37,19 @@ Attach publisher-defined dimensions to an ad before loading it:
 
 ```tsx
 const ad = SimulaInterstitialAd.create("feed_interstitial");
-ad.setExtraParameters({ page_name: "Search", experiment: "variant_b" });
+ad.setMetadata("page_name", "Search");
+ad.setMetadata({ page_name: "Search", experiment: "variant_b" });
 ad.load();
 
 <NativeAd
   adUnitId="feed_native"
-  extraParameters={{ page_name: "Search" }}
+  metadata={{ page_name: "Search" }}
 />
 ```
 
-`setExtraParameter` and `setExtraParameters` are also available on rewarded ads and the interstitial/rewarded hooks. Metadata is snapshotted when an ad load starts; changing it later applies to the next load, not an in-flight or already cached impression.
+The exported `SimulaMetadata` type describes the metadata object. The overloaded `setMetadata` method is available on interstitial and rewarded ads, and as a callable function returned by both ad hooks. Pass either a key/value pair to upsert one value or a metadata object to replace all values.
+
+Imperative-ad metadata is snapshotted when `load()` starts, so later `setMetadata` calls apply to the next load. `<NativeAd>` snapshots its `metadata` prop when the slot mounts or its load identity changes; changing only `metadata` does not mutate an in-flight or cached impression.
 
 Metadata accepts at most 10 string entries. Keys must be non-empty, no longer than 64 Unicode code points, must not start with `$`, and must not contain `.`. Values are limited to 256 Unicode code points. Invalid entries are ignored without failing the ad request.
 

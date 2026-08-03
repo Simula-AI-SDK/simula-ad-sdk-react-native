@@ -54,7 +54,7 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
     var adUnitId: String? = null
     var position: Int = 0
     var theme: String? = null
-    var extraParametersJson: String? = null
+    var metadataJson: String? = null
     var preloadedAdId: String? = null
     var previewHtml: String? = null
 
@@ -84,7 +84,7 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
         committedKey = propKey
         // Metadata belongs to the request started for this slot identity. Prop-only
         // updates must not alter an in-flight or cached impression.
-        val extraParametersSnapshot = parseExtraParameters(extraParametersJson)
+        val metadataSnapshot = parseMetadata(metadataJson)
         // FlashList / RecyclerView rebinds this view to a new slot without recreating it.
         // Drop the previous slot's measure watermark so the new creative's height is always
         // reported (a coincidental same-dp height would otherwise be deduped away while JS
@@ -106,7 +106,7 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
                         position = position,
                         theme = theme,
                         preloadedAdId = preloadedAdId,
-                        extraParameters = extraParametersSnapshot,
+                        metadata = metadataSnapshot,
                         previewHtml = previewHtml,
                         onImpression = { emitImpression(it) },
                         onPaid = { emitPaid(it) },
@@ -118,7 +118,7 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
         }
     }
 
-    private fun parseExtraParameters(json: String?): Map<String, String> {
+    private fun parseMetadata(json: String?): Map<String, String> {
         if (json.isNullOrBlank()) return emptyMap()
         return try {
             val objectValue = JSONObject(json)

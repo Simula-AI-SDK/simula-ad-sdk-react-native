@@ -319,27 +319,27 @@ class SimulaAdsModule: RCTEventEmitter {
     }
 
     @objc
-    func setExtraParameter(_ instanceId: String, key: NSString?, value: NSString?) {
+    func setMetadataValue(_ instanceId: String, key: NSString?, value: NSString?) {
         guard let key = key as String?, !key.isEmpty, let value = value as String? else { return }
         runOnMain {
             guard let entry = self.entries[instanceId] else { return }
-            entry.interstitial?.setExtraParameter(key, value)
-            entry.rewarded?.setExtraParameter(key, value)
+            entry.interstitial?.setMetadata(key, value)
+            entry.rewarded?.setMetadata(key, value)
         }
     }
 
     @objc
-    func setExtraParameters(_ instanceId: String, parametersJson: NSString?) {
-        guard let parametersJson = parametersJson as String? else { return }
-        guard let parameters = Self.parseExtraParameters(parametersJson) else { return }
+    func setMetadata(_ instanceId: String, metadataJson: NSString?) {
+        guard let metadataJson = metadataJson as String? else { return }
+        guard let metadata = Self.parseMetadata(metadataJson) else { return }
         runOnMain {
             guard let entry = self.entries[instanceId] else { return }
-            entry.interstitial?.setExtraParameters(parameters)
-            entry.rewarded?.setExtraParameters(parameters)
+            entry.interstitial?.setMetadata(metadata)
+            entry.rewarded?.setMetadata(metadata)
         }
     }
 
-    private static func parseExtraParameters(_ json: String) -> [String: String]? {
+    private static func parseMetadata(_ json: String) -> [String: String]? {
         guard let data = json.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data),
               let dictionary = object as? [String: Any] else { return nil }

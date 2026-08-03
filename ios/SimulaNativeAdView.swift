@@ -34,7 +34,7 @@ class SimulaNativeAdHostView: UIView {
     // Android's shadow-node update; on iOS it collides with RCTShadowView's layout prop).
     @objc var adPosition: NSNumber = 0 { didSet { setNeedsMount() } }
     @objc var theme: NSString? { didSet { setNeedsMount() } }
-    @objc var extraParametersJson: NSString? {
+    @objc var metadataJson: NSString? {
         didSet {
             if hostingController == nil { setNeedsMount() }
         }
@@ -212,7 +212,7 @@ class SimulaNativeAdHostView: UIView {
             adUnitId: adUnitId as String?,
             position: adPosition.intValue,
             theme: theme as String?,
-            extraParameters: parseExtraParameters(extraParametersJson as String?),
+            metadata: parseMetadata(metadataJson as String?),
             preloadedAdId: preloadedAdId as String?,
             previewHTML: previewHtml as String?,
             onHeight: { [weak self] height in self?.reportHeight(height, generation: generation) },
@@ -274,7 +274,7 @@ class SimulaNativeAdHostView: UIView {
         heightConstraint = height
     }
 
-    private func parseExtraParameters(_ json: String?) -> [String: String] {
+    private func parseMetadata(_ json: String?) -> [String: String] {
         guard let json,
               let data = json.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data),
@@ -410,7 +410,7 @@ private struct SimulaNativeAdRoot: View {
     let adUnitId: String?
     let position: Int
     let theme: String?
-    let extraParameters: [String: String]
+    let metadata: [String: String]
     let preloadedAdId: String?
     let previewHTML: String?
     let onHeight: (CGFloat) -> Void
@@ -424,7 +424,7 @@ private struct SimulaNativeAdRoot: View {
             adUnitId: adUnitId,
             position: position,
             theme: theme,
-            extraParameters: extraParameters,
+            metadata: metadata,
             preloadedAdId: preloadedAdId,
             onImpression: onImpression,
             onPaid: onPaid,

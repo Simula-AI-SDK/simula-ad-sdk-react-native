@@ -166,22 +166,22 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun setExtraParameter(instanceId: String, key: String?, value: String?) {
+    fun setMetadataValue(instanceId: String, key: String?, value: String?) {
         if (key.isNullOrEmpty() || value == null) return
         val entry = entries[instanceId] ?: return
-        entry.interstitial?.setExtraParameter(key, value)
-        entry.rewarded?.setExtraParameter(key, value)
+        entry.interstitial?.setMetadata(key, value)
+        entry.rewarded?.setMetadata(key, value)
     }
 
     @ReactMethod
-    fun setExtraParameters(instanceId: String, parametersJson: String) {
-        val parameters = parseExtraParameters(parametersJson) ?: return
+    fun setMetadata(instanceId: String, metadataJson: String) {
+        val metadata = parseMetadata(metadataJson) ?: return
         val entry = entries[instanceId] ?: return
-        entry.interstitial?.setExtraParameters(parameters)
-        entry.rewarded?.setExtraParameters(parameters)
+        entry.interstitial?.setMetadata(metadata)
+        entry.rewarded?.setMetadata(metadata)
     }
 
-    private fun parseExtraParameters(json: String): Map<String, String>? = try {
+    private fun parseMetadata(json: String): Map<String, String>? = try {
         val objectValue = JSONObject(json)
         objectValue.keys().asSequence()
             .sorted()

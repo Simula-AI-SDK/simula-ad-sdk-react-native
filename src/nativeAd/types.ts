@@ -1,5 +1,5 @@
 import type { DimensionValue, StyleProp, ViewStyle } from "react-native";
-import type { AdValue, SimulaExtraParameters } from "../ads/types";
+import type { AdValue, SimulaMetadata } from "../ads/types";
 
 /**
  * Creative color theme for a native ad.
@@ -56,7 +56,7 @@ export interface NativeAdProps {
    * Per-impression publisher metadata. Snapshotted when this slot starts loading;
    * changing it afterward applies only when the slot identity changes or remounts.
    */
-  extraParameters?: SimulaExtraParameters;
+  metadata?: SimulaMetadata;
   /**
    * An id from `SimulaAds.preloadNativeAd()` — renders that cached ad with no live
    * request. An expired/unknown id falls back to a live call (no error surfaced).
@@ -100,7 +100,7 @@ export interface NativeAdViewProps {
   adUnitId?: string;
   position?: number;
   theme?: SimulaNativeAdTheme;
-  extraParametersJson?: string;
+  metadataJson?: string;
   preloadedAdId?: string;
   previewHtml?: string;
   onAdSizeChange?: (event: {

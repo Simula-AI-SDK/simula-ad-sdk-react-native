@@ -5,7 +5,7 @@
 RCT_EXPORT_VIEW_PROPERTY(adUnitId, NSString)
 RCT_EXPORT_VIEW_PROPERTY(adPosition, NSNumber)
 RCT_EXPORT_VIEW_PROPERTY(theme, NSString)
-RCT_EXPORT_VIEW_PROPERTY(extraParametersJson, NSString)
+RCT_EXPORT_VIEW_PROPERTY(metadataJson, NSString)
 RCT_EXPORT_VIEW_PROPERTY(preloadedAdId, NSString)
 RCT_EXPORT_VIEW_PROPERTY(previewHtml, NSString)
 

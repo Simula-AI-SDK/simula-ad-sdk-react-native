@@ -18,9 +18,9 @@ import {
 } from "../internal/nativeModules";
 import { registerInstance } from "./eventRouter";
 import {
-  isValidExtraParameter,
-  serializeExtraParameters,
-} from "../internal/extraParameters";
+  isValidMetadataValue,
+  serializeMetadata,
+} from "../internal/metadata";
 import {
   isNonBlankString,
   warnInvalidIdentifier,
@@ -28,7 +28,7 @@ import {
 import {
   SimulaAdEvent,
   SimulaAdLoadOptions,
-  SimulaExtraParameters,
+  SimulaMetadata,
   SimulaAdType,
   SimulaAnyAdEventType,
   SimulaUnsubscribe,
@@ -82,9 +82,9 @@ export abstract class SimulaBaseAd {
     this.adUnitId = isNonBlankString(adUnitId) ? adUnitId : "";
     if (!this.adUnitId) warnInvalidIdentifier("create", "adUnitId");
     this.instanceId = nextInstanceId(idPrefix);
-    this.unregister = registerInstance(this.instanceId, (event) =>
-      this.dispatch(event),
-    );
+    this.unregister = this.adUnitId
+      ? registerInstance(this.instanceId, (event) => this.dispatch(event))
+      : () => undefined;
   }
 
   /** Whether the most recent load reported success and the ad has not since closed/failed. */
@@ -169,19 +169,19 @@ export abstract class SimulaBaseAd {
 
   // ── Native passthrough ────────────────────────────────────────────────
 
-  /** Upserts one metadata value for future impressions. Native validation is authoritative. */
-  setExtraParameter(key: string, value: string): void {
-    if (!this.requireNative("setExtraParameter")) return;
-    if (!isValidExtraParameter(key, value)) return;
-    NativeAds!.setExtraParameter(this.instanceId, key, value);
-  }
-
-  /** Replaces all metadata for future impressions. Invalid entries are dropped fail-safe. */
-  setExtraParameters(parameters: SimulaExtraParameters): void {
-    if (!this.requireNative("setExtraParameters")) return;
-    NativeAds!.setExtraParameters(
+  /** Upserts one value or replaces all metadata for future impressions. */
+  setMetadata(key: string, value: string): void;
+  setMetadata(metadata: SimulaMetadata): void;
+  setMetadata(keyOrMetadata: string | SimulaMetadata, value?: string): void {
+    if (!this.requireNative("setMetadata")) return;
+    if (typeof keyOrMetadata === "string" || value !== undefined) {
+      if (!isValidMetadataValue(keyOrMetadata, value)) return;
+      NativeAds!.setMetadataValue(this.instanceId, keyOrMetadata as string, value!);
+      return;
+    }
+    NativeAds!.setMetadata(
       this.instanceId,
-      serializeExtraParameters(parameters) ?? "{}",
+      serializeMetadata(keyOrMetadata) ?? "{}",
     );
   }
 
@@ -213,12 +213,13 @@ export abstract class SimulaBaseAd {
     this._loaded = false;
     this.removeAllListeners();
     this.unregister();
-    if (isAdsModuleAvailable()) {
+    if (this.adUnitId && isAdsModuleAvailable()) {
       NativeAds!.destroyAd(this.instanceId);
     }
   }
 
   protected requireNative(method: string): boolean {
+    if (!this.adUnitId) return false;
     if (this.destroyed) {
       if (__DEV__) {
         console.warn(`[SimulaAds] ${method}() called on a destroyed ad — ignored.`);

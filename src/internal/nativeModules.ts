@@ -51,8 +51,8 @@ export interface NativeSimulaAdsModule {
   // ── Imperative ads (instanceId-routed) ─────────────────────────────────
   createInterstitial(instanceId: string, adUnitId: string): void;
   createRewarded(instanceId: string, adUnitId: string): void;
-  setExtraParameter(instanceId: string, key: string, value: string): void;
-  setExtraParameters(instanceId: string, parametersJson: string): void;
+  setMetadataValue(instanceId: string, key: string, value: string): void;
+  setMetadata(instanceId: string, metadataJson: string): void;
   loadAd(instanceId: string, options: Record<string, unknown>): void;
   showAd(instanceId: string): void;
   showAdPreview(instanceId: string, options: Record<string, unknown>): void;

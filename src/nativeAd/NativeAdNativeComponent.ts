@@ -54,7 +54,7 @@ export interface NativeProps extends ViewProps {
   // still exposes `position`; NativeAd.tsx maps it.
   adPosition?: WithDefault<Int32, 0>;
   theme?: string;
-  extraParametersJson?: string;
+  metadataJson?: string;
   preloadedAdId?: string;
   previewHtml?: string;
   onAdSizeChange?: DirectEventHandler<NativeAdSizeChangeEventData>;

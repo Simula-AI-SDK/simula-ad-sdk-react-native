@@ -17,6 +17,17 @@ const androidModuleSource = readFileSync(
   ),
   "utf8",
 );
+const androidNativeAdSource = readFileSync(
+  resolve(
+    repositoryRoot,
+    "android/src/main/java/com/simulaads/reactnative/SimulaNativeAdView.kt",
+  ),
+  "utf8",
+);
+const iosNativeAdSource = readFileSync(
+  resolve(repositoryRoot, "ios/SimulaNativeAdView.swift"),
+  "utf8",
+);
 
 describe("iOS bridge string nullability contract", () => {
   it("accepts nullable host-controlled identifiers at the Objective-C boundary", () => {
@@ -57,10 +68,41 @@ describe("iOS bridge string nullability contract", () => {
 
   it("accepts nullable metadata values and rejects empty keys at the Android bridge boundary", () => {
     expect(androidModuleSource).toContain(
-      "fun setExtraParameter(instanceId: String, key: String?, value: String?)",
+      "fun setMetadataValue(instanceId: String, key: String?, value: String?)",
     );
     expect(androidModuleSource).toContain(
       "if (key.isNullOrEmpty() || value == null) return",
+    );
+    expect(androidModuleSource).toContain("if (key.isEmpty()) null");
+    expect(androidNativeAdSource).toContain("if (key.isEmpty()) null");
+  });
+
+  it("rejects empty metadata keys at both iOS bridge boundaries", () => {
+    expect(moduleSource).toContain("!key.isEmpty");
+    expect(moduleSource).toContain(
+      "guard !key.isEmpty, let value = dictionary[key] as? String else { return nil }",
+    );
+    expect(iosNativeAdSource).toContain(
+      "guard !key.isEmpty, let value = dictionary[key] as? String else { return nil }",
+    );
+  });
+
+  it("uses distinct bridge names for the native SDK's overloaded metadata setters", () => {
+    expect(bridge).toContain(
+      "setMetadataValue:(NSString * _Nonnull)instanceId key:(NSString * _Nullable)key value:(NSString * _Nullable)value",
+    );
+    expect(bridge).toContain(
+      "setMetadata:(NSString * _Nonnull)instanceId metadataJson:(NSString * _Nullable)metadataJson",
+    );
+    expect(moduleSource).toContain(
+      "entry.interstitial?.setMetadata(key, value)",
+    );
+    expect(moduleSource).toContain("entry.rewarded?.setMetadata(metadata)");
+    expect(androidModuleSource).toContain(
+      "entry.interstitial?.setMetadata(key, value)",
+    );
+    expect(androidModuleSource).toContain(
+      "entry.rewarded?.setMetadata(metadata)",
     );
   });
 });

@@ -13,7 +13,7 @@ import { SimulaInterstitialAd } from "../ads/SimulaInterstitialAd";
 import {
   SimulaAdLoadOptions,
   SimulaAdError,
-  SimulaExtraParameters,
+  SimulaMetadata,
   AdValue,
 } from "../ads/types";
 import {
@@ -31,8 +31,10 @@ export interface UseInterstitialAd {
   error: SimulaAdError | undefined;
   load: (options?: SimulaAdLoadOptions) => void;
   show: () => void;
-  setExtraParameter: (key: string, value: string) => void;
-  setExtraParameters: (parameters: SimulaExtraParameters) => void;
+  setMetadata: {
+    (key: string, value: string): void;
+    (metadata: SimulaMetadata): void;
+  };
 }
 
 export function useInterstitialAd(adUnitId: string): UseInterstitialAd {
@@ -120,13 +122,15 @@ export function useInterstitialAd(adUnitId: string): UseInterstitialAd {
     adRef.current?.show();
   }, []);
 
-  const setExtraParameter = useCallback((key: string, value: string) => {
-    adRef.current?.setExtraParameter(key, value);
-  }, []);
-
-  const setExtraParameters = useCallback(
-    (parameters: SimulaExtraParameters) => {
-      adRef.current?.setExtraParameters(parameters);
+  const setMetadata: UseInterstitialAd["setMetadata"] = useCallback(
+    (keyOrMetadata: string | SimulaMetadata, value?: string) => {
+      const ad = adRef.current;
+      if (!ad) return;
+      if (typeof keyOrMetadata === "string") {
+        ad.setMetadata(keyOrMetadata, value!);
+      } else {
+        ad.setMetadata(keyOrMetadata);
+      }
     },
     [],
   );
@@ -139,7 +143,6 @@ export function useInterstitialAd(adUnitId: string): UseInterstitialAd {
     error,
     load,
     show,
-    setExtraParameter,
-    setExtraParameters,
+    setMetadata,
   };
 }
