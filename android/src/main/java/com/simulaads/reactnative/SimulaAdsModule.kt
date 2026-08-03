@@ -59,7 +59,7 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
             return
         }
         val devMode = config.getBooleanOrNull("devMode") ?: false
-        val primaryUserID = config.getStringOrNull("primaryUserID")
+        val primaryUserID = config.getStringOrNull("primaryUserID")?.takeIf { it.isNotBlank() }
         val hasPrivacyConsent = config.getBooleanOrNull("hasPrivacyConsent") ?: true
         val telemetryEnabled = config.getBooleanOrNull("telemetryEnabled") ?: true
         val privacy = if (config.hasKey("privacy") && !config.isNull("privacy"))

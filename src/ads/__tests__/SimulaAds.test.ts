@@ -51,6 +51,22 @@ describe("SimulaAds.initialize", () => {
     });
   });
 
+  it.each([undefined, null, "", " ", "\t\n"])(
+    "maps blank primaryUserID %p to null",
+    async (primaryUserID) => {
+      await SimulaAds.initialize({ apiKey: "k", primaryUserID } as never);
+      expect(native.initialize.mock.calls[0][0].primaryUserID).toBeNull();
+    },
+  );
+
+  it.each(["user-123", " user-123 ", "\tuser-123\n"])(
+    "preserves nonblank primaryUserID %p verbatim",
+    async (primaryUserID) => {
+      await SimulaAds.initialize({ apiKey: "k", primaryUserID });
+      expect(native.initialize.mock.calls[0][0].primaryUserID).toBe(primaryUserID);
+    },
+  );
+
   it("passes privacy through with undefined keys dropped", async () => {
     await SimulaAds.initialize({
       apiKey: "k",

@@ -42,10 +42,14 @@ function toNativeConfig(config: SimulaInitConfig): Record<string, unknown> {
   const privacySnapshot =
     config.privacy == null ? undefined : safeJsonSnapshot(config.privacy);
   const privacyValue = privacySnapshot?.value;
+  const primaryUserID =
+    typeof config.primaryUserID === "string" && config.primaryUserID.trim()
+      ? config.primaryUserID
+      : null;
   return {
     apiKey: config.apiKey,
     devMode: config.devMode ?? false,
-    primaryUserID: config.primaryUserID ?? null,
+    primaryUserID,
     hasPrivacyConsent: config.hasPrivacyConsent ?? true,
     telemetryEnabled: config.telemetryEnabled ?? true,
     privacy:
