@@ -17,8 +17,14 @@ import {
   warnAdsUnavailable,
 } from "../internal/nativeModules";
 import { registerInstance } from "./eventRouter";
-import { serializeExtraParameters } from "../internal/extraParameters";
-import { requireNonBlankString } from "../internal/identifiers";
+import {
+  isValidExtraParameter,
+  serializeExtraParameters,
+} from "../internal/extraParameters";
+import {
+  isNonBlankString,
+  warnInvalidIdentifier,
+} from "../internal/identifiers";
 import {
   SimulaAdEvent,
   SimulaAdLoadOptions,
@@ -73,7 +79,8 @@ export abstract class SimulaBaseAd {
     idPrefix: string,
   ) {
     this.adType = adType;
-    this.adUnitId = requireNonBlankString(adUnitId, "adUnitId");
+    this.adUnitId = isNonBlankString(adUnitId) ? adUnitId : "";
+    if (!this.adUnitId) warnInvalidIdentifier("create", "adUnitId");
     this.instanceId = nextInstanceId(idPrefix);
     this.unregister = registerInstance(this.instanceId, (event) =>
       this.dispatch(event),
@@ -165,6 +172,7 @@ export abstract class SimulaBaseAd {
   /** Upserts one metadata value for future impressions. Native validation is authoritative. */
   setExtraParameter(key: string, value: string): void {
     if (!this.requireNative("setExtraParameter")) return;
+    if (!isValidExtraParameter(key, value)) return;
     NativeAds!.setExtraParameter(this.instanceId, key, value);
   }
 

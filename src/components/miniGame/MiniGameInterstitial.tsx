@@ -29,13 +29,14 @@ export const MiniGameInterstitial: React.FC<MiniGameInterstitialProps> = ({
   const { apiKey, hasPrivacyConsent, devMode, primaryUserID } =
     useSimulaContext();
   const wasOpenRef = useRef(false);
+  const shownForOpenCycleRef = useRef(false);
 
   // Show/hide native interstitial based on isOpen prop
   useEffect(() => {
     if (!SimulaMiniGameModule) return;
     const action = surfaceVisibilityAction(
       isOpen,
-      wasOpenRef.current,
+      shownForOpenCycleRef.current,
       isNonBlankString(apiKey),
     );
 
@@ -54,9 +55,11 @@ export const MiniGameInterstitial: React.FC<MiniGameInterstitialProps> = ({
         console.error('[SimulaMiniGame] showMiniGameInterstitial failed:', error?.message || error);
       });
       wasOpenRef.current = true;
+      shownForOpenCycleRef.current = true;
     } else if (action === 'hide') {
       SimulaMiniGameModule.hideMiniGameInterstitial();
       wasOpenRef.current = false;
+      shownForOpenCycleRef.current = false;
     }
   }, [isOpen, apiKey]);
 

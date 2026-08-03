@@ -78,10 +78,28 @@ export function NativeAd({
   const validPreloadedAdId = isNonBlankString(preloadedAdId)
     ? preloadedAdId
     : undefined;
-  const extraParametersJson = useMemo(
+  const nextExtraParametersJson = useMemo(
     () => serializeExtraParameters(extraParameters) ?? undefined,
     [extraParameters],
   );
+  const metadataLoadKey = JSON.stringify([
+    validAdUnitId ?? null,
+    position,
+    theme ?? null,
+    validPreloadedAdId ?? null,
+    previewHtml ?? null,
+  ]);
+  const [metadataSnapshot, setMetadataSnapshot] = useState(() => ({
+    loadKey: metadataLoadKey,
+    value: nextExtraParametersJson,
+  }));
+  if (metadataSnapshot.loadKey !== metadataLoadKey) {
+    setMetadataSnapshot({
+      loadKey: metadataLoadKey,
+      value: nextExtraParametersJson,
+    });
+  }
+  const extraParametersJson = metadataSnapshot.value;
 
   // Same identity as the native per-slot cache, so the remembered height always describes the
   // ad the native side will re-render. Previews are debug-only and never cached.

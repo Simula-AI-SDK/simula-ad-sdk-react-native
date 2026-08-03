@@ -19,8 +19,8 @@ import { RewardedPreviewOptions } from "./types";
 export class SimulaRewardedAd extends SimulaBaseAd {
   private constructor(adUnitId: string) {
     super("rewarded", adUnitId, "rew");
-    if (this.requireNative("create")) {
-      NativeAds!.createRewarded(this.instanceId, adUnitId);
+    if (this.adUnitId && this.requireNative("create")) {
+      NativeAds!.createRewarded(this.instanceId, this.adUnitId);
     }
   }
 

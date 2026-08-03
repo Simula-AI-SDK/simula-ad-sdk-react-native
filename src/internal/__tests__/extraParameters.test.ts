@@ -1,4 +1,7 @@
-import { serializeExtraParameters } from "../extraParameters";
+import {
+  isValidExtraParameter,
+  serializeExtraParameters,
+} from "../extraParameters";
 import type { SimulaExtraParameters } from "../../ads/types";
 
 describe("serializeExtraParameters", () => {
@@ -19,9 +22,16 @@ describe("serializeExtraParameters", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("preserves an empty key because the backend contract allows it", () => {
-    expect(serializeExtraParameters({ "": "value" })).toBe('{"":"value"}');
-    expect(warn).not.toHaveBeenCalled();
+  it("rejects an empty key", () => {
+    expect(serializeExtraParameters({ "": "value" })).toBeNull();
+    expect(isValidExtraParameter("", "value")).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects nullish single-value bridge arguments", () => {
+    expect(isValidExtraParameter(null, "value")).toBe(false);
+    expect(isValidExtraParameter("key", undefined)).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(2);
   });
 
   it("measures Unicode code points like the backend", () => {

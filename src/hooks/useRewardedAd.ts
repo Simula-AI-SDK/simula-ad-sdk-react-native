@@ -16,6 +16,10 @@ import {
   SimulaExtraParameters,
   AdValue,
 } from "../ads/types";
+import {
+  isNonBlankString,
+  warnInvalidIdentifier,
+} from "../internal/identifiers";
 
 export interface UseRewardedAd {
   isLoaded: boolean;
@@ -48,8 +52,6 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
   const [error, setError] = useState<SimulaAdError | undefined>(undefined);
 
   useEffect(() => {
-    const ad = SimulaRewardedAd.create(adUnitId);
-    adRef.current = ad;
     setIsLoaded(false);
     setIsClosed(false);
     setEarnedReward(false);
@@ -58,6 +60,14 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
     setImpressionRecorded(false);
     setAdValue(null);
     setError(undefined);
+    if (!isNonBlankString(adUnitId)) {
+      adRef.current = null;
+      warnInvalidIdentifier("useRewardedAd", "adUnitId");
+      return;
+    }
+
+    const ad = SimulaRewardedAd.create(adUnitId);
+    adRef.current = ad;
 
     // True when a LOADED arrived after the most recent DISPLAYED — the native
     // auto-preload delivered the NEXT ad while the current unit was still on screen,

@@ -16,8 +16,9 @@ import { SimulaAdContext, toNativeAdContext } from "./context";
 import { forgetNativeAdHeights } from "../nativeAd/heightCache";
 import type { SimulaNativeAdTheme } from "../nativeAd/types";
 import {
-  optionalNonBlankString,
+  isNonBlankString,
   requireNonBlankString,
+  warnInvalidIdentifier,
 } from "../internal/identifiers";
 import { safeJsonSnapshot } from "../internal/safeJson";
 
@@ -78,11 +79,11 @@ export function toNativePrivacy(
 export const SimulaAds = {
   /** Initializes the SDK. Resolves once native init returns (session warms in the background). */
   async initialize(config: SimulaInitConfig): Promise<void> {
-    const apiKey = requireNonBlankString(config?.apiKey, "apiKey");
     if (!isAdsModuleAvailable()) {
       warnAdsUnavailable("initialize");
       return;
     }
+    const apiKey = requireNonBlankString(config?.apiKey, "apiKey");
     // The IPv4 resolution beacon now lives in the native SDKs (fired after
     // session creation, carrying the server session id) — no JS-side work here.
     await NativeAds!.initialize(toNativeConfig({ ...config, apiKey }));
@@ -132,14 +133,17 @@ export const SimulaAds = {
     adUnitId: string,
     primaryUserID?: string | null,
   ): Promise<boolean> {
-    const validAdUnitId = requireNonBlankString(adUnitId, "adUnitId");
+    if (!isNonBlankString(adUnitId)) {
+      warnInvalidIdentifier("checkFrequencyCap", "adUnitId");
+      return false;
+    }
     if (!isAdsModuleAvailable()) {
       warnAdsUnavailable("checkFrequencyCap");
       return false;
     }
     // Fail open on an unexpected bridge rejection too — a transport/bridge
     // hiccup must never hide a surface that would otherwise have served.
-    return NativeAds!.checkFrequencyCap(validAdUnitId, primaryUserID ?? null).catch(
+    return NativeAds!.checkFrequencyCap(adUnitId, primaryUserID ?? null).catch(
       () => false,
     );
   },
@@ -156,7 +160,11 @@ export const SimulaAds = {
     position?: number;
     theme?: SimulaNativeAdTheme;
   }): Promise<string | null> {
-    const adUnitId = optionalNonBlankString(options?.adUnitId, "adUnitId");
+    const adUnitId = options?.adUnitId;
+    if (adUnitId != null && !isNonBlankString(adUnitId)) {
+      warnInvalidIdentifier("preloadNativeAd", "adUnitId");
+      return null;
+    }
     if (!isAdsModuleAvailable()) {
       warnAdsUnavailable("preloadNativeAd");
       return null;
@@ -170,12 +178,12 @@ export const SimulaAds = {
 
   /** Release a preloaded native ad that was never consumed (cancels an in-flight request). */
   destroyPreloadedAd(preloadedAdId: string): void {
-    const validPreloadedAdId = requireNonBlankString(
-      preloadedAdId,
-      "preloadedAdId",
-    );
+    if (!isNonBlankString(preloadedAdId)) {
+      warnInvalidIdentifier("destroyPreloadedAd", "preloadedAdId");
+      return;
+    }
     if (!isAdsModuleAvailable()) return warnAdsUnavailable("destroyPreloadedAd");
-    NativeAds!.destroyPreloadedAd(validPreloadedAdId);
+    NativeAds!.destroyPreloadedAd(preloadedAdId);
   },
 
   /**
@@ -184,12 +192,19 @@ export const SimulaAds = {
    * out and back reuses the same serve; call this to force a refresh for that slot.
    */
   invalidateNativeAd(options?: { adUnitId?: string; position?: number }): void {
-    const adUnitId = optionalNonBlankString(options?.adUnitId, "adUnitId");
+    const providedAdUnitId = options?.adUnitId;
+    if (providedAdUnitId != null && !isNonBlankString(providedAdUnitId)) {
+      warnInvalidIdentifier("invalidateNativeAd", "adUnitId");
+      return;
+    }
     if (!isAdsModuleAvailable()) return warnAdsUnavailable("invalidateNativeAd");
     // Drop the slot's remembered height too, so the refreshed slot's next mount doesn't seed
     // itself with the previous ad's size.
-    forgetNativeAdHeights(adUnitId ?? "", options?.position ?? 0);
-    NativeAds!.invalidateNativeAd(adUnitId ?? null, options?.position ?? 0);
+    forgetNativeAdHeights(providedAdUnitId ?? "", options?.position ?? 0);
+    NativeAds!.invalidateNativeAd(
+      providedAdUnitId ?? null,
+      options?.position ?? 0,
+    );
   },
 
   /** Clear every cached native ad (all slots). */

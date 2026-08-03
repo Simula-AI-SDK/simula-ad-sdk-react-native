@@ -12,6 +12,20 @@ function warnInvalidExtraParameters(): void {
   }
 }
 
+/** @internal Runtime guard for the single-value bridge API. */
+export function isValidExtraParameter(key: unknown, value: unknown): boolean {
+  const valid =
+    typeof key === "string" &&
+    key.length > 0 &&
+    Array.from(key).length <= MAX_EXTRA_PARAMETER_KEY_LENGTH &&
+    !key.startsWith("$") &&
+    !key.includes(".") &&
+    typeof value === "string" &&
+    Array.from(value).length <= MAX_EXTRA_PARAMETER_VALUE_LENGTH;
+  if (!valid) warnInvalidExtraParameters();
+  return valid;
+}
+
 /** @internal Deterministic wire encoding shared by native and fullscreen ads. */
 export function serializeExtraParameters(
   parameters: SimulaExtraParameters | undefined,
@@ -45,6 +59,7 @@ export function serializeExtraParameters(
     }
 
     const validKey =
+      key.length > 0 &&
       Array.from(key).length <= MAX_EXTRA_PARAMETER_KEY_LENGTH &&
       !key.startsWith("$") &&
       !key.includes(".");

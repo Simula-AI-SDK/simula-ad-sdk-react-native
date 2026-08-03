@@ -320,7 +320,7 @@ class SimulaAdsModule: RCTEventEmitter {
 
     @objc
     func setExtraParameter(_ instanceId: String, key: NSString?, value: NSString?) {
-        guard let key = key as String?, let value = value as String? else { return }
+        guard let key = key as String?, !key.isEmpty, let value = value as String? else { return }
         runOnMain {
             guard let entry = self.entries[instanceId] else { return }
             entry.interstitial?.setExtraParameter(key, value)
@@ -345,7 +345,7 @@ class SimulaAdsModule: RCTEventEmitter {
               let dictionary = object as? [String: Any] else { return nil }
 
         let pairs = dictionary.keys.sorted().compactMap { key -> (String, String)? in
-            guard let value = dictionary[key] as? String else { return nil }
+            guard !key.isEmpty, let value = dictionary[key] as? String else { return nil }
             return (key, value)
         }.prefix(10)
         return Dictionary(uniqueKeysWithValues: pairs)

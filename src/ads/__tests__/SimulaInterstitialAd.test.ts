@@ -15,12 +15,16 @@ afterEach(() => {
 
 describe("SimulaInterstitialAd", () => {
   it.each([null, undefined, 1, "", "   "])(
-    "rejects invalid adUnitId %p before creating native instances",
+    "ignores invalid adUnitId %p without creating native instances",
     (adUnitId) => {
-      expect(() => SimulaInterstitialAd.create(adUnitId as never)).toThrow(
-        TypeError,
-      );
+      const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      let ad: SimulaInterstitialAd | undefined;
+      expect(() => {
+        ad = SimulaInterstitialAd.create(adUnitId as never);
+      }).not.toThrow();
       expect(native.createInterstitial).not.toHaveBeenCalled();
+      ad?.destroy();
+      warn.mockRestore();
     },
   );
 
@@ -71,6 +75,22 @@ describe("SimulaInterstitialAd", () => {
       instanceId,
       "{}",
     );
+    ad.destroy();
+  });
+
+  it("drops empty metadata keys and invalid runtime values before native", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    const ad = SimulaInterstitialAd.create("unit");
+    const instanceId = native.createInterstitial.mock.calls[0][0];
+
+    ad.setExtraParameter("", "value");
+    ad.setExtraParameter(null as never, "value");
+    ad.setExtraParameter("key", undefined as never);
+
+    expect(native.setExtraParameter).not.toHaveBeenCalled();
+    expect(instanceId).toEqual(expect.any(String));
+    expect(warn).toHaveBeenCalledTimes(3);
+    warn.mockRestore();
     ad.destroy();
   });
 
@@ -172,9 +192,15 @@ describe("SimulaInterstitialAd", () => {
 });
 
 describe("SimulaRewardedAd", () => {
-  it("rejects an invalid adUnitId before creating a native instance", () => {
-    expect(() => SimulaRewardedAd.create(" ")).toThrow(TypeError);
+  it("ignores an invalid adUnitId without creating a native instance", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    let ad: SimulaRewardedAd | undefined;
+    expect(() => {
+      ad = SimulaRewardedAd.create(" ");
+    }).not.toThrow();
     expect(native.createRewarded).not.toHaveBeenCalled();
+    ad?.destroy();
+    warn.mockRestore();
   });
 
   it("creates a rewarded ad for the placement", () => {

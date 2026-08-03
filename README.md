@@ -31,6 +31,25 @@ Full integration guides, API references, and examples are available at:
 - [Rewarded Ad](https://docs.simula.ad/react-native-sdk/rewarded-ad) -- rewarded ad with server-side verification
 - [Character Selector](https://docs.simula.ad/react-native-sdk/character-selector) -- character discovery component
 
+## Publisher Metadata
+
+Attach publisher-defined dimensions to an ad before loading it:
+
+```tsx
+const ad = SimulaInterstitialAd.create("feed_interstitial");
+ad.setExtraParameters({ page_name: "Search", experiment: "variant_b" });
+ad.load();
+
+<NativeAd
+  adUnitId="feed_native"
+  extraParameters={{ page_name: "Search" }}
+/>
+```
+
+`setExtraParameter` and `setExtraParameters` are also available on rewarded ads and the interstitial/rewarded hooks. Metadata is snapshotted when an ad load starts; changing it later applies to the next load, not an in-flight or already cached impression.
+
+Metadata accepts at most 10 string entries. Keys must be non-empty, no longer than 64 Unicode code points, must not start with `$`, and must not contain `.`. Values are limited to 256 Unicode code points. Invalid entries are ignored without failing the ad request.
+
 ## Dashboard
 
 Create and manage ad units, view analytics, and configure server-side verification at [publisher.simula.ad](https://publisher.simula.ad).

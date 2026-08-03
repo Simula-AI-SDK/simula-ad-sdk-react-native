@@ -3,9 +3,9 @@ export type SurfaceVisibilityAction = "show" | "hide" | null;
 /** Keeps hide independent of credentials while deferring show until configuration is valid. */
 export function surfaceVisibilityAction(
   isOpen: boolean,
-  wasOpen: boolean,
+  shownForOpenCycle: boolean,
   canShow: boolean,
 ): SurfaceVisibilityAction {
-  if (!isOpen) return wasOpen ? "hide" : null;
-  return !wasOpen && canShow ? "show" : null;
+  if (!isOpen) return shownForOpenCycle ? "hide" : null;
+  return !shownForOpenCycle && canShow ? "show" : null;
 }

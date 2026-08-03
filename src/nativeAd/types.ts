@@ -52,7 +52,10 @@ export interface NativeAdProps {
   position?: number;
   /** Creative color theme. */
   theme?: SimulaNativeAdTheme;
-  /** Per-impression publisher metadata, validated and snapshotted by the native SDK. */
+  /**
+   * Per-impression publisher metadata. Snapshotted when this slot starts loading;
+   * changing it afterward applies only when the slot identity changes or remounts.
+   */
   extraParameters?: SimulaExtraParameters;
   /**
    * An id from `SimulaAds.preloadNativeAd()` — renders that cached ad with no live

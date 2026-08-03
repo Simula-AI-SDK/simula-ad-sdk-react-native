@@ -32,13 +32,14 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
   const { apiKey, hasPrivacyConsent, devMode, primaryUserID } =
     useSimulaContext();
   const wasOpenRef = useRef(false);
+  const shownForOpenCycleRef = useRef(false);
 
   // Show / hide the native selector based on isOpen.
   useEffect(() => {
     if (!SimulaMiniGameModule) return;
     const action = surfaceVisibilityAction(
       isOpen,
-      wasOpenRef.current,
+      shownForOpenCycleRef.current,
       isNonBlankString(apiKey),
     );
 
@@ -66,9 +67,11 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
         );
       });
       wasOpenRef.current = true;
+      shownForOpenCycleRef.current = true;
     } else if (action === "hide") {
       SimulaMiniGameModule.hideCharacterSelector();
       wasOpenRef.current = false;
+      shownForOpenCycleRef.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, apiKey]);

@@ -31,13 +31,14 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
 }) => {
   const { apiKey, hasPrivacyConsent, devMode, primaryUserID } = useSimulaContext();
   const wasOpenRef = useRef(false);
+  const shownForOpenCycleRef = useRef(false);
 
   // Show/hide native menu based on isOpen prop
   useEffect(() => {
     if (!SimulaMiniGameModule) return;
     const action = surfaceVisibilityAction(
       isOpen,
-      wasOpenRef.current,
+      shownForOpenCycleRef.current,
       isNonBlankString(apiKey),
     );
 
@@ -59,9 +60,11 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
         console.error('[SimulaMiniGame] showMiniGameMenu failed:', error?.message || error);
       });
       wasOpenRef.current = true;
+      shownForOpenCycleRef.current = true;
     } else if (action === 'hide') {
       SimulaMiniGameModule.hideMiniGameMenu();
       wasOpenRef.current = false;
+      shownForOpenCycleRef.current = false;
     }
   }, [isOpen, apiKey]);
 
@@ -76,6 +79,8 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
     if (!emitter) return;
     const subscription = emitter.addListener('onMiniGameMenuClose', () => {
       wasOpenRef.current = false;
+      // Keep the open-cycle latch set until isOpen becomes false. Otherwise an
+      // unrelated apiKey identity change would reopen a surface the user closed.
       onCloseRef.current();
     });
     return () => subscription.remove();

@@ -95,6 +95,7 @@ describe("SimulaAds.initialize", () => {
   });
 
   it("omits every malformed privacy and customContext shape", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
     for (const malformed of malformedJsonValues()) {
       await SimulaAds.initialize({
         apiKey: "k",
@@ -110,6 +111,27 @@ describe("SimulaAds.initialize", () => {
       );
     }
     expect(native.initialize).toHaveBeenCalledTimes(malformedJsonValues().length);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it("drops malformed top-level adContext fields without clearing valid fields", async () => {
+    const cycle: Record<string, unknown> = {};
+    cycle.self = cycle;
+
+    await SimulaAds.initialize({
+      apiKey: "k",
+      adContext: {
+        category: "sports",
+        title: cycle as never,
+        customContext: { tier: "pro" },
+      },
+    });
+
+    expect(native.initialize.mock.calls[0][0].adContext).toEqual({
+      category: "sports",
+      customContext: { tier: "pro" },
+    });
   });
 });
 
@@ -166,33 +188,37 @@ describe("SimulaAds native-ad imperatives", () => {
     },
   );
 
-  it("rejects invalid required IDs before native", async () => {
+  it("fails open or no-ops for invalid IDs before native", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
     for (const invalid of [null, undefined, 7, "", " \t "]) {
       await expect(
         SimulaAds.checkFrequencyCap(invalid as never),
-      ).rejects.toBeInstanceOf(TypeError);
-      expect(() => SimulaAds.destroyPreloadedAd(invalid as never)).toThrow(
-        TypeError,
-      );
+      ).resolves.toBe(false);
+      expect(() =>
+        SimulaAds.destroyPreloadedAd(invalid as never),
+      ).not.toThrow();
     }
     expect(native.checkFrequencyCap).not.toHaveBeenCalled();
     expect(native.destroyPreloadedAd).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(10);
+    warn.mockRestore();
   });
 
-  it("keeps optional IDs optional but rejects malformed provided values", async () => {
+  it("keeps optional IDs optional and makes invalid cleanup IDs no-ops", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
     await SimulaAds.preloadNativeAd();
     SimulaAds.invalidateNativeAd();
     expect(native.preloadNativeAd).toHaveBeenCalledWith(null, 0, null);
     expect(native.invalidateNativeAd).toHaveBeenCalledWith(null, 0);
 
-    await expect(
-      SimulaAds.preloadNativeAd({ adUnitId: " " }),
-    ).rejects.toBeInstanceOf(TypeError);
+    await expect(SimulaAds.preloadNativeAd({ adUnitId: " " })).resolves.toBeNull();
     expect(() =>
       SimulaAds.invalidateNativeAd({ adUnitId: 1 as never }),
-    ).toThrow(TypeError);
+    ).not.toThrow();
     expect(native.preloadNativeAd).toHaveBeenCalledTimes(1);
     expect(native.invalidateNativeAd).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
   });
 });
 

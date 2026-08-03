@@ -15,4 +15,9 @@ describe("surfaceVisibilityAction", () => {
     expect(surfaceVisibilityAction(true, true, true)).toBeNull();
     expect(surfaceVisibilityAction(false, false, true)).toBeNull();
   });
+
+  it("keeps a shown open cycle latched across credential changes", () => {
+    expect(surfaceVisibilityAction(true, true, false)).toBeNull();
+    expect(surfaceVisibilityAction(true, true, true)).toBeNull();
+  });
 });

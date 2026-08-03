@@ -33,13 +33,14 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
   const { apiKey, hasPrivacyConsent, devMode, primaryUserID } =
     useSimulaContext();
   const wasOpenRef = useRef(false);
+  const shownForOpenCycleRef = useRef(false);
 
   // Show/hide native invitation based on isOpen prop
   useEffect(() => {
     if (!SimulaMiniGameModule) return;
     const action = surfaceVisibilityAction(
       isOpen,
-      wasOpenRef.current,
+      shownForOpenCycleRef.current,
       isNonBlankString(apiKey),
     );
 
@@ -62,9 +63,11 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
         console.error('[SimulaMiniGame] showMiniGameInvitation failed:', error?.message || error);
       });
       wasOpenRef.current = true;
+      shownForOpenCycleRef.current = true;
     } else if (action === 'hide') {
       SimulaMiniGameModule.hideMiniGameInvitation();
       wasOpenRef.current = false;
+      shownForOpenCycleRef.current = false;
     }
   }, [isOpen, apiKey]);
 

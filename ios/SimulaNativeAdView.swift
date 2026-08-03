@@ -23,16 +23,12 @@ class SimulaNativeAdViewManager: RCTViewManager {
 
 /// The native view backing `<NativeAd>`. Hosts `NativeAdSlot` and bridges its
 /// self-measured height + viewability/error callbacks to RN events.
-private final class NativeAdExtraParametersModel: ObservableObject {
-    @Published var value: [String: String] = [:]
-}
-
 class SimulaNativeAdHostView: UIView {
 
     // MARK: RN props (set individually, then `didSetProps` mounts/refreshes the slot)
 
-    // Identity/render prop changes schedule a remount. Metadata updates flow through the
-    // observable model instead, so they cannot cancel an in-flight native ad load.
+    // Identity/render prop changes schedule a remount. Metadata is read only when that
+    // slot mounts, so prop-only updates cannot alter an in-flight or cached impression.
     @objc var adUnitId: NSString? { didSet { setNeedsMount() } }
     // `adPosition` on the wire — `position` is a reserved RN layout prop name (crashes
     // Android's shadow-node update; on iOS it collides with RCTShadowView's layout prop).
@@ -40,7 +36,6 @@ class SimulaNativeAdHostView: UIView {
     @objc var theme: NSString? { didSet { setNeedsMount() } }
     @objc var extraParametersJson: NSString? {
         didSet {
-            extraParametersModel.value = parseExtraParameters(extraParametersJson as String?)
             if hostingController == nil { setNeedsMount() }
         }
     }
@@ -61,7 +56,6 @@ class SimulaNativeAdHostView: UIView {
     // MARK: State
 
     private var hostingController: UIHostingController<SimulaNativeAdRoot>?
-    private let extraParametersModel = NativeAdExtraParametersModel()
     private var heightConstraint: NSLayoutConstraint?
     // Set true whenever a prop changes (RN only calls a setter for a *changed* prop);
     // cleared once mounted. Avoids rebuilding a prop-identity string on every scroll-
@@ -218,7 +212,7 @@ class SimulaNativeAdHostView: UIView {
             adUnitId: adUnitId as String?,
             position: adPosition.intValue,
             theme: theme as String?,
-            extraParametersModel: extraParametersModel,
+            extraParameters: parseExtraParameters(extraParametersJson as String?),
             preloadedAdId: preloadedAdId as String?,
             previewHTML: previewHtml as String?,
             onHeight: { [weak self] height in self?.reportHeight(height, generation: generation) },
@@ -287,7 +281,7 @@ class SimulaNativeAdHostView: UIView {
               let dictionary = object as? [String: Any] else { return [:] }
 
         let pairs = dictionary.keys.sorted().compactMap { key -> (String, String)? in
-            guard let value = dictionary[key] as? String else { return nil }
+            guard !key.isEmpty, let value = dictionary[key] as? String else { return nil }
             return (key, value)
         }.prefix(10)
         return Dictionary(uniqueKeysWithValues: pairs)
@@ -416,7 +410,7 @@ private struct SimulaNativeAdRoot: View {
     let adUnitId: String?
     let position: Int
     let theme: String?
-    @ObservedObject var extraParametersModel: NativeAdExtraParametersModel
+    let extraParameters: [String: String]
     let preloadedAdId: String?
     let previewHTML: String?
     let onHeight: (CGFloat) -> Void
@@ -430,7 +424,7 @@ private struct SimulaNativeAdRoot: View {
             adUnitId: adUnitId,
             position: position,
             theme: theme,
-            extraParameters: extraParametersModel.value,
+            extraParameters: extraParameters,
             preloadedAdId: preloadedAdId,
             onImpression: onImpression,
             onPaid: onPaid,

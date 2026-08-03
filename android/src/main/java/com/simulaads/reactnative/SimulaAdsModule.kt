@@ -166,7 +166,8 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun setExtraParameter(instanceId: String, key: String, value: String) {
+    fun setExtraParameter(instanceId: String, key: String?, value: String?) {
+        if (key.isNullOrEmpty() || value == null) return
         val entry = entries[instanceId] ?: return
         entry.interstitial?.setExtraParameter(key, value)
         entry.rewarded?.setExtraParameter(key, value)
@@ -184,7 +185,10 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
         val objectValue = JSONObject(json)
         objectValue.keys().asSequence()
             .sorted()
-            .mapNotNull { key -> objectValue.opt(key)?.let { value -> (value as? String)?.let { key to it } } }
+            .mapNotNull { key ->
+                if (key.isEmpty()) null
+                else objectValue.opt(key)?.let { value -> (value as? String)?.let { key to it } }
+            }
             .take(10)
             .toMap()
     } catch (_: Exception) {

@@ -16,6 +16,10 @@ import {
   SimulaExtraParameters,
   AdValue,
 } from "../ads/types";
+import {
+  isNonBlankString,
+  warnInvalidIdentifier,
+} from "../internal/identifiers";
 
 export interface UseInterstitialAd {
   isLoaded: boolean;
@@ -40,13 +44,19 @@ export function useInterstitialAd(adUnitId: string): UseInterstitialAd {
   const [error, setError] = useState<SimulaAdError | undefined>(undefined);
 
   useEffect(() => {
-    const ad = SimulaInterstitialAd.create(adUnitId);
-    adRef.current = ad;
     setIsLoaded(false);
     setIsClosed(false);
     setImpressionRecorded(false);
     setAdValue(null);
     setError(undefined);
+    if (!isNonBlankString(adUnitId)) {
+      adRef.current = null;
+      warnInvalidIdentifier("useInterstitialAd", "adUnitId");
+      return;
+    }
+
+    const ad = SimulaInterstitialAd.create(adUnitId);
+    adRef.current = ad;
 
     // True when a LOADED arrived after the most recent DISPLAYED — the native
     // auto-preload delivered the NEXT ad while the current unit was still on screen,

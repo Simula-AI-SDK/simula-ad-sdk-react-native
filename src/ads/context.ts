@@ -7,6 +7,16 @@
  */
 import { safeJsonSnapshot } from "../internal/safeJson";
 
+let warnedUnsafeAdContext = false;
+
+function warnUnsafeAdContext(): void {
+  if (!__DEV__ || warnedUnsafeAdContext) return;
+  warnedUnsafeAdContext = true;
+  console.warn(
+    "[SimulaAds] Some ad context fields were ignored because they are not JSON-safe.",
+  );
+}
+
 export interface SimulaAdContext {
   /** Current search / query term in the feed. */
   searchTerm?: string;
@@ -40,10 +50,12 @@ export function toNativeAdContext(
   context: SimulaAdContext,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+  let dropped = false;
   let keys: string[];
   try {
     keys = Object.keys(context);
   } catch {
+    warnUnsafeAdContext();
     return out;
   }
 
@@ -52,6 +64,7 @@ export function toNativeAdContext(
     try {
       value = (context as Record<string, unknown>)[key];
     } catch {
+      dropped = true;
       continue;
     }
     if (value === undefined) continue;
@@ -65,12 +78,20 @@ export function toNativeAdContext(
         !Array.isArray(snapshot.value)
       ) {
         out[key] = snapshot.value;
+      } else {
+        dropped = true;
       }
     } else {
-      out[key] = value;
+      const snapshot = safeJsonSnapshot(value);
+      if (snapshot) {
+        out[key] = snapshot.value;
+      } else {
+        dropped = true;
+      }
     }
   }
 
+  if (dropped) warnUnsafeAdContext();
   const snapshot = safeJsonSnapshot(out);
   return snapshot && typeof snapshot.value === "object" && snapshot.value !== null
     ? snapshot.value

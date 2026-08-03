@@ -35,3 +35,20 @@ describe("warnAdsUnavailable", () => {
     );
   });
 });
+
+describe("unavailable native module behavior", () => {
+  it("makes initialize a no-op before validating config", async () => {
+    const reactNative = require("../../test/reactNativeMock") as typeof import("../../test/reactNativeMock");
+    const adsModule = reactNative.NativeModules.SimulaAdsModule;
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    delete reactNative.NativeModules.SimulaAdsModule;
+
+    try {
+      const { SimulaAds } = require("../../ads/SimulaAds") as typeof import("../../ads/SimulaAds");
+      await expect(SimulaAds.initialize({ apiKey: "" })).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      reactNative.NativeModules.SimulaAdsModule = adsModule;
+    }
+  });
+});
