@@ -26,6 +26,12 @@ RCT_EXTERN_METHOD(preloadNativeAd:(NSString * _Nullable)adUnitId
                   theme:(NSString * _Nullable)theme
                   resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(preloadNativeAdWithMetadata:(NSString * _Nullable)adUnitId
+                  position:(nonnull NSNumber *)position
+                  theme:(NSString * _Nullable)theme
+                  metadataJson:(NSString * _Nullable)metadataJson
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(destroyPreloadedAd:(NSString * _Nullable)preloadedAdId)
 RCT_EXTERN_METHOD(invalidateNativeAd:(NSString * _Nullable)adUnitId
                   position:(nonnull NSNumber *)position)

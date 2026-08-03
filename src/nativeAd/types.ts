@@ -53,13 +53,14 @@ export interface NativeAdProps {
   /** Creative color theme. */
   theme?: SimulaNativeAdTheme;
   /**
-   * Per-impression publisher metadata. Snapshotted when this slot starts loading;
-   * changing it afterward applies only when the slot identity changes or remounts.
+   * Per-impression publisher metadata for a live slot load. A consumed preloadedAdId
+   * instead owns the snapshot passed to SimulaAds.preloadNativeAd().
    */
   metadata?: SimulaMetadata;
   /**
    * An id from `SimulaAds.preloadNativeAd()` — renders that cached ad with no live
-   * request. An expired/unknown id falls back to a live call (no error surfaced).
+   * request. Its preload-time metadata cannot be overridden here. An expired/unknown
+   * id falls back to a live call (no error surfaced).
    */
   preloadedAdId?: string;
   /**

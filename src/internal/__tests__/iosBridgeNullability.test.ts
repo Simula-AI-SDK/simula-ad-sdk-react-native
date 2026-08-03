@@ -38,6 +38,9 @@ describe("iOS bridge string nullability contract", () => {
       "preloadNativeAd:(NSString * _Nullable)adUnitId position:(nonnull NSNumber *)position theme:(NSString * _Nullable)theme",
     );
     expect(bridge).toContain(
+      "preloadNativeAdWithMetadata:(NSString * _Nullable)adUnitId position:(nonnull NSNumber *)position theme:(NSString * _Nullable)theme metadataJson:(NSString * _Nullable)metadataJson",
+    );
+    expect(bridge).toContain(
       "destroyPreloadedAd:(NSString * _Nullable)preloadedAdId",
     );
     expect(bridge).toContain(

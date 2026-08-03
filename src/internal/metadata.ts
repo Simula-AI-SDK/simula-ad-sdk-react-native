@@ -13,6 +13,59 @@ function warnInvalidMetadata(): void {
   }
 }
 
+let warnedPreloadMetadataOverride = false;
+let warnedPreloadMetadataUnavailable = false;
+const trackedPreloadMetadata = new Map<string, boolean>();
+const MAX_TRACKED_PRELOADS = 32;
+
+/** @internal Tracks only presence, never publisher values, for bounded diagnostics. */
+export function rememberPreloadMetadata(
+  preloadedAdId: string,
+  hasMetadata: boolean,
+): void {
+  if (trackedPreloadMetadata.size >= MAX_TRACKED_PRELOADS) {
+    const oldest = trackedPreloadMetadata.keys().next().value;
+    if (oldest != null) trackedPreloadMetadata.delete(oldest);
+  }
+  trackedPreloadMetadata.set(preloadedAdId, hasMetadata);
+}
+
+/** @internal Releases diagnostics retained for an unused preload. */
+export function forgetPreloadMetadata(preloadedAdId: string): void {
+  trackedPreloadMetadata.delete(preloadedAdId);
+}
+
+/** @internal Mount metadata cannot rewrite the snapshot owned by an existing preload. */
+export function warnPreloadMetadataOverride(
+  preloadedAdId: string | undefined,
+  metadataJson: string | undefined,
+): void {
+  if (
+    !IS_DEVELOPMENT ||
+    warnedPreloadMetadataOverride ||
+    preloadedAdId == null ||
+    metadataJson == null ||
+    trackedPreloadMetadata.get(preloadedAdId) !== false
+  ) {
+    return;
+  }
+  warnedPreloadMetadataOverride = true;
+  console.warn(
+    "[SimulaAds] This preloadedAdId was created without metadata. <NativeAd metadata> is used " +
+      "only if the preload falls back to a live load; pass the same metadata to preloadNativeAd.",
+  );
+}
+
+/** @internal Protects JS-only OTA updates running against an older native binary. */
+export function warnPreloadMetadataUnavailable(): void {
+  if (!IS_DEVELOPMENT || warnedPreloadMetadataUnavailable) return;
+  warnedPreloadMetadataUnavailable = true;
+  console.warn(
+    "[SimulaAds] Native preload metadata is unavailable in this native binary; preload was skipped. " +
+      "Rebuild the app with the current Simula native SDKs.",
+  );
+}
+
 /** @internal Runtime guard for the single-value bridge API. */
 export function isValidMetadataValue(key: unknown, value: unknown): boolean {
   const valid =

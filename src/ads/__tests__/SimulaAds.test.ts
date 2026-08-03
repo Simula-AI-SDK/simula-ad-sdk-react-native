@@ -156,6 +156,42 @@ describe("SimulaAds native-ad imperatives", () => {
     expect(native.preloadNativeAd).toHaveBeenCalledWith("feed_1", 0, null);
   });
 
+  it("preloadNativeAd snapshots metadata at the native preload boundary", async () => {
+    native.preloadNativeAdWithMetadata.mockResolvedValueOnce("ad_metadata");
+
+    await expect(
+      SimulaAds.preloadNativeAd({
+        adUnitId: "feed_1",
+        metadata: { screen: "search", experiment: "variant_b" },
+      }),
+    ).resolves.toBe("ad_metadata");
+
+    expect(native.preloadNativeAdWithMetadata).toHaveBeenCalledWith(
+      "feed_1",
+      0,
+      null,
+      '{"experiment":"variant_b","screen":"search"}',
+    );
+    expect(native.preloadNativeAd).not.toHaveBeenCalled();
+  });
+
+  it("fails open instead of silently dropping metadata on an older native binary", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    const preloadWithMetadata = native.preloadNativeAdWithMetadata;
+    delete native.preloadNativeAdWithMetadata;
+
+    try {
+      await expect(
+        SimulaAds.preloadNativeAd({ metadata: { screen: "search" } }),
+      ).resolves.toBeNull();
+      expect(native.preloadNativeAd).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("native binary"));
+    } finally {
+      native.preloadNativeAdWithMetadata = preloadWithMetadata;
+      warn.mockRestore();
+    }
+  });
+
   it("preloadNativeAd passes null adUnitId / theme when omitted", async () => {
     await SimulaAds.preloadNativeAd({ position: 3, theme: "dark" });
     expect(native.preloadNativeAd).toHaveBeenCalledWith(null, 3, "dark");

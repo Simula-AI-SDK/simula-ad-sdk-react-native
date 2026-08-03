@@ -242,6 +242,32 @@ class SimulaAdsModule: RCTEventEmitter {
     }
 
     @objc
+    func preloadNativeAdWithMetadata(_ adUnitId: NSString?,
+                                     position: NSNumber,
+                                     theme: NSString?,
+                                     metadataJson: NSString?,
+                                     resolve: @escaping RCTPromiseResolveBlock,
+                                     reject: @escaping RCTPromiseRejectBlock) {
+        let unitId = adUnitId as String?
+        guard unitId == nil || Self.nonBlankString(unitId) != nil,
+              let metadataJson = metadataJson as String?,
+              let metadata = Self.parseMetadata(metadataJson) else {
+            resolve(nil)
+            return
+        }
+        runOnMain {
+            SimulaAds.preloadNativeAd(
+                adUnitId: unitId,
+                position: position.intValue,
+                theme: theme as String?,
+                metadata: metadata
+            ) { preloadedAdId in
+                resolve(preloadedAdId)
+            }
+        }
+    }
+
+    @objc
     func destroyPreloadedAd(_ preloadedAdId: NSString?) {
         guard let id = Self.nonBlankString(preloadedAdId as String?) else { return }
         runOnMain {

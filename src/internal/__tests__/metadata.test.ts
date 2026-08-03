@@ -1,6 +1,8 @@
 import {
   isValidMetadataValue,
+  rememberPreloadMetadata,
   serializeMetadata,
+  warnPreloadMetadataOverride,
 } from "../metadata";
 import type { SimulaMetadata } from "../../ads/types";
 
@@ -20,6 +22,16 @@ describe("serializeMetadata", () => {
       '{"a":"first","z":"last"}',
     );
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("warns once when mount metadata cannot override a preload snapshot", () => {
+    rememberPreloadMetadata("preloaded_1", false);
+    rememberPreloadMetadata("preloaded_2", false);
+    warnPreloadMetadataOverride("preloaded_1", '{"screen":"search"}');
+    warnPreloadMetadataOverride("preloaded_2", '{"screen":"home"}');
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("preloadNativeAd"));
   });
 
   it("rejects an empty key", () => {
@@ -63,6 +75,21 @@ describe("serializeMetadata", () => {
     );
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).not.toContain("key_");
+  });
+
+  it("caps metadata in UTF-16 order shared with native SDKs", () => {
+    const supplementary = "\u{10000}";
+    const privateUse = "\uE000";
+    const metadata = Object.fromEntries([
+      ...Array.from({ length: 9 }, (_, index) => [`a${index}`, "value"]),
+      [supplementary, "kept"],
+      [privateUse, "dropped"],
+    ]);
+
+    const result = JSON.parse(serializeMetadata(metadata) ?? "{}");
+
+    expect(result[supplementary]).toBe("kept");
+    expect(result[privateUse]).toBeUndefined();
   });
 
   it("drops invalid keys and runtime non-string or oversized values", () => {
