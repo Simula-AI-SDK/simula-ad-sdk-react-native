@@ -24,7 +24,11 @@ import {
   nativeAdHeightKey,
   rememberHeight,
 } from "./heightCache";
-import { isNonBlankString } from "../internal/identifiers";
+import {
+  isNonBlankString,
+  nonBlankStringOrUndefined,
+} from "../internal/identifiers";
+import { IS_DEVELOPMENT } from "../internal/environment";
 
 const COMPONENT_NAME = "SimulaNativeAdView";
 
@@ -72,12 +76,8 @@ export function NativeAd({
   width,
 }: NativeAdProps): React.JSX.Element | null {
   const invalidAdUnitId = adUnitId != null && !isNonBlankString(adUnitId);
-  const invalidPreloadedAdId =
-    preloadedAdId != null && !isNonBlankString(preloadedAdId);
-  const validAdUnitId = isNonBlankString(adUnitId) ? adUnitId : undefined;
-  const validPreloadedAdId = isNonBlankString(preloadedAdId)
-    ? preloadedAdId
-    : undefined;
+  const validAdUnitId = nonBlankStringOrUndefined(adUnitId);
+  const validPreloadedAdId = nonBlankStringOrUndefined(preloadedAdId);
   const nextMetadataJson = useMemo(
     () => serializeMetadata(metadata) ?? undefined,
     [metadata],
@@ -191,10 +191,10 @@ export function NativeAd({
   // native view a "new" style object.
   const containerStyle = useMemo(() => ({ width, height }), [width, height]);
 
-  if (invalidAdUnitId || invalidPreloadedAdId) return null;
+  if (invalidAdUnitId) return null;
 
   if (!NativeAdView) {
-    if (__DEV__) warnNativeAdUnavailable();
+    if (IS_DEVELOPMENT) warnNativeAdUnavailable();
     return null;
   }
 

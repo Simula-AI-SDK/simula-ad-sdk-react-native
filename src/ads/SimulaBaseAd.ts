@@ -25,6 +25,7 @@ import {
   isNonBlankString,
   warnInvalidIdentifier,
 } from "../internal/identifiers";
+import { IS_DEVELOPMENT } from "../internal/environment";
 import {
   SimulaAdEvent,
   SimulaAdLoadOptions,
@@ -179,6 +180,14 @@ export abstract class SimulaBaseAd {
       NativeAds!.setMetadataValue(this.instanceId, keyOrMetadata as string, value!);
       return;
     }
+    if (
+      keyOrMetadata == null ||
+      typeof keyOrMetadata !== "object" ||
+      Array.isArray(keyOrMetadata)
+    ) {
+      isValidMetadataValue(keyOrMetadata, value);
+      return;
+    }
     NativeAds!.setMetadata(
       this.instanceId,
       serializeMetadata(keyOrMetadata) ?? "{}",
@@ -221,7 +230,7 @@ export abstract class SimulaBaseAd {
   protected requireNative(method: string): boolean {
     if (!this.adUnitId) return false;
     if (this.destroyed) {
-      if (__DEV__) {
+      if (IS_DEVELOPMENT) {
         console.warn(`[SimulaAds] ${method}() called on a destroyed ad — ignored.`);
       }
       return false;

@@ -1,4 +1,4 @@
-const devGlobal = globalThis as typeof globalThis & { __DEV__: boolean };
+const devGlobal = globalThis as typeof globalThis & { __DEV__?: boolean };
 const originalDev = devGlobal.__DEV__;
 
 beforeEach(() => {
@@ -6,7 +6,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  devGlobal.__DEV__ = originalDev;
+  if (originalDev === undefined) {
+    delete devGlobal.__DEV__;
+  } else {
+    devGlobal.__DEV__ = originalDev;
+  }
   jest.restoreAllMocks();
 });
 
@@ -18,6 +22,15 @@ describe("warnAdsUnavailable", () => {
 
     warnAdsUnavailable("initialize");
 
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("is safe when the development global is absent", () => {
+    delete devGlobal.__DEV__;
+    const { warnAdsUnavailable } = require("../nativeModules") as typeof import("../nativeModules");
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    expect(() => warnAdsUnavailable("initialize")).not.toThrow();
     expect(warn).not.toHaveBeenCalled();
   });
 

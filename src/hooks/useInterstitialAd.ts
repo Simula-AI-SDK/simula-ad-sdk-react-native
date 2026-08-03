@@ -126,8 +126,8 @@ export function useInterstitialAd(adUnitId: string): UseInterstitialAd {
     (keyOrMetadata: string | SimulaMetadata, value?: string) => {
       const ad = adRef.current;
       if (!ad) return;
-      if (typeof keyOrMetadata === "string") {
-        ad.setMetadata(keyOrMetadata, value!);
+      if (typeof keyOrMetadata === "string" || value !== undefined) {
+        ad.setMetadata(keyOrMetadata as string, value!);
       } else {
         ad.setMetadata(keyOrMetadata);
       }

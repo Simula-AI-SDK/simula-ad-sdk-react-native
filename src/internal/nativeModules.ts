@@ -16,6 +16,7 @@
  * single event) so a future TurboModule migration is mechanical.
  */
 import { NativeModules, NativeEventEmitter, Platform } from "react-native";
+import { IS_DEVELOPMENT } from "./environment";
 
 /** The single event name the imperative ad surface emits on. */
 export const AD_EVENT_NAME = "SimulaAds_onAdEvent";
@@ -102,7 +103,7 @@ let warnedAdsUnavailable = false;
 
 /** Logs once in development when the native module is missing. */
 export function warnAdsUnavailable(method: string): void {
-  if (!__DEV__ || warnedAdsUnavailable) return;
+  if (!IS_DEVELOPMENT || warnedAdsUnavailable) return;
   warnedAdsUnavailable = true;
   console.warn(
     `[SimulaAds] Native module unavailable; ${method} is a no-op. ` +

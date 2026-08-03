@@ -6,11 +6,12 @@
  * request (`POST /load/native`). Updating it is a full replacement, not a merge.
  */
 import { safeJsonSnapshot } from "../internal/safeJson";
+import { IS_DEVELOPMENT } from "../internal/environment";
 
 let warnedUnsafeAdContext = false;
 
 function warnUnsafeAdContext(): void {
-  if (!__DEV__ || warnedUnsafeAdContext) return;
+  if (!IS_DEVELOPMENT || warnedUnsafeAdContext) return;
   warnedUnsafeAdContext = true;
   console.warn(
     "[SimulaAds] Some ad context fields were ignored because they are not JSON-safe.",

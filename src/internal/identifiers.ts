@@ -1,9 +1,15 @@
+import { IS_DEVELOPMENT } from "./environment";
+
 export function isNonBlankString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+export function nonBlankStringOrUndefined(value: unknown): string | undefined {
+  return isNonBlankString(value) ? value : undefined;
+}
+
 export function warnInvalidIdentifier(method: string, name: string): void {
-  if (__DEV__) {
+  if (IS_DEVELOPMENT) {
     console.warn(
       `[SimulaAds] ${method} ignored because ${name} must be a non-empty string.`,
     );

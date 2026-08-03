@@ -7,6 +7,7 @@
  * minimal. `null` when the native module isn't linked (e.g. in tests).
  */
 import { NativeModules, NativeEventEmitter } from "react-native";
+import { IS_DEVELOPMENT } from "./environment";
 
 const { SimulaMiniGameModule } = NativeModules;
 
@@ -22,7 +23,7 @@ export const miniGameEmitter: NativeEventEmitter | null = SimulaMiniGameModule
 const mountedSurfaces = new Set<string>();
 
 export function warnIfDuplicateSurface(surface: string): () => void {
-  if (!__DEV__) return () => {};
+  if (!IS_DEVELOPMENT) return () => {};
   if (mountedSurfaces.has(surface)) {
     console.warn(
       `[SimulaMiniGame] Multiple <${surface}> instances are mounted at once. ` +

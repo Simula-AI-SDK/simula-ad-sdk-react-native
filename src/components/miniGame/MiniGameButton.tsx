@@ -12,6 +12,7 @@ import NativeMiniGameButtonComponent, {
   type MiniGameButtonSizeChangeEventData,
 } from "./MiniGameButtonNativeComponent";
 import { MiniGameButtonProps } from "../../types";
+import { IS_DEVELOPMENT } from "../../internal/environment";
 
 const COMPONENT_NAME = "SimulaMiniGameButtonView";
 
@@ -80,7 +81,7 @@ export const MiniGameButton: React.FC<MiniGameButtonProps> = ({
   );
 
   if (!NativeMiniGameButton) {
-    if (__DEV__) warnUnavailable();
+    if (IS_DEVELOPMENT) warnUnavailable();
     return null;
   }
 

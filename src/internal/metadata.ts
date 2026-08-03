@@ -1,11 +1,12 @@
 import type { SimulaMetadata } from "../ads/types";
+import { IS_DEVELOPMENT } from "./environment";
 
 const MAX_METADATA_ENTRIES = 10;
 const MAX_METADATA_KEY_LENGTH = 64;
 const MAX_METADATA_VALUE_LENGTH = 256;
 
 function warnInvalidMetadata(): void {
-  if (typeof __DEV__ !== "undefined" && __DEV__) {
+  if (IS_DEVELOPMENT) {
     console.warn(
       "[SimulaAds] Some metadata was ignored because it is invalid or exceeds SDK limits.",
     );
