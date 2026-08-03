@@ -13,6 +13,7 @@ import { MiniGameMenuProps } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
 import { miniGameEmitter as emitter, warnIfDuplicateSurface } from '../../internal/emitter';
 import { isNonBlankString } from '../../internal/identifiers';
+import { surfaceVisibilityAction } from '../../internal/surfaceVisibility';
 
 const { SimulaMiniGameModule } = NativeModules;
 
@@ -33,9 +34,14 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
 
   // Show/hide native menu based on isOpen prop
   useEffect(() => {
-    if (!SimulaMiniGameModule || !isNonBlankString(apiKey)) return;
+    if (!SimulaMiniGameModule) return;
+    const action = surfaceVisibilityAction(
+      isOpen,
+      wasOpenRef.current,
+      isNonBlankString(apiKey),
+    );
 
-    if (isOpen && !wasOpenRef.current) {
+    if (action === 'show') {
       SimulaMiniGameModule.showMiniGameMenu({
         apiKey,
         hasPrivacyConsent,
@@ -52,12 +58,12 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
       }).catch((error: any) => {
         console.error('[SimulaMiniGame] showMiniGameMenu failed:', error?.message || error);
       });
-    } else if (!isOpen && wasOpenRef.current) {
+      wasOpenRef.current = true;
+    } else if (action === 'hide') {
       SimulaMiniGameModule.hideMiniGameMenu();
+      wasOpenRef.current = false;
     }
-
-    wasOpenRef.current = isOpen;
-  }, [isOpen]);
+  }, [isOpen, apiKey]);
 
   // Keep the latest onClose in a ref so the native listener subscribes once.
   const onCloseRef = useRef(onClose);
