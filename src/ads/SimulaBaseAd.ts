@@ -18,6 +18,7 @@ import {
 } from "../internal/nativeModules";
 import { registerInstance } from "./eventRouter";
 import { serializeExtraParameters } from "../internal/extraParameters";
+import { requireNonBlankString } from "../internal/identifiers";
 import {
   SimulaAdEvent,
   SimulaAdLoadOptions,
@@ -72,7 +73,7 @@ export abstract class SimulaBaseAd {
     idPrefix: string,
   ) {
     this.adType = adType;
-    this.adUnitId = adUnitId;
+    this.adUnitId = requireNonBlankString(adUnitId, "adUnitId");
     this.instanceId = nextInstanceId(idPrefix);
     this.unregister = registerInstance(this.instanceId, (event) =>
       this.dispatch(event),
@@ -211,7 +212,9 @@ export abstract class SimulaBaseAd {
 
   protected requireNative(method: string): boolean {
     if (this.destroyed) {
-      console.warn(`[SimulaAds] ${method}() called on a destroyed ad — ignored.`);
+      if (__DEV__) {
+        console.warn(`[SimulaAds] ${method}() called on a destroyed ad — ignored.`);
+      }
       return false;
     }
     if (!isAdsModuleAvailable()) {

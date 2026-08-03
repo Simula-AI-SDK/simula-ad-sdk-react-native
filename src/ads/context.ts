@@ -5,6 +5,8 @@
  * `SimulaAds.updateContext`. The native SDKs auto-attach it to every native-ad
  * request (`POST /load/native`). Updating it is a full replacement, not a merge.
  */
+import { safeJsonSnapshot } from "../internal/safeJson";
+
 export interface SimulaAdContext {
   /** Current search / query term in the feed. */
   searchTerm?: string;
@@ -38,8 +40,39 @@ export function toNativeAdContext(
   context: SimulaAdContext,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(context)) {
-    if (value !== undefined) out[key] = value;
+  let keys: string[];
+  try {
+    keys = Object.keys(context);
+  } catch {
+    return out;
   }
-  return out;
+
+  for (const key of keys) {
+    let value: unknown;
+    try {
+      value = (context as Record<string, unknown>)[key];
+    } catch {
+      continue;
+    }
+    if (value === undefined) continue;
+
+    if (key === "customContext") {
+      const snapshot = safeJsonSnapshot(value);
+      if (
+        snapshot &&
+        typeof snapshot.value === "object" &&
+        snapshot.value !== null &&
+        !Array.isArray(snapshot.value)
+      ) {
+        out[key] = snapshot.value;
+      }
+    } else {
+      out[key] = value;
+    }
+  }
+
+  const snapshot = safeJsonSnapshot(out);
+  return snapshot && typeof snapshot.value === "object" && snapshot.value !== null
+    ? snapshot.value
+    : {};
 }

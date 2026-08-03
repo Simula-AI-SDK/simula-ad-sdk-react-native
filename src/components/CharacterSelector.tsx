@@ -14,6 +14,8 @@ import {
   miniGameEmitter as emitter,
   warnIfDuplicateSurface,
 } from "../internal/emitter";
+import { isNonBlankString } from "../internal/identifiers";
+import { surfaceVisibilityAction } from "../internal/surfaceVisibility";
 
 const { SimulaMiniGameModule } = NativeModules;
 
@@ -34,8 +36,13 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
   // Show / hide the native selector based on isOpen.
   useEffect(() => {
     if (!SimulaMiniGameModule) return;
+    const action = surfaceVisibilityAction(
+      isOpen,
+      wasOpenRef.current,
+      isNonBlankString(apiKey),
+    );
 
-    if (isOpen && !wasOpenRef.current) {
+    if (action === "show") {
       SimulaMiniGameModule.showCharacterSelector({
         apiKey,
         hasPrivacyConsent,
@@ -58,13 +65,13 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
           err?.message || error,
         );
       });
-    } else if (!isOpen && wasOpenRef.current) {
+      wasOpenRef.current = true;
+    } else if (action === "hide") {
       SimulaMiniGameModule.hideCharacterSelector();
+      wasOpenRef.current = false;
     }
-
-    wasOpenRef.current = isOpen;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+  }, [isOpen, apiKey]);
 
   // Keep the latest callbacks in refs so the native listeners subscribe once.
   const onCloseRef = useRef(onClose);

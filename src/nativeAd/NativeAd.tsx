@@ -24,6 +24,7 @@ import {
   nativeAdHeightKey,
   rememberHeight,
 } from "./heightCache";
+import { isNonBlankString } from "../internal/identifiers";
 
 const COMPONENT_NAME = "SimulaNativeAdView";
 
@@ -70,6 +71,13 @@ export function NativeAd({
   onError,
   width,
 }: NativeAdProps): React.JSX.Element | null {
+  const invalidAdUnitId = adUnitId != null && !isNonBlankString(adUnitId);
+  const invalidPreloadedAdId =
+    preloadedAdId != null && !isNonBlankString(preloadedAdId);
+  const validAdUnitId = isNonBlankString(adUnitId) ? adUnitId : undefined;
+  const validPreloadedAdId = isNonBlankString(preloadedAdId)
+    ? preloadedAdId
+    : undefined;
   const extraParametersJson = useMemo(
     () => serializeExtraParameters(extraParameters) ?? undefined,
     [extraParameters],
@@ -79,7 +87,7 @@ export function NativeAd({
   // ad the native side will re-render. Previews are debug-only and never cached.
   const heightKey =
     previewHtml == null
-      ? nativeAdHeightKey(adUnitId, position, preloadedAdId)
+      ? nativeAdHeightKey(validAdUnitId, position, validPreloadedAdId)
       : null;
 
   // Collapsed until the native view reports a height (shimmer/provisional height arrives on the
@@ -113,9 +121,9 @@ export function NativeAd({
       // mismatches. (Identity absent → older native binary; accept as before.)
       if (nativeEvent?.adPosition != null) {
         if (
-          (nativeEvent.adUnitId ?? "") !== (adUnitId ?? "") ||
+          (nativeEvent.adUnitId ?? "") !== (validAdUnitId ?? "") ||
           nativeEvent.adPosition !== position ||
-          (nativeEvent.preloadedAdId ?? "") !== (preloadedAdId ?? "")
+          (nativeEvent.preloadedAdId ?? "") !== (validPreloadedAdId ?? "")
         ) {
           return;
         }
@@ -125,7 +133,7 @@ export function NativeAd({
       // Threshold sub-pixel churn so a measuring creative can't thrash the feed.
       setHeight((prev) => (Math.abs(prev - next) >= 1 ? next : prev));
     },
-    [heightKey, adUnitId, position, preloadedAdId],
+    [heightKey, validAdUnitId, position, validPreloadedAdId],
   );
 
   const handleImpression = useCallback(
@@ -165,6 +173,8 @@ export function NativeAd({
   // native view a "new" style object.
   const containerStyle = useMemo(() => ({ width, height }), [width, height]);
 
+  if (invalidAdUnitId || invalidPreloadedAdId) return null;
+
   if (!NativeAdView) {
     if (__DEV__) warnNativeAdUnavailable();
     return null;
@@ -172,13 +182,13 @@ export function NativeAd({
 
   return (
     <NativeAdView
-      adUnitId={adUnitId}
+      adUnitId={validAdUnitId}
       // Public `position` maps to the wire prop `adPosition` — `position` itself is a
       // reserved RN layout prop name (see NativeAdNativeComponent.ts).
       adPosition={position}
       theme={theme}
       extraParametersJson={extraParametersJson}
-      preloadedAdId={preloadedAdId}
+      preloadedAdId={validPreloadedAdId}
       previewHtml={previewHtml}
       onAdSizeChange={handleSize}
       onAdImpression={handleImpression}

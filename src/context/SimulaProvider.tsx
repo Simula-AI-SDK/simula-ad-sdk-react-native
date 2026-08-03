@@ -12,6 +12,9 @@ import React, { createContext, useContext, useEffect, useMemo, useRef } from "re
 import { SimulaProviderProps, SimulaContextValue } from "../types";
 import { SimulaAds } from "../ads/SimulaAds";
 import { SimulaPrivacy } from "../privacy/SimulaPrivacy";
+import { toNativeAdContext } from "../ads/context";
+import { isNonBlankString } from "../internal/identifiers";
+import { safeJsonSnapshot } from "../internal/safeJson";
 
 const SimulaContext = createContext<SimulaContextValue | null>(null);
 
@@ -39,28 +42,36 @@ export function SimulaProvider({
     [apiKey, hasPrivacyConsent, devMode, primaryUserID],
   );
 
-  // Stable identity for the (otherwise inline) privacy object so the effects below
-  // re-run only on a real consent change, not on every render.
-  const privacyKey = useMemo(() => JSON.stringify(privacy ?? null), [privacy]);
-  // Same, for the ad-targeting context.
-  const adContextKey = useMemo(
-    () => JSON.stringify(adContext ?? null),
+  // Snapshot host objects so malformed values cannot crash render or cross the bridge.
+  const privacySnapshot = useMemo(
+    () => (privacy == null ? undefined : safeJsonSnapshot(privacy)),
+    [privacy],
+  );
+  const adContextSnapshot = useMemo(
+    () =>
+      adContext == null
+        ? undefined
+        : safeJsonSnapshot(toNativeAdContext(adContext)),
     [adContext],
   );
+  const privacyKey = privacySnapshot?.identity ?? "null";
+  const adContextKey = adContextSnapshot?.identity ?? "null";
+  const safePrivacy = privacySnapshot?.value;
+  const safeAdContext = adContextSnapshot?.value;
 
   // Eager init: warms the native session off the first ad's critical path, and on
   // Android is the only path that enables telemetry. Native init is idempotent
   // (first valid call wins), so re-running on a prop change is a harmless no-op.
   useEffect(() => {
-    if (!initializeOnMount || !apiKey) return;
+    if (!initializeOnMount || !isNonBlankString(apiKey)) return;
     SimulaAds.initialize({
       apiKey,
       devMode,
       primaryUserID,
       hasPrivacyConsent,
-      privacy,
+      privacy: safePrivacy,
       telemetryEnabled,
-      adContext,
+      adContext: safeAdContext,
     }).catch((error: unknown) => {
       console.error("[Simula] initialize failed:", error);
     });
@@ -86,7 +97,7 @@ export function SimulaProvider({
       didMount.current = true;
       return;
     }
-    SimulaPrivacy.update({ hasPrivacyConsent, ...(privacy ?? {}) });
+    SimulaPrivacy.update({ hasPrivacyConsent, ...(safePrivacy ?? {}) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasPrivacyConsent, privacyKey]);
 
@@ -98,7 +109,7 @@ export function SimulaProvider({
       didMountContext.current = true;
       return;
     }
-    SimulaAds.updateContext(adContext ?? null);
+    SimulaAds.updateContext(safeAdContext ?? null);
     // adContextKey stands in for the (deep) adContext object.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adContextKey]);

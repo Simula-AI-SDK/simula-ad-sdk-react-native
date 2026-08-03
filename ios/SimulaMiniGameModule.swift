@@ -1110,6 +1110,10 @@ private struct CharacterSelectorWrapper: View {
 // Falls through to the original delegate for everything else.
 
 class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, SKStoreProductViewControllerDelegate, SFSafariViewControllerDelegate {
+    private final class WeakSessionReference {
+        weak var value: URLSession?
+    }
+
     weak var original: WKNavigationDelegate?
     weak var originalUI: WKUIDelegate?
 
@@ -1155,24 +1159,40 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
         return true
     }
 
-    /// Ends a resolve and releases the retained session.
-    private static func endResolving() {
-        stateLock.lock(); defer { stateLock.unlock() }
+    /// Ends a resolve and removes the retained session for caller-side invalidation.
+    private static func endResolving(session expectedSession: URLSession?) -> URLSession? {
+        stateLock.lock()
+        guard let expectedSession, _activeSession === expectedSession else {
+            stateLock.unlock()
+            return nil
+        }
         _isResolving = false
+        let session = _activeSession
         _activeSession = nil
+        stateLock.unlock()
+        return session
     }
 
-    private static func setActiveSession(_ session: URLSession?) {
-        stateLock.lock(); defer { stateLock.unlock() }
+    private static func setActiveSession(_ session: URLSession) -> Bool {
+        stateLock.lock()
+        guard _isResolving, _activeSession == nil else {
+            stateLock.unlock()
+            return false
+        }
         _activeSession = session
+        stateLock.unlock()
+        return true
     }
 
     /// Clears all link-handling state when an overlay is torn down.
     static func resetLinkHandlingState() {
-        stateLock.lock(); defer { stateLock.unlock() }
+        stateLock.lock()
         _isHandlingExternalLink = false
         _isResolving = false
+        let session = _activeSession
         _activeSession = nil
+        stateLock.unlock()
+        session?.invalidateAndCancel()
     }
 
     init(original: WKNavigationDelegate?) {
@@ -1238,9 +1258,13 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
         guard WKNavigationDelegateProxy.beginResolving() else { return }
 
         let proxy = self
+        let sessionReference = WeakSessionReference()
         let resolver = RedirectResolver { finalURL in
             DispatchQueue.main.async {
-                WKNavigationDelegateProxy.endResolving()
+                guard let session = WKNavigationDelegateProxy.endResolving(
+                    session: sessionReference.value
+                ) else { return }
+                session.finishTasksAndInvalidate()
 
                 if let appID = SimulaMiniGameModule.appStoreID(from: finalURL) {
                     proxy.presentStoreProduct(appID: appID)
@@ -1253,7 +1277,11 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
         // Use .ephemeral to bypass React Native's custom URLProtocols
         let config = URLSessionConfiguration.ephemeral
         let session = URLSession(configuration: config, delegate: resolver, delegateQueue: nil)
-        WKNavigationDelegateProxy.setActiveSession(session)  // Retain session
+        sessionReference.value = session
+        guard WKNavigationDelegateProxy.setActiveSession(session) else {
+            session.invalidateAndCancel()
+            return
+        }
         session.dataTask(with: URLRequest(url: url)).resume()
     }
 
