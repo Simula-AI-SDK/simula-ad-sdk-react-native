@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "simula-ads-react-native"
-  s.version      = "1.3.8"
+  s.version      = "1.3.9"
   s.summary      = "Simula Ad SDK for React Native"
   s.description  = "React Native bridge for Simula's native iOS Ad SDK with mini-game support."
   s.homepage     = "https://github.com/Simula-AI-SDK/simula-ad-sdk-react-native"
@@ -22,7 +22,8 @@ Pod::Spec.new do |s|
   # this bridge's sizing contract relies on.
   # 1.1.6 defers SDK init off the main thread (deferred startup) and adds the
   # `simulaAdsDidInitialize` notification this bridge's native-ad host view observes.
-  s.dependency "SimulaAdSDK", "1.1.6"
+  # 1.1.8 routes NativeAd metadata to /load or /seen based on preload consumption.
+  s.dependency "SimulaAdSDK", "1.1.8"
 
   s.frameworks = "StoreKit", "SafariServices"
 end

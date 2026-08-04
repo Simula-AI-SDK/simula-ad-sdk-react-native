@@ -18,11 +18,17 @@ import NativeAdViewComponent, {
 } from "./NativeAdNativeComponent";
 import type { NativeAdProps, NativeAdError } from "./types";
 import type { AdValue } from "../ads/types";
+import { serializeMetadata } from "../internal/metadata";
 import {
   getLastKnownHeight,
   nativeAdHeightKey,
   rememberHeight,
 } from "./heightCache";
+import {
+  isNonBlankString,
+  nonBlankStringOrUndefined,
+} from "../internal/identifiers";
+import { IS_DEVELOPMENT } from "../internal/environment";
 
 const COMPONENT_NAME = "SimulaNativeAdView";
 
@@ -60,6 +66,7 @@ export function NativeAd({
   adUnitId,
   position = 0,
   theme,
+  metadata,
   preloadedAdId,
   previewHtml,
   onImpression,
@@ -68,11 +75,37 @@ export function NativeAd({
   onError,
   width,
 }: NativeAdProps): React.JSX.Element | null {
+  const invalidAdUnitId = adUnitId != null && !isNonBlankString(adUnitId);
+  const validAdUnitId = nonBlankStringOrUndefined(adUnitId);
+  const validPreloadedAdId = nonBlankStringOrUndefined(preloadedAdId);
+  const nextMetadataJson = useMemo(
+    () => serializeMetadata(metadata) ?? undefined,
+    [metadata],
+  );
+  const metadataLoadKey = JSON.stringify([
+    validAdUnitId ?? null,
+    position,
+    theme ?? null,
+    validPreloadedAdId ?? null,
+    previewHtml ?? null,
+  ]);
+  const [metadataSnapshot, setMetadataSnapshot] = useState(() => ({
+    loadKey: metadataLoadKey,
+    value: nextMetadataJson,
+  }));
+  if (metadataSnapshot.loadKey !== metadataLoadKey) {
+    setMetadataSnapshot({
+      loadKey: metadataLoadKey,
+      value: nextMetadataJson,
+    });
+  }
+  const metadataJson = metadataSnapshot.value;
+
   // Same identity as the native per-slot cache, so the remembered height always describes the
   // ad the native side will re-render. Previews are debug-only and never cached.
   const heightKey =
     previewHtml == null
-      ? nativeAdHeightKey(adUnitId, position, preloadedAdId)
+      ? nativeAdHeightKey(validAdUnitId, position, validPreloadedAdId)
       : null;
 
   // Collapsed until the native view reports a height (shimmer/provisional height arrives on the
@@ -106,9 +139,9 @@ export function NativeAd({
       // mismatches. (Identity absent → older native binary; accept as before.)
       if (nativeEvent?.adPosition != null) {
         if (
-          (nativeEvent.adUnitId ?? "") !== (adUnitId ?? "") ||
+          (nativeEvent.adUnitId ?? "") !== (validAdUnitId ?? "") ||
           nativeEvent.adPosition !== position ||
-          (nativeEvent.preloadedAdId ?? "") !== (preloadedAdId ?? "")
+          (nativeEvent.preloadedAdId ?? "") !== (validPreloadedAdId ?? "")
         ) {
           return;
         }
@@ -118,7 +151,7 @@ export function NativeAd({
       // Threshold sub-pixel churn so a measuring creative can't thrash the feed.
       setHeight((prev) => (Math.abs(prev - next) >= 1 ? next : prev));
     },
-    [heightKey, adUnitId, position, preloadedAdId],
+    [heightKey, validAdUnitId, position, validPreloadedAdId],
   );
 
   const handleImpression = useCallback(
@@ -158,19 +191,22 @@ export function NativeAd({
   // native view a "new" style object.
   const containerStyle = useMemo(() => ({ width, height }), [width, height]);
 
+  if (invalidAdUnitId) return null;
+
   if (!NativeAdView) {
-    if (__DEV__) warnNativeAdUnavailable();
+    if (IS_DEVELOPMENT) warnNativeAdUnavailable();
     return null;
   }
 
   return (
     <NativeAdView
-      adUnitId={adUnitId}
+      adUnitId={validAdUnitId}
       // Public `position` maps to the wire prop `adPosition` — `position` itself is a
       // reserved RN layout prop name (see NativeAdNativeComponent.ts).
       adPosition={position}
       theme={theme}
-      preloadedAdId={preloadedAdId}
+      metadataJson={metadataJson}
+      preloadedAdId={validPreloadedAdId}
       previewHtml={previewHtml}
       onAdSizeChange={handleSize}
       onAdImpression={handleImpression}

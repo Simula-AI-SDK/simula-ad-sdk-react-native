@@ -14,6 +14,29 @@ afterEach(() => {
 });
 
 describe("SimulaInterstitialAd", () => {
+  it.each([null, undefined, 1, "", "   "])(
+    "ignores invalid adUnitId %p without creating native instances",
+    (adUnitId) => {
+      const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      let ad: SimulaInterstitialAd | undefined;
+      expect(() => {
+        ad = SimulaInterstitialAd.create(adUnitId as never);
+      }).not.toThrow();
+      ad?.load();
+      ad?.show();
+      ad?.setMetadata("key", "value");
+      ad?.setMetadata({ key: "value" });
+      ad?.destroy();
+      expect(native.createInterstitial).not.toHaveBeenCalled();
+      expect(native.loadAd).not.toHaveBeenCalled();
+      expect(native.showAd).not.toHaveBeenCalled();
+      expect(native.setMetadataValue).not.toHaveBeenCalled();
+      expect(native.setMetadata).not.toHaveBeenCalled();
+      expect(native.destroyAd).not.toHaveBeenCalled();
+      warn.mockRestore();
+    },
+  );
+
   it("creates a native instance with a unique id", () => {
     const a = SimulaInterstitialAd.create("unit_a");
     const b = SimulaInterstitialAd.create("unit_b");
@@ -35,6 +58,48 @@ describe("SimulaInterstitialAd", () => {
       charImage: null,
       charDesc: null,
     });
+    ad.destroy();
+  });
+
+  it("routes single upserts and deterministic bulk replacements", () => {
+    const ad = SimulaInterstitialAd.create("unit");
+    const instanceId = native.createInterstitial.mock.calls[0][0];
+
+    ad.setMetadata("experiment", "variant_b");
+    ad.setMetadata({ z: "last", a: "first" });
+    ad.setMetadata({});
+
+    expect(native.setMetadataValue).toHaveBeenCalledWith(
+      instanceId,
+      "experiment",
+      "variant_b",
+    );
+    expect(native.setMetadata).toHaveBeenNthCalledWith(
+      1,
+      instanceId,
+      '{"a":"first","z":"last"}',
+    );
+    expect(native.setMetadata).toHaveBeenNthCalledWith(
+      2,
+      instanceId,
+      "{}",
+    );
+    ad.destroy();
+  });
+
+  it("drops empty metadata keys and invalid runtime values before native", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    const ad = SimulaInterstitialAd.create("unit");
+    const instanceId = native.createInterstitial.mock.calls[0][0];
+
+    ad.setMetadata("", "value");
+    ad.setMetadata(null as never, "value");
+    ad.setMetadata("key", undefined as never);
+
+    expect(native.setMetadataValue).not.toHaveBeenCalled();
+    expect(instanceId).toEqual(expect.any(String));
+    expect(warn).toHaveBeenCalledTimes(3);
+    warn.mockRestore();
     ad.destroy();
   });
 
@@ -118,22 +183,66 @@ describe("SimulaInterstitialAd", () => {
     expect(seen).not.toHaveBeenCalled();
   });
 
-  it("ignores load()/show() after destroy()", () => {
+  it("ignores load()/show()/metadata setters after destroy()", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
     const ad = SimulaInterstitialAd.create("unit");
     ad.destroy();
     ad.load();
     ad.show();
+    ad.setMetadata("key", "value");
+    ad.setMetadata({ key: "value" });
     expect(native.loadAd).not.toHaveBeenCalled();
     expect(native.showAd).not.toHaveBeenCalled();
+    expect(native.setMetadataValue).not.toHaveBeenCalled();
+    expect(native.setMetadata).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(4);
+    warn.mockRestore();
   });
 });
 
 describe("SimulaRewardedAd", () => {
+  it("ignores an invalid adUnitId without creating a native instance", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    let ad: SimulaRewardedAd | undefined;
+    expect(() => {
+      ad = SimulaRewardedAd.create(" ");
+    }).not.toThrow();
+    ad?.load();
+    ad?.show();
+    ad?.setMetadata("key", "value");
+    ad?.destroy();
+    expect(native.createRewarded).not.toHaveBeenCalled();
+    expect(native.loadAd).not.toHaveBeenCalled();
+    expect(native.showAd).not.toHaveBeenCalled();
+    expect(native.setMetadataValue).not.toHaveBeenCalled();
+    expect(native.destroyAd).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it("creates a rewarded ad for the placement", () => {
     const ad = SimulaRewardedAd.create("reward");
     expect(native.createRewarded).toHaveBeenCalledWith(
       expect.any(String),
       "reward",
+    );
+    ad.destroy();
+  });
+
+  it("routes inherited metadata setters to the rewarded native instance", () => {
+    const ad = SimulaRewardedAd.create("reward");
+    const instanceId = native.createRewarded.mock.calls[0][0];
+
+    ad.setMetadata("reward", "coins");
+    ad.setMetadata({ reward: "coins", source: "daily" });
+
+    expect(native.setMetadataValue).toHaveBeenCalledWith(
+      instanceId,
+      "reward",
+      "coins",
+    );
+    expect(native.setMetadata).toHaveBeenCalledWith(
+      instanceId,
+      '{"reward":"coins","source":"daily"}',
     );
     ad.destroy();
   });

@@ -5,6 +5,19 @@
  * `SimulaAds.updateContext`. The native SDKs auto-attach it to every native-ad
  * request (`POST /load/native`). Updating it is a full replacement, not a merge.
  */
+import { safeJsonSnapshot } from "../internal/safeJson";
+import { IS_DEVELOPMENT } from "../internal/environment";
+
+let warnedUnsafeAdContext = false;
+
+function warnUnsafeAdContext(): void {
+  if (!IS_DEVELOPMENT || warnedUnsafeAdContext) return;
+  warnedUnsafeAdContext = true;
+  console.warn(
+    "[SimulaAds] Some ad context fields were ignored because they are not JSON-safe.",
+  );
+}
+
 export interface SimulaAdContext {
   /** Current search / query term in the feed. */
   searchTerm?: string;
@@ -38,8 +51,50 @@ export function toNativeAdContext(
   context: SimulaAdContext,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(context)) {
-    if (value !== undefined) out[key] = value;
+  let dropped = false;
+  let keys: string[];
+  try {
+    keys = Object.keys(context);
+  } catch {
+    warnUnsafeAdContext();
+    return out;
   }
-  return out;
+
+  for (const key of keys) {
+    let value: unknown;
+    try {
+      value = (context as Record<string, unknown>)[key];
+    } catch {
+      dropped = true;
+      continue;
+    }
+    if (value === undefined) continue;
+
+    if (key === "customContext") {
+      const snapshot = safeJsonSnapshot(value);
+      if (
+        snapshot &&
+        typeof snapshot.value === "object" &&
+        snapshot.value !== null &&
+        !Array.isArray(snapshot.value)
+      ) {
+        out[key] = snapshot.value;
+      } else {
+        dropped = true;
+      }
+    } else {
+      const snapshot = safeJsonSnapshot(value);
+      if (snapshot) {
+        out[key] = snapshot.value;
+      } else {
+        dropped = true;
+      }
+    }
+  }
+
+  if (dropped) warnUnsafeAdContext();
+  const snapshot = safeJsonSnapshot(out);
+  return snapshot && typeof snapshot.value === "object" && snapshot.value !== null
+    ? snapshot.value
+    : {};
 }

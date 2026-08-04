@@ -11,6 +11,8 @@ import { NativeModules } from 'react-native';
 import { MiniGameInvitationProps } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
 import { miniGameEmitter as emitter, warnIfDuplicateSurface } from '../../internal/emitter';
+import { isNonBlankString } from '../../internal/identifiers';
+import { surfaceVisibilityAction } from '../../internal/surfaceVisibility';
 
 const { SimulaMiniGameModule } = NativeModules;
 
@@ -31,12 +33,18 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
   const { apiKey, hasPrivacyConsent, devMode, primaryUserID } =
     useSimulaContext();
   const wasOpenRef = useRef(false);
+  const shownForOpenCycleRef = useRef(false);
 
   // Show/hide native invitation based on isOpen prop
   useEffect(() => {
     if (!SimulaMiniGameModule) return;
+    const action = surfaceVisibilityAction(
+      isOpen,
+      shownForOpenCycleRef.current,
+      isNonBlankString(apiKey),
+    );
 
-    if (isOpen && !wasOpenRef.current) {
+    if (action === 'show') {
       SimulaMiniGameModule.showMiniGameInvitation({
         apiKey,
         hasPrivacyConsent,
@@ -54,12 +62,14 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
       }).catch((error: any) => {
         console.error('[SimulaMiniGame] showMiniGameInvitation failed:', error?.message || error);
       });
-    } else if (!isOpen && wasOpenRef.current) {
+      wasOpenRef.current = true;
+      shownForOpenCycleRef.current = true;
+    } else if (action === 'hide') {
       SimulaMiniGameModule.hideMiniGameInvitation();
+      wasOpenRef.current = false;
+      shownForOpenCycleRef.current = false;
     }
-
-    wasOpenRef.current = isOpen;
-  }, [isOpen]);
+  }, [isOpen, apiKey]);
 
   // Keep the latest callbacks in refs so native listeners subscribe once.
   const onClickRef = useRef(onClick);

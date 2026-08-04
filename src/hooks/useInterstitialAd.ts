@@ -10,7 +10,16 @@
  */
 import { useEffect, useRef, useState, useCallback } from "react";
 import { SimulaInterstitialAd } from "../ads/SimulaInterstitialAd";
-import { SimulaAdLoadOptions, SimulaAdError, AdValue } from "../ads/types";
+import {
+  SimulaAdLoadOptions,
+  SimulaAdError,
+  SimulaMetadata,
+  AdValue,
+} from "../ads/types";
+import {
+  isNonBlankString,
+  warnInvalidIdentifier,
+} from "../internal/identifiers";
 
 export interface UseInterstitialAd {
   isLoaded: boolean;
@@ -22,6 +31,10 @@ export interface UseInterstitialAd {
   error: SimulaAdError | undefined;
   load: (options?: SimulaAdLoadOptions) => void;
   show: () => void;
+  setMetadata: {
+    (key: string, value: string): void;
+    (metadata: SimulaMetadata): void;
+  };
 }
 
 export function useInterstitialAd(adUnitId: string): UseInterstitialAd {
@@ -33,13 +46,19 @@ export function useInterstitialAd(adUnitId: string): UseInterstitialAd {
   const [error, setError] = useState<SimulaAdError | undefined>(undefined);
 
   useEffect(() => {
-    const ad = SimulaInterstitialAd.create(adUnitId);
-    adRef.current = ad;
     setIsLoaded(false);
     setIsClosed(false);
     setImpressionRecorded(false);
     setAdValue(null);
     setError(undefined);
+    if (!isNonBlankString(adUnitId)) {
+      adRef.current = null;
+      warnInvalidIdentifier("useInterstitialAd", "adUnitId");
+      return;
+    }
+
+    const ad = SimulaInterstitialAd.create(adUnitId);
+    adRef.current = ad;
 
     // True when a LOADED arrived after the most recent DISPLAYED — the native
     // auto-preload delivered the NEXT ad while the current unit was still on screen,
@@ -103,5 +122,27 @@ export function useInterstitialAd(adUnitId: string): UseInterstitialAd {
     adRef.current?.show();
   }, []);
 
-  return { isLoaded, isClosed, impressionRecorded, adValue, error, load, show };
+  const setMetadata: UseInterstitialAd["setMetadata"] = useCallback(
+    (keyOrMetadata: string | SimulaMetadata, value?: string) => {
+      const ad = adRef.current;
+      if (!ad) return;
+      if (typeof keyOrMetadata === "string" || value !== undefined) {
+        ad.setMetadata(keyOrMetadata as string, value!);
+      } else {
+        ad.setMetadata(keyOrMetadata);
+      }
+    },
+    [],
+  );
+
+  return {
+    isLoaded,
+    isClosed,
+    impressionRecorded,
+    adValue,
+    error,
+    load,
+    show,
+    setMetadata,
+  };
 }

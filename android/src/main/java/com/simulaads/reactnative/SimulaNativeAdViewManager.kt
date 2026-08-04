@@ -39,6 +39,11 @@ class SimulaNativeAdViewManager : SimulaNativeAdViewManagerSpec() {
         view.theme = value
     }
 
+    @ReactProp(name = "metadataJson")
+    override fun setMetadataJson(view: SimulaNativeAdView, value: String?) {
+        view.metadataJson = value
+    }
+
     @ReactProp(name = "preloadedAdId")
     override fun setPreloadedAdId(view: SimulaNativeAdView, value: String?) {
         view.preloadedAdId = value

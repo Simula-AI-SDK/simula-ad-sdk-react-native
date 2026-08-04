@@ -10,7 +10,16 @@
  */
 import { useEffect, useRef, useState, useCallback } from "react";
 import { SimulaRewardedAd } from "../ads/SimulaRewardedAd";
-import { SimulaAdLoadOptions, SimulaAdError, AdValue } from "../ads/types";
+import {
+  SimulaAdLoadOptions,
+  SimulaAdError,
+  SimulaMetadata,
+  AdValue,
+} from "../ads/types";
+import {
+  isNonBlankString,
+  warnInvalidIdentifier,
+} from "../internal/identifiers";
 
 export interface UseRewardedAd {
   isLoaded: boolean;
@@ -25,6 +34,10 @@ export interface UseRewardedAd {
   error: SimulaAdError | undefined;
   load: (options?: SimulaAdLoadOptions) => void;
   show: () => void;
+  setMetadata: {
+    (key: string, value: string): void;
+    (metadata: SimulaMetadata): void;
+  };
 }
 
 export function useRewardedAd(adUnitId: string): UseRewardedAd {
@@ -41,8 +54,6 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
   const [error, setError] = useState<SimulaAdError | undefined>(undefined);
 
   useEffect(() => {
-    const ad = SimulaRewardedAd.create(adUnitId);
-    adRef.current = ad;
     setIsLoaded(false);
     setIsClosed(false);
     setEarnedReward(false);
@@ -51,6 +62,14 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
     setImpressionRecorded(false);
     setAdValue(null);
     setError(undefined);
+    if (!isNonBlankString(adUnitId)) {
+      adRef.current = null;
+      warnInvalidIdentifier("useRewardedAd", "adUnitId");
+      return;
+    }
+
+    const ad = SimulaRewardedAd.create(adUnitId);
+    adRef.current = ad;
 
     // True when a LOADED arrived after the most recent DISPLAYED — the native
     // auto-preload delivered the NEXT ad while the current unit was still on screen,
@@ -127,6 +146,19 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
     adRef.current?.show();
   }, []);
 
+  const setMetadata: UseRewardedAd["setMetadata"] = useCallback(
+    (keyOrMetadata: string | SimulaMetadata, value?: string) => {
+      const ad = adRef.current;
+      if (!ad) return;
+      if (typeof keyOrMetadata === "string" || value !== undefined) {
+        ad.setMetadata(keyOrMetadata as string, value!);
+      } else {
+        ad.setMetadata(keyOrMetadata);
+      }
+    },
+    [],
+  );
+
   return {
     isLoaded,
     isClosed,
@@ -138,5 +170,6 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
     error,
     load,
     show,
+    setMetadata,
   };
 }

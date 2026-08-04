@@ -28,6 +28,7 @@ import AppTrackingTransparency
 class SimulaAdsModule: RCTEventEmitter {
 
     private static let eventName = "SimulaAds_onAdEvent"
+    private static let invalidArgumentCode = "INVALID_ARGUMENT"
 
     private var hasListeners = false
 
@@ -148,12 +149,12 @@ class SimulaAdsModule: RCTEventEmitter {
     func initialize(_ config: NSDictionary,
                     resolve: @escaping RCTPromiseResolveBlock,
                     reject: @escaping RCTPromiseRejectBlock) {
-        guard let apiKey = config["apiKey"] as? String, !apiKey.isEmpty else {
+        guard let apiKey = Self.nonBlankString(config["apiKey"] as? String) else {
             reject("INVALID_CONFIG", "Missing required config: apiKey", nil)
             return
         }
         let devMode = config["devMode"] as? Bool ?? false
-        let primaryUserID = config["primaryUserID"] as? String
+        let primaryUserID = Self.nonBlankString(config["primaryUserID"] as? String)
         let hasPrivacyConsent = config["hasPrivacyConsent"] as? Bool ?? true
         let telemetryEnabled = config["telemetryEnabled"] as? Bool ?? true
         let privacy = convertPrivacyConfig(config["privacy"])
@@ -185,26 +186,27 @@ class SimulaAdsModule: RCTEventEmitter {
 
     @objc
     func updatePrimaryUserID(_ id: NSString?) {
-        let userID = id as String?
+        let userID = Self.nonBlankString(id as String?)
         runOnMain {
-            // Empty/nil clears the PPID natively (logout).
-            SimulaAds.updatePrimaryUserID(userID?.isEmpty == true ? nil : userID)
+            // Blank/nil clears the PPID natively (logout).
+            SimulaAds.updatePrimaryUserID(userID)
         }
     }
 
     /// Read-only frequency-cap check. Resolves `true` when the cap is reached;
     /// `false` when eligible, pre-init, or on any failure (the SDK fails open).
     @objc
-    func checkFrequencyCap(_ adUnitId: NSString,
+    func checkFrequencyCap(_ adUnitId: NSString?,
                            primaryUserID: NSString?,
                            resolve: @escaping RCTPromiseResolveBlock,
                            reject: @escaping RCTPromiseRejectBlock) {
-        let unitId = adUnitId as String
-        // Match Android (`isNotBlank`): a blank id is treated as omitted so the SDK
-        // falls back to its current PPID — same JS call, same result on both platforms.
-        let ppid = (primaryUserID as String?).flatMap {
-            $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
+        guard let unitId = Self.nonBlankString(adUnitId as String?) else {
+            reject(Self.invalidArgumentCode, "adUnitId must be a non-empty string", nil)
+            return
         }
+        // Match Android (`isNotBlank`): a blank PPID is treated as omitted so the SDK
+        // falls back to its current PPID — same JS call, same result on both platforms.
+        let ppid = Self.nonBlankString(primaryUserID as String?)
         // Completion-based SDK call — the bridge must create NO Swift Concurrency tasks:
         // this file is compiled by the host app's Xcode, and affected toolchains miscompile
         // optimized task code into teardown aborts. The task lives inside the SDK binary,
@@ -227,6 +229,10 @@ class SimulaAdsModule: RCTEventEmitter {
         let unitId = adUnitId as String?
         let pos = position.intValue
         let themeName = theme as String?
+        if unitId != nil && Self.nonBlankString(unitId) == nil {
+            reject(Self.invalidArgumentCode, "adUnitId must be a non-empty string when provided", nil)
+            return
+        }
         // Completion-based SDK call — no bridge-created task (see checkFrequencyCap above).
         runOnMain {
             SimulaAds.preloadNativeAd(adUnitId: unitId, position: pos, theme: themeName) { preloadedAdId in
@@ -236,16 +242,19 @@ class SimulaAdsModule: RCTEventEmitter {
     }
 
     @objc
-    func destroyPreloadedAd(_ preloadedAdId: NSString) {
+    func destroyPreloadedAd(_ preloadedAdId: NSString?) {
+        guard let id = Self.nonBlankString(preloadedAdId as String?) else { return }
         runOnMain {
-            SimulaAds.destroyPreloadedAd(preloadedAdId as String)
+            SimulaAds.destroyPreloadedAd(id)
         }
     }
 
     @objc
     func invalidateNativeAd(_ adUnitId: NSString?, position: NSNumber) {
+        let unitId = adUnitId as String?
+        guard unitId == nil || Self.nonBlankString(unitId) != nil else { return }
         runOnMain {
-            SimulaAds.invalidateNativeAd(adUnitId: adUnitId as String?, position: position.intValue)
+            SimulaAds.invalidateNativeAd(adUnitId: unitId, position: position.intValue)
         }
     }
 
@@ -283,12 +292,13 @@ class SimulaAdsModule: RCTEventEmitter {
     // MARK: - Create / destroy
 
     @objc
-    func createInterstitial(_ instanceId: String, adUnitId: String) {
+    func createInterstitial(_ instanceId: String, adUnitId: NSString?) {
+        guard let unitId = Self.nonBlankString(adUnitId as String?) else { return }
         runOnMain {
             // This hop may have been enqueued behind invalidate's sync teardown (see
             // didInvalidate) — never recreate ads on a dead bridge.
             guard !self.didInvalidate else { return }
-            let ad = SimulaInterstitialAd(adUnitId: adUnitId)
+            let ad = SimulaInterstitialAd(adUnitId: unitId)
             let proxy = InterstitialDelegateProxy(module: self, instanceId: instanceId)
             ad.delegate = proxy
             self.entries[instanceId] = AdEntry(interstitial: ad, proxy: proxy)
@@ -296,15 +306,49 @@ class SimulaAdsModule: RCTEventEmitter {
     }
 
     @objc
-    func createRewarded(_ instanceId: String, adUnitId: String) {
+    func createRewarded(_ instanceId: String, adUnitId: NSString?) {
+        guard let unitId = Self.nonBlankString(adUnitId as String?) else { return }
         runOnMain {
             // See createInterstitial / didInvalidate.
             guard !self.didInvalidate else { return }
-            let ad = SimulaRewardedAd(adUnitId: adUnitId)
+            let ad = SimulaRewardedAd(adUnitId: unitId)
             let proxy = RewardedDelegateProxy(module: self, instanceId: instanceId)
             ad.delegate = proxy
             self.entries[instanceId] = AdEntry(rewarded: ad, proxy: proxy)
         }
+    }
+
+    @objc
+    func setMetadataValue(_ instanceId: String, key: NSString?, value: NSString?) {
+        guard let key = key as String?, !key.isEmpty, let value = value as String? else { return }
+        runOnMain {
+            guard let entry = self.entries[instanceId] else { return }
+            entry.interstitial?.setMetadata(key, value)
+            entry.rewarded?.setMetadata(key, value)
+        }
+    }
+
+    @objc
+    func setMetadata(_ instanceId: String, metadataJson: NSString?) {
+        guard let metadataJson = metadataJson as String? else { return }
+        guard let metadata = Self.parseMetadata(metadataJson) else { return }
+        runOnMain {
+            guard let entry = self.entries[instanceId] else { return }
+            entry.interstitial?.setMetadata(metadata)
+            entry.rewarded?.setMetadata(metadata)
+        }
+    }
+
+    private static func parseMetadata(_ json: String) -> [String: String]? {
+        guard let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let dictionary = object as? [String: Any] else { return nil }
+
+        let pairs = dictionary.keys.sorted().compactMap { key -> (String, String)? in
+            guard !key.isEmpty, let value = dictionary[key] as? String else { return nil }
+            return (key, value)
+        }.prefix(10)
+        return Dictionary(uniqueKeysWithValues: pairs)
     }
 
     @objc
@@ -540,6 +584,12 @@ class SimulaAdsModule: RCTEventEmitter {
     }
 
     // MARK: - Helpers
+
+    private static func nonBlankString(_ value: String?) -> String? {
+        guard let value,
+              !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return value
+    }
 
     /// Maps `SimulaAdError` to a stable JS code, message, and (for duplicate_request)
     /// retry seconds. Replicated locally because the SDK's `telemetryCode` is internal.

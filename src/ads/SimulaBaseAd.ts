@@ -18,8 +18,18 @@ import {
 } from "../internal/nativeModules";
 import { registerInstance } from "./eventRouter";
 import {
+  isValidMetadataValue,
+  serializeMetadata,
+} from "../internal/metadata";
+import {
+  isNonBlankString,
+  warnInvalidIdentifier,
+} from "../internal/identifiers";
+import { IS_DEVELOPMENT } from "../internal/environment";
+import {
   SimulaAdEvent,
   SimulaAdLoadOptions,
+  SimulaMetadata,
   SimulaAdType,
   SimulaAnyAdEventType,
   SimulaUnsubscribe,
@@ -70,11 +80,12 @@ export abstract class SimulaBaseAd {
     idPrefix: string,
   ) {
     this.adType = adType;
-    this.adUnitId = adUnitId;
+    this.adUnitId = isNonBlankString(adUnitId) ? adUnitId : "";
+    if (!this.adUnitId) warnInvalidIdentifier("create", "adUnitId");
     this.instanceId = nextInstanceId(idPrefix);
-    this.unregister = registerInstance(this.instanceId, (event) =>
-      this.dispatch(event),
-    );
+    this.unregister = this.adUnitId
+      ? registerInstance(this.instanceId, (event) => this.dispatch(event))
+      : () => undefined;
   }
 
   /** Whether the most recent load reported success and the ad has not since closed/failed. */
@@ -159,6 +170,30 @@ export abstract class SimulaBaseAd {
 
   // ── Native passthrough ────────────────────────────────────────────────
 
+  /** Upserts one value or replaces all metadata for future impressions. */
+  setMetadata(key: string, value: string): void;
+  setMetadata(metadata: SimulaMetadata): void;
+  setMetadata(keyOrMetadata: string | SimulaMetadata, value?: string): void {
+    if (!this.requireNative("setMetadata")) return;
+    if (typeof keyOrMetadata === "string" || value !== undefined) {
+      if (!isValidMetadataValue(keyOrMetadata, value)) return;
+      NativeAds!.setMetadataValue(this.instanceId, keyOrMetadata as string, value!);
+      return;
+    }
+    if (
+      keyOrMetadata == null ||
+      typeof keyOrMetadata !== "object" ||
+      Array.isArray(keyOrMetadata)
+    ) {
+      isValidMetadataValue(keyOrMetadata, value);
+      return;
+    }
+    NativeAds!.setMetadata(
+      this.instanceId,
+      serializeMetadata(keyOrMetadata) ?? "{}",
+    );
+  }
+
   /** Preloads an ad. Fire-and-forget — outcome arrives as LOADED / LOAD_FAILED. */
   load(options: SimulaAdLoadOptions = {}): void {
     if (!this.requireNative("load")) return;
@@ -187,14 +222,17 @@ export abstract class SimulaBaseAd {
     this._loaded = false;
     this.removeAllListeners();
     this.unregister();
-    if (isAdsModuleAvailable()) {
+    if (this.adUnitId && isAdsModuleAvailable()) {
       NativeAds!.destroyAd(this.instanceId);
     }
   }
 
   protected requireNative(method: string): boolean {
+    if (!this.adUnitId) return false;
     if (this.destroyed) {
-      console.warn(`[SimulaAds] ${method}() called on a destroyed ad — ignored.`);
+      if (IS_DEVELOPMENT) {
+        console.warn(`[SimulaAds] ${method}() called on a destroyed ad — ignored.`);
+      }
       return false;
     }
     if (!isAdsModuleAvailable()) {

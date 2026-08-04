@@ -1,5 +1,5 @@
 import type { DimensionValue, StyleProp, ViewStyle } from "react-native";
-import type { AdValue } from "../ads/types";
+import type { AdValue, SimulaMetadata } from "../ads/types";
 
 /**
  * Creative color theme for a native ad.
@@ -53,8 +53,14 @@ export interface NativeAdProps {
   /** Creative color theme. */
   theme?: SimulaNativeAdTheme;
   /**
-   * An id from `SimulaAds.preloadNativeAd()` — renders that cached ad with no live
-   * request. An expired/unknown id falls back to a live call (no error surfaced).
+    * Per-impression publisher metadata. A normal or preload-fallback request sends the
+    * snapshot on `/load`; a successfully consumed preload sends it on `/seen` instead.
+   */
+  metadata?: SimulaMetadata;
+  /**
+    * An id from `SimulaAds.preloadNativeAd()` — renders that cached ad with no live
+    * request. Supply metadata on this component for the eventual `/seen` beacon. An
+    * expired/unknown id falls back to a live call (no error surfaced).
    */
   preloadedAdId?: string;
   /**
@@ -95,6 +101,7 @@ export interface NativeAdViewProps {
   adUnitId?: string;
   position?: number;
   theme?: SimulaNativeAdTheme;
+  metadataJson?: string;
   preloadedAdId?: string;
   previewHtml?: string;
   onAdSizeChange?: (event: {

@@ -15,6 +15,12 @@ import { SimulaPrivacyConfig } from "../privacy/types";
 import { SimulaAdContext, toNativeAdContext } from "./context";
 import { forgetNativeAdHeights } from "../nativeAd/heightCache";
 import type { SimulaNativeAdTheme } from "../nativeAd/types";
+import {
+  isNonBlankString,
+  requireNonBlankString,
+  warnInvalidIdentifier,
+} from "../internal/identifiers";
+import { safeJsonSnapshot } from "../internal/safeJson";
 
 export interface SimulaInitConfig {
   apiKey: string;
@@ -34,13 +40,25 @@ export interface SimulaInitConfig {
 
 /** Marshals an init config into the flat shape the native modules expect. */
 function toNativeConfig(config: SimulaInitConfig): Record<string, unknown> {
+  const privacySnapshot =
+    config.privacy == null ? undefined : safeJsonSnapshot(config.privacy);
+  const privacyValue = privacySnapshot?.value;
+  const primaryUserID =
+    typeof config.primaryUserID === "string" && config.primaryUserID.trim()
+      ? config.primaryUserID
+      : null;
   return {
     apiKey: config.apiKey,
     devMode: config.devMode ?? false,
-    primaryUserID: config.primaryUserID ?? null,
+    primaryUserID,
     hasPrivacyConsent: config.hasPrivacyConsent ?? true,
     telemetryEnabled: config.telemetryEnabled ?? true,
-    privacy: config.privacy ? toNativePrivacy(config.privacy) : null,
+    privacy:
+      privacyValue &&
+      typeof privacyValue === "object" &&
+      !Array.isArray(privacyValue)
+        ? privacyValue
+        : null,
     adContext: config.adContext ? toNativeAdContext(config.adContext) : null,
   };
 }
@@ -49,11 +67,13 @@ function toNativeConfig(config: SimulaInitConfig): Record<string, unknown> {
 export function toNativePrivacy(
   privacy: SimulaPrivacyConfig,
 ): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(privacy)) {
-    if (value !== undefined) out[key] = value;
-  }
-  return out;
+  const snapshot = safeJsonSnapshot(privacy);
+  return snapshot &&
+    typeof snapshot.value === "object" &&
+    snapshot.value !== null &&
+    !Array.isArray(snapshot.value)
+    ? (snapshot.value as unknown as Record<string, unknown>)
+    : {};
 }
 
 export const SimulaAds = {
@@ -63,12 +83,10 @@ export const SimulaAds = {
       warnAdsUnavailable("initialize");
       return;
     }
-    if (!config.apiKey) {
-      throw new Error("[SimulaAds] initialize requires a non-empty apiKey");
-    }
+    const apiKey = requireNonBlankString(config?.apiKey, "apiKey");
     // The IPv4 resolution beacon now lives in the native SDKs (fired after
     // session creation, carrying the server session id) — no JS-side work here.
-    await NativeAds!.initialize(toNativeConfig(config));
+    await NativeAds!.initialize(toNativeConfig({ ...config, apiKey }));
   },
 
   /** Whether the SDK has been initialized with a valid API key. */
@@ -115,6 +133,10 @@ export const SimulaAds = {
     adUnitId: string,
     primaryUserID?: string | null,
   ): Promise<boolean> {
+    if (!isNonBlankString(adUnitId)) {
+      warnInvalidIdentifier("checkFrequencyCap", "adUnitId");
+      return false;
+    }
     if (!isAdsModuleAvailable()) {
       warnAdsUnavailable("checkFrequencyCap");
       return false;
@@ -131,19 +153,26 @@ export const SimulaAds = {
    * single native-ad request using the current targeting context, caches it, and
    * resolves a `preloadedAdId` to pass to a `<NativeAd preloadedAdId={...}>` (which
    * then renders from cache with no live request). Resolves `null` before
-   * `initialize` or when the cache cap (5) is reached.
+   * `initialize` or when the cache cap (5) is reached. Preload does not accept
+   * metadata; provide it to `<NativeAd>`, which sends it on `/seen` after a
+   * successful preload or on `/load` after a live fallback.
    */
   async preloadNativeAd(options?: {
     adUnitId?: string;
     position?: number;
     theme?: SimulaNativeAdTheme;
   }): Promise<string | null> {
+    const adUnitId = options?.adUnitId;
+    if (adUnitId != null && !isNonBlankString(adUnitId)) {
+      warnInvalidIdentifier("preloadNativeAd", "adUnitId");
+      return null;
+    }
     if (!isAdsModuleAvailable()) {
       warnAdsUnavailable("preloadNativeAd");
       return null;
     }
     return NativeAds!.preloadNativeAd(
-      options?.adUnitId ?? null,
+      adUnitId ?? null,
       options?.position ?? 0,
       options?.theme ?? null,
     );
@@ -151,6 +180,10 @@ export const SimulaAds = {
 
   /** Release a preloaded native ad that was never consumed (cancels an in-flight request). */
   destroyPreloadedAd(preloadedAdId: string): void {
+    if (!isNonBlankString(preloadedAdId)) {
+      warnInvalidIdentifier("destroyPreloadedAd", "preloadedAdId");
+      return;
+    }
     if (!isAdsModuleAvailable()) return warnAdsUnavailable("destroyPreloadedAd");
     NativeAds!.destroyPreloadedAd(preloadedAdId);
   },
@@ -161,11 +194,19 @@ export const SimulaAds = {
    * out and back reuses the same serve; call this to force a refresh for that slot.
    */
   invalidateNativeAd(options?: { adUnitId?: string; position?: number }): void {
+    const providedAdUnitId = options?.adUnitId;
+    if (providedAdUnitId != null && !isNonBlankString(providedAdUnitId)) {
+      warnInvalidIdentifier("invalidateNativeAd", "adUnitId");
+      return;
+    }
     if (!isAdsModuleAvailable()) return warnAdsUnavailable("invalidateNativeAd");
     // Drop the slot's remembered height too, so the refreshed slot's next mount doesn't seed
     // itself with the previous ad's size.
-    forgetNativeAdHeights(options?.adUnitId ?? "", options?.position ?? 0);
-    NativeAds!.invalidateNativeAd(options?.adUnitId ?? null, options?.position ?? 0);
+    forgetNativeAdHeights(providedAdUnitId ?? "", options?.position ?? 0);
+    NativeAds!.invalidateNativeAd(
+      providedAdUnitId ?? null,
+      options?.position ?? 0,
+    );
   },
 
   /** Clear every cached native ad (all slots). */

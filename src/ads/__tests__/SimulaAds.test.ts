@@ -3,6 +3,35 @@ import { NativeModules } from "../../test/reactNativeMock";
 
 const native = NativeModules.SimulaAdsModule;
 
+function malformedJsonValues(): unknown[] {
+  const cycle: Record<string, unknown> = {};
+  cycle.self = cycle;
+  const getter = Object.defineProperty({}, "value", {
+    enumerable: true,
+    get() {
+      throw new Error("nope");
+    },
+  });
+  return [
+    cycle,
+    { value: 1n },
+    getter,
+    {
+      toJSON() {
+        throw new Error("nope");
+      },
+    },
+    new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw new Error("nope");
+        },
+      },
+    ),
+  ];
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
 });
@@ -21,6 +50,22 @@ describe("SimulaAds.initialize", () => {
       adContext: null,
     });
   });
+
+  it.each([undefined, null, "", " ", "\t\n"])(
+    "maps blank primaryUserID %p to null",
+    async (primaryUserID) => {
+      await SimulaAds.initialize({ apiKey: "k", primaryUserID } as never);
+      expect(native.initialize.mock.calls[0][0].primaryUserID).toBeNull();
+    },
+  );
+
+  it.each(["user-123", " user-123 ", "\tuser-123\n"])(
+    "preserves nonblank primaryUserID %p verbatim",
+    async (primaryUserID) => {
+      await SimulaAds.initialize({ apiKey: "k", primaryUserID });
+      expect(native.initialize.mock.calls[0][0].primaryUserID).toBe(primaryUserID);
+    },
+  );
 
   it("passes privacy through with undefined keys dropped", async () => {
     await SimulaAds.initialize({
@@ -48,6 +93,46 @@ describe("SimulaAds.initialize", () => {
       customContext: { tier: "pro", score: 42 },
     });
   });
+
+  it("omits every malformed privacy and customContext shape", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    for (const malformed of malformedJsonValues()) {
+      await SimulaAds.initialize({
+        apiKey: "k",
+        privacy: malformed as never,
+        adContext: { category: "sports", customContext: malformed as never },
+      });
+
+      expect(native.initialize).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          privacy: null,
+          adContext: { category: "sports" },
+        }),
+      );
+    }
+    expect(native.initialize).toHaveBeenCalledTimes(malformedJsonValues().length);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it("drops malformed top-level adContext fields without clearing valid fields", async () => {
+    const cycle: Record<string, unknown> = {};
+    cycle.self = cycle;
+
+    await SimulaAds.initialize({
+      apiKey: "k",
+      adContext: {
+        category: "sports",
+        title: cycle as never,
+        customContext: { tier: "pro" },
+      },
+    });
+
+    expect(native.initialize.mock.calls[0][0].adContext).toEqual({
+      category: "sports",
+      customContext: { tier: "pro" },
+    });
+  });
 });
 
 describe("SimulaAds.updateContext", () => {
@@ -71,6 +156,15 @@ describe("SimulaAds native-ad imperatives", () => {
     expect(native.preloadNativeAd).toHaveBeenCalledWith("feed_1", 0, null);
   });
 
+  it("ignores a legacy runtime metadata field and keeps preload metadata-free", async () => {
+    await SimulaAds.preloadNativeAd({
+      adUnitId: "feed_1",
+      metadata: { screen: "search" },
+    } as never);
+
+    expect(native.preloadNativeAd).toHaveBeenCalledWith("feed_1", 0, null);
+  });
+
   it("preloadNativeAd passes null adUnitId / theme when omitted", async () => {
     await SimulaAds.preloadNativeAd({ position: 3, theme: "dark" });
     expect(native.preloadNativeAd).toHaveBeenCalledWith(null, 3, "dark");
@@ -91,6 +185,49 @@ describe("SimulaAds native-ad imperatives", () => {
   it("rejects an empty apiKey", async () => {
     await expect(SimulaAds.initialize({ apiKey: "" })).rejects.toThrow(/apiKey/);
     expect(native.initialize).not.toHaveBeenCalled();
+  });
+
+  it.each([null, undefined, 7, "", "   "])(
+    "rejects invalid apiKey %p before native",
+    async (apiKey) => {
+      await expect(
+        SimulaAds.initialize({ apiKey } as never),
+      ).rejects.toBeInstanceOf(TypeError);
+      expect(native.initialize).not.toHaveBeenCalled();
+    },
+  );
+
+  it("fails open or no-ops for invalid IDs before native", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    for (const invalid of [null, undefined, 7, "", " \t "]) {
+      await expect(
+        SimulaAds.checkFrequencyCap(invalid as never),
+      ).resolves.toBe(false);
+      expect(() =>
+        SimulaAds.destroyPreloadedAd(invalid as never),
+      ).not.toThrow();
+    }
+    expect(native.checkFrequencyCap).not.toHaveBeenCalled();
+    expect(native.destroyPreloadedAd).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(10);
+    warn.mockRestore();
+  });
+
+  it("keeps optional IDs optional and makes invalid cleanup IDs no-ops", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    await SimulaAds.preloadNativeAd();
+    SimulaAds.invalidateNativeAd();
+    expect(native.preloadNativeAd).toHaveBeenCalledWith(null, 0, null);
+    expect(native.invalidateNativeAd).toHaveBeenCalledWith(null, 0);
+
+    await expect(SimulaAds.preloadNativeAd({ adUnitId: " " })).resolves.toBeNull();
+    expect(() =>
+      SimulaAds.invalidateNativeAd({ adUnitId: 1 as never }),
+    ).not.toThrow();
+    expect(native.preloadNativeAd).toHaveBeenCalledTimes(1);
+    expect(native.invalidateNativeAd).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
   });
 });
 

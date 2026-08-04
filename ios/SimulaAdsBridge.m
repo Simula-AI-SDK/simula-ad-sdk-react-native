@@ -10,9 +10,9 @@ RCT_EXTERN_METHOD(initialize:(NSDictionary *)config
 RCT_EXTERN_METHOD(isInitialized:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(updateContext:(NSDictionary *)context)
-RCT_EXTERN_METHOD(updatePrimaryUserID:(NSString *)id)
-RCT_EXTERN_METHOD(checkFrequencyCap:(NSString *)adUnitId
-                  primaryUserID:(NSString *)primaryUserID
+RCT_EXTERN_METHOD(updatePrimaryUserID:(NSString * _Nullable)id)
+RCT_EXTERN_METHOD(checkFrequencyCap:(NSString * _Nullable)adUnitId
+                  primaryUserID:(NSString * _Nullable)primaryUserID
                   resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(getUserAgent:(RCTPromiseResolveBlock)resolve
@@ -21,27 +21,32 @@ RCT_EXTERN_METHOD(getDeviceId:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 
 // ── Native ad (imperative) ────────────────────────────────────────────────────
-RCT_EXTERN_METHOD(preloadNativeAd:(NSString *)adUnitId
+RCT_EXTERN_METHOD(preloadNativeAd:(NSString * _Nullable)adUnitId
                   position:(nonnull NSNumber *)position
-                  theme:(NSString *)theme
+                  theme:(NSString * _Nullable)theme
                   resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
-RCT_EXTERN_METHOD(destroyPreloadedAd:(NSString *)preloadedAdId)
-RCT_EXTERN_METHOD(invalidateNativeAd:(NSString *)adUnitId
+RCT_EXTERN_METHOD(destroyPreloadedAd:(NSString * _Nullable)preloadedAdId)
+RCT_EXTERN_METHOD(invalidateNativeAd:(NSString * _Nullable)adUnitId
                   position:(nonnull NSNumber *)position)
 RCT_EXTERN_METHOD(invalidateNativeAds)
 
 // ── Imperative ads ──────────────────────────────────────────────────────────
-RCT_EXTERN_METHOD(createInterstitial:(NSString *)instanceId
-                  adUnitId:(NSString *)adUnitId)
-RCT_EXTERN_METHOD(createRewarded:(NSString *)instanceId
-                  adUnitId:(NSString *)adUnitId)
-RCT_EXTERN_METHOD(loadAd:(NSString *)instanceId
+RCT_EXTERN_METHOD(createInterstitial:(NSString * _Nonnull)instanceId
+                  adUnitId:(NSString * _Nullable)adUnitId)
+RCT_EXTERN_METHOD(createRewarded:(NSString * _Nonnull)instanceId
+                  adUnitId:(NSString * _Nullable)adUnitId)
+RCT_EXTERN_METHOD(setMetadataValue:(NSString * _Nonnull)instanceId
+                  key:(NSString * _Nullable)key
+                  value:(NSString * _Nullable)value)
+RCT_EXTERN_METHOD(setMetadata:(NSString * _Nonnull)instanceId
+                  metadataJson:(NSString * _Nullable)metadataJson)
+RCT_EXTERN_METHOD(loadAd:(NSString * _Nonnull)instanceId
                   options:(NSDictionary *)options)
-RCT_EXTERN_METHOD(showAd:(NSString *)instanceId)
-RCT_EXTERN_METHOD(showAdPreview:(NSString *)instanceId
+RCT_EXTERN_METHOD(showAd:(NSString * _Nonnull)instanceId)
+RCT_EXTERN_METHOD(showAdPreview:(NSString * _Nonnull)instanceId
                   options:(NSDictionary *)options)
-RCT_EXTERN_METHOD(destroyAd:(NSString *)instanceId)
+RCT_EXTERN_METHOD(destroyAd:(NSString * _Nonnull)instanceId)
 
 // ── Privacy ─────────────────────────────────────────────────────────────────
 RCT_EXTERN_METHOD(applyConsent:(NSDictionary *)config)

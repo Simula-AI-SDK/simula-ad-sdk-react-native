@@ -19,8 +19,8 @@ import { InterstitialPreviewOptions } from "./types";
 export class SimulaInterstitialAd extends SimulaBaseAd {
   private constructor(adUnitId: string) {
     super("interstitial", adUnitId, "int");
-    if (this.requireNative("create")) {
-      NativeAds!.createInterstitial(this.instanceId, adUnitId);
+    if (this.adUnitId && this.requireNative("create")) {
+      NativeAds!.createInterstitial(this.instanceId, this.adUnitId);
     }
   }
 

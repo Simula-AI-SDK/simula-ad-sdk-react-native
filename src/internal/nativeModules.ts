@@ -16,6 +16,7 @@
  * single event) so a future TurboModule migration is mechanical.
  */
 import { NativeModules, NativeEventEmitter, Platform } from "react-native";
+import { IS_DEVELOPMENT } from "./environment";
 
 /** The single event name the imperative ad surface emits on. */
 export const AD_EVENT_NAME = "SimulaAds_onAdEvent";
@@ -51,6 +52,8 @@ export interface NativeSimulaAdsModule {
   // ── Imperative ads (instanceId-routed) ─────────────────────────────────
   createInterstitial(instanceId: string, adUnitId: string): void;
   createRewarded(instanceId: string, adUnitId: string): void;
+  setMetadataValue(instanceId: string, key: string, value: string): void;
+  setMetadata(instanceId: string, metadataJson: string): void;
   loadAd(instanceId: string, options: Record<string, unknown>): void;
   showAd(instanceId: string): void;
   showAdPreview(instanceId: string, options: Record<string, unknown>): void;
@@ -96,8 +99,12 @@ export function isAdsModuleAvailable(): boolean {
   return SimulaAdsModule != null;
 }
 
-/** Logs a one-time-style warning when the native module is missing. */
+let warnedAdsUnavailable = false;
+
+/** Logs once in development when the native module is missing. */
 export function warnAdsUnavailable(method: string): void {
+  if (!IS_DEVELOPMENT || warnedAdsUnavailable) return;
+  warnedAdsUnavailable = true;
   console.warn(
     `[SimulaAds] Native module unavailable; ${method} is a no-op. ` +
       `Did you rebuild the app after adding @simula/ads-react-native? ` +

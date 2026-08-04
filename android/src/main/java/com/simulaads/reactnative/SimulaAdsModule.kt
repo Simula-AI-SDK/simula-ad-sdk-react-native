@@ -17,6 +17,7 @@ import ad.simula.ad.sdk.model.AdValue
 import ad.simula.ad.sdk.model.SimulaAdContext
 import ad.simula.ad.sdk.privacy.SimulaPrivacy
 import ad.simula.ad.sdk.privacy.SimulaPrivacyConfig
+import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -58,7 +59,7 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
             return
         }
         val devMode = config.getBooleanOrNull("devMode") ?: false
-        val primaryUserID = config.getStringOrNull("primaryUserID")
+        val primaryUserID = config.getStringOrNull("primaryUserID")?.takeIf { it.isNotBlank() }
         val hasPrivacyConsent = config.getBooleanOrNull("hasPrivacyConsent") ?: true
         val telemetryEnabled = config.getBooleanOrNull("telemetryEnabled") ?: true
         val privacy = if (config.hasKey("privacy") && !config.isNull("privacy"))
@@ -162,6 +163,36 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
         val ad = SimulaRewardedAd(adUnitId)
         ad.listener = rewardedListener(instanceId)
         entries[instanceId] = AdEntry(adType = "rewarded", rewarded = ad)
+    }
+
+    @ReactMethod
+    fun setMetadataValue(instanceId: String, key: String?, value: String?) {
+        if (key.isNullOrEmpty() || value == null) return
+        val entry = entries[instanceId] ?: return
+        entry.interstitial?.setMetadata(key, value)
+        entry.rewarded?.setMetadata(key, value)
+    }
+
+    @ReactMethod
+    fun setMetadata(instanceId: String, metadataJson: String) {
+        val metadata = parseMetadata(metadataJson) ?: return
+        val entry = entries[instanceId] ?: return
+        entry.interstitial?.setMetadata(metadata)
+        entry.rewarded?.setMetadata(metadata)
+    }
+
+    private fun parseMetadata(json: String): Map<String, String>? = try {
+        val objectValue = JSONObject(json)
+        objectValue.keys().asSequence()
+            .sorted()
+            .mapNotNull { key ->
+                if (key.isEmpty()) null
+                else objectValue.opt(key)?.let { value -> (value as? String)?.let { key to it } }
+            }
+            .take(10)
+            .toMap()
+    } catch (_: Exception) {
+        null
     }
 
     @ReactMethod

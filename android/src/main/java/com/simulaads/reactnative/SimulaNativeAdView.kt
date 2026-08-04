@@ -19,6 +19,7 @@ import ad.simula.ad.sdk.model.NativeAdData
 import ad.simula.ad.sdk.nativead.NativeAdError
 import ad.simula.ad.sdk.nativead.NativeAdSlot
 import kotlinx.coroutines.delay
+import org.json.JSONObject
 
 /**
  * Native view backing the React Native `<NativeAd>` component.
@@ -53,6 +54,7 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
     var adUnitId: String? = null
     var position: Int = 0
     var theme: String? = null
+    var metadataJson: String? = null
     var preloadedAdId: String? = null
     var previewHtml: String? = null
 
@@ -80,6 +82,9 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
     fun commitProps() {
         if (committedKey == propKey) return
         committedKey = propKey
+        // Metadata belongs to this slot identity: normal loads send it on /load, while consumed
+        // preloads send it on /seen. Prop-only updates must not alter the current impression.
+        val metadataSnapshot = parseMetadata(metadataJson)
         // FlashList / RecyclerView rebinds this view to a new slot without recreating it.
         // Drop the previous slot's measure watermark so the new creative's height is always
         // reported (a coincidental same-dp height would otherwise be deduped away while JS
@@ -101,6 +106,7 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
                         position = position,
                         theme = theme,
                         preloadedAdId = preloadedAdId,
+                        metadata = metadataSnapshot,
                         previewHtml = previewHtml,
                         onImpression = { emitImpression(it) },
                         onPaid = { emitPaid(it) },
@@ -109,6 +115,23 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
                     )
                 }
             }
+        }
+    }
+
+    private fun parseMetadata(json: String?): Map<String, String> {
+        if (json.isNullOrBlank()) return emptyMap()
+        return try {
+            val objectValue = JSONObject(json)
+            objectValue.keys().asSequence()
+                .sorted()
+                .mapNotNull { key ->
+                    if (key.isEmpty()) null
+                    else objectValue.opt(key)?.let { value -> (value as? String)?.let { key to it } }
+                }
+                .take(10)
+                .toMap()
+        } catch (_: Exception) {
+            emptyMap()
         }
     }
 

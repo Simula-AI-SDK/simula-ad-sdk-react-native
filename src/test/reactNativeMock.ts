@@ -53,6 +53,8 @@ function makeAdsModule() {
     invalidateNativeAds: jest.fn(),
     createInterstitial: jest.fn(),
     createRewarded: jest.fn(),
+    setMetadataValue: jest.fn(),
+    setMetadata: jest.fn(),
     loadAd: jest.fn(),
     showAd: jest.fn(),
     showAdPreview: jest.fn(),

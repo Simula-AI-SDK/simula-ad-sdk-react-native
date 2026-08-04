@@ -75,14 +75,27 @@ import { NativeAd } from '@simula/ads-react-native';
 Warm an ad before its slot scrolls in, then hand the id to a slot:
 
 ```tsx
-const id = await SimulaAds.preloadNativeAd({ adUnitId: 'feed_native', position: 8, theme: 'system' });
+const id = await SimulaAds.preloadNativeAd({
+  adUnitId: 'feed_native',
+  position: 8,
+  theme: 'system',
+});
 // later, in the row:
-<NativeAd adUnitId="feed_native" position={8} preloadedAdId={id ?? undefined} />;
+<NativeAd
+  adUnitId="feed_native"
+  position={8}
+  preloadedAdId={id ?? undefined}
+  metadata={{ screen: 'search' }}
+/>;
 
 SimulaAds.invalidateNativeAd({ adUnitId: 'feed_native', position: 8 }); // force refresh
 SimulaAds.invalidateNativeAds();                                        // clear all
 SimulaAds.destroyPreloadedAd(id);                                       // release unused
 ```
+
+`preloadNativeAd` does not accept metadata. Supply metadata to `<NativeAd>`: a successfully consumed
+preload sends that snapshot on `/seen`, while an expired or failed preload's live fallback sends it
+on `/load`.
 
 ### Performance notes
 
