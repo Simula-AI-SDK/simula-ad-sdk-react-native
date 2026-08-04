@@ -18,8 +18,8 @@ const iosSource = readFileSync(
   "utf8",
 );
 
-describe("NativeAd metadata load-time snapshot contract", () => {
-  it("keeps metadata changes out of the current JS load identity", () => {
+describe("NativeAd impression metadata snapshot contract", () => {
+  it("keeps metadata changes out of the current JS slot identity", () => {
     expect(jsSource).toContain("const metadataLoadKey = JSON.stringify([");
     expect(jsSource).toContain("const [metadataSnapshot, setMetadataSnapshot]");
     expect(jsSource).toContain("metadataJson={metadataJson}");
@@ -36,6 +36,7 @@ describe("NativeAd metadata load-time snapshot contract", () => {
     expect(identityGuard).toBeGreaterThan(-1);
     expect(snapshot).toBeGreaterThan(identityGuard);
     expect(androidSource).toContain("metadata = metadataSnapshot");
+    expect(androidSource).toContain("preloadedAdId = preloadedAdId");
   });
 
   it("does not remount iOS for metadata-only updates after mounting", () => {
@@ -45,5 +46,6 @@ describe("NativeAd metadata load-time snapshot contract", () => {
     expect(iosSource).toContain(
       "metadata: parseMetadata(metadataJson as String?)",
     );
+    expect(iosSource).toContain("preloadedAdId: preloadedAdId");
   });
 });

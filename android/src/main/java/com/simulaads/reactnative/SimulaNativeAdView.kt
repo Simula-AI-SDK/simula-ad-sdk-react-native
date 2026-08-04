@@ -82,8 +82,8 @@ class SimulaNativeAdView(private val reactContext: ThemedReactContext) :
     fun commitProps() {
         if (committedKey == propKey) return
         committedKey = propKey
-        // Metadata belongs to the request started for this slot identity. Prop-only
-        // updates must not alter an in-flight or cached impression.
+        // Metadata belongs to this slot identity: normal loads send it on /load, while consumed
+        // preloads send it on /seen. Prop-only updates must not alter the current impression.
         val metadataSnapshot = parseMetadata(metadataJson)
         // FlashList / RecyclerView rebinds this view to a new slot without recreating it.
         // Drop the previous slot's measure watermark so the new creative's height is always

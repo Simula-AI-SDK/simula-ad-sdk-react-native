@@ -18,10 +18,7 @@ import NativeAdViewComponent, {
 } from "./NativeAdNativeComponent";
 import type { NativeAdProps, NativeAdError } from "./types";
 import type { AdValue } from "../ads/types";
-import {
-  serializeMetadata,
-  warnPreloadMetadataOverride,
-} from "../internal/metadata";
+import { serializeMetadata } from "../internal/metadata";
 import {
   getLastKnownHeight,
   nativeAdHeightKey,
@@ -85,7 +82,6 @@ export function NativeAd({
     () => serializeMetadata(metadata) ?? undefined,
     [metadata],
   );
-  warnPreloadMetadataOverride(validPreloadedAdId, nextMetadataJson);
   const metadataLoadKey = JSON.stringify([
     validAdUnitId ?? null,
     position,

@@ -48,19 +48,18 @@ ad.load();
 
 const preloadedAdId = await SimulaAds.preloadNativeAd({
   adUnitId: "feed_native",
-  metadata: { page_name: "Search" },
 });
 
 <NativeAd
   adUnitId="feed_native"
   preloadedAdId={preloadedAdId ?? undefined}
-  metadata={{ page_name: "Search" }} // used if the preload falls back to a live load
+  metadata={{ page_name: "Search" }}
 />
 ```
 
 The exported `SimulaMetadata` type describes the metadata object. The overloaded `setMetadata` method is available on interstitial and rewarded ads, and as a callable function returned by both ad hooks. Pass either a key/value pair to upsert one value or a metadata object to replace all values.
 
-Imperative-ad metadata is snapshotted when `load()` starts, so later `setMetadata` calls apply to the next load. `<NativeAd>` snapshots its `metadata` prop for live loads. Preloaded ads snapshot metadata in `SimulaAds.preloadNativeAd`; a later `<NativeAd metadata>` prop never overrides that already-loaded impression.
+Imperative-ad metadata is snapshotted when `load()` starts, so later `setMetadata` calls apply to the next load. `<NativeAd>` snapshots its `metadata` prop per slot identity. Normal and preload-fallback requests send it on `/load`; `preloadNativeAd` accepts no metadata, so a successfully consumed preload sends the component snapshot on `/seen` instead.
 
 Metadata accepts at most 10 string entries. Keys must be non-empty, no longer than 64 Unicode code points, must not start with `$`, and must not contain `.`. Values are limited to 256 Unicode code points. Invalid entries are ignored without failing the ad request.
 

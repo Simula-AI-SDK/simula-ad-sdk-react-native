@@ -22,7 +22,7 @@ Pod::Spec.new do |s|
   # this bridge's sizing contract relies on.
   # 1.1.6 defers SDK init off the main thread (deferred startup) and adds the
   # `simulaAdsDidInitialize` notification this bridge's native-ad host view observes.
-  # 1.1.8 adds preload-time metadata snapshots for native ads.
+  # 1.1.8 routes NativeAd metadata to /load or /seen based on preload consumption.
   s.dependency "SimulaAdSDK", "1.1.8"
 
   s.frameworks = "StoreKit", "SafariServices"

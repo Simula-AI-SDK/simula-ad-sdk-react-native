@@ -21,13 +21,6 @@ import {
   warnInvalidIdentifier,
 } from "../internal/identifiers";
 import { safeJsonSnapshot } from "../internal/safeJson";
-import {
-  forgetPreloadMetadata,
-  rememberPreloadMetadata,
-  serializeMetadata,
-  warnPreloadMetadataUnavailable,
-} from "../internal/metadata";
-import type { SimulaMetadata } from "./types";
 
 export interface SimulaInitConfig {
   apiKey: string;
@@ -160,14 +153,14 @@ export const SimulaAds = {
    * single native-ad request using the current targeting context, caches it, and
    * resolves a `preloadedAdId` to pass to a `<NativeAd preloadedAdId={...}>` (which
    * then renders from cache with no live request). Resolves `null` before
-   * `initialize` or when the cache cap (5) is reached. Metadata is snapshotted
-   * for both this load and its eventual `/seen` beacon.
+   * `initialize` or when the cache cap (5) is reached. Preload does not accept
+   * metadata; provide it to `<NativeAd>`, which sends it on `/seen` after a
+   * successful preload or on `/load` after a live fallback.
    */
   async preloadNativeAd(options?: {
     adUnitId?: string;
     position?: number;
     theme?: SimulaNativeAdTheme;
-    metadata?: SimulaMetadata;
   }): Promise<string | null> {
     const adUnitId = options?.adUnitId;
     if (adUnitId != null && !isNonBlankString(adUnitId)) {
@@ -178,29 +171,11 @@ export const SimulaAds = {
       warnAdsUnavailable("preloadNativeAd");
       return null;
     }
-    const metadataJson = serializeMetadata(options?.metadata);
-    if (metadataJson != null) {
-      const preloadWithMetadata = NativeAds!.preloadNativeAdWithMetadata;
-      if (!preloadWithMetadata) {
-        warnPreloadMetadataUnavailable();
-        return null;
-      }
-      const preloadedAdId = await NativeAds!.preloadNativeAdWithMetadata!(
-        adUnitId ?? null,
-        options?.position ?? 0,
-        options?.theme ?? null,
-        metadataJson,
-      );
-      if (preloadedAdId != null) rememberPreloadMetadata(preloadedAdId, true);
-      return preloadedAdId;
-    }
-    const preloadedAdId = await NativeAds!.preloadNativeAd(
+    return NativeAds!.preloadNativeAd(
       adUnitId ?? null,
       options?.position ?? 0,
       options?.theme ?? null,
     );
-    if (preloadedAdId != null) rememberPreloadMetadata(preloadedAdId, false);
-    return preloadedAdId;
   },
 
   /** Release a preloaded native ad that was never consumed (cancels an in-flight request). */
@@ -210,7 +185,6 @@ export const SimulaAds = {
       return;
     }
     if (!isAdsModuleAvailable()) return warnAdsUnavailable("destroyPreloadedAd");
-    forgetPreloadMetadata(preloadedAdId);
     NativeAds!.destroyPreloadedAd(preloadedAdId);
   },
 

@@ -1,8 +1,6 @@
 import {
   isValidMetadataValue,
-  rememberPreloadMetadata,
   serializeMetadata,
-  warnPreloadMetadataOverride,
 } from "../metadata";
 import type { SimulaMetadata } from "../../ads/types";
 
@@ -22,16 +20,6 @@ describe("serializeMetadata", () => {
       '{"a":"first","z":"last"}',
     );
     expect(warn).not.toHaveBeenCalled();
-  });
-
-  it("warns once when mount metadata cannot override a preload snapshot", () => {
-    rememberPreloadMetadata("preloaded_1", false);
-    rememberPreloadMetadata("preloaded_2", false);
-    warnPreloadMetadataOverride("preloaded_1", '{"screen":"search"}');
-    warnPreloadMetadataOverride("preloaded_2", '{"screen":"home"}');
-
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("preloadNativeAd"));
   });
 
   it("rejects an empty key", () => {

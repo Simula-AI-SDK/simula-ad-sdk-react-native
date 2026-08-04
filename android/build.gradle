@@ -96,7 +96,7 @@ dependencies {
     implementation 'com.facebook.react:react-android:+'
 
     // Simula Ad SDK (native Kotlin SDK from Maven Central). 1.1.7 adds per-impression
-    // K/V metadata and includes the deferred-startup and retained-WebView fixes.
+    // K/V metadata routing and includes the deferred-startup and retained-WebView fixes.
     implementation 'ad.simula:ad-sdk:1.1.7'
 
     // Jetpack Compose (needed to host MiniGameMenu composable)

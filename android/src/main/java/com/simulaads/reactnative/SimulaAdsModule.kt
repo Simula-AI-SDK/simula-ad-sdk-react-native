@@ -135,21 +135,6 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun preloadNativeAdWithMetadata(
-        adUnitId: String?,
-        position: Int,
-        theme: String?,
-        metadataJson: String?,
-        promise: Promise,
-    ) {
-        val metadata = metadataJson?.let(::parseMetadata) ?: run {
-            promise.resolve(null)
-            return
-        }
-        promise.resolve(SimulaAds.preloadNativeAd(adUnitId, position, theme, metadata))
-    }
-
-    @ReactMethod
     fun destroyPreloadedAd(preloadedAdId: String) {
         SimulaAds.destroyPreloadedAd(preloadedAdId)
     }

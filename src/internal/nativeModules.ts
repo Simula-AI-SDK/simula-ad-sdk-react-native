@@ -45,12 +45,6 @@ export interface NativeSimulaAdsModule {
     position: number,
     theme: string | null,
   ): Promise<string | null>;
-  preloadNativeAdWithMetadata?(
-    adUnitId: string | null,
-    position: number,
-    theme: string | null,
-    metadataJson: string,
-  ): Promise<string | null>;
   destroyPreloadedAd(preloadedAdId: string): void;
   invalidateNativeAd(adUnitId: string | null, position: number): void;
   invalidateNativeAds(): void;

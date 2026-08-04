@@ -79,14 +79,13 @@ const id = await SimulaAds.preloadNativeAd({
   adUnitId: 'feed_native',
   position: 8,
   theme: 'system',
-  metadata: { screen: 'search' },
 });
 // later, in the row:
 <NativeAd
   adUnitId="feed_native"
   position={8}
   preloadedAdId={id ?? undefined}
-  metadata={{ screen: 'search' }} // covers an expired/failed preload's live fallback
+  metadata={{ screen: 'search' }}
 />;
 
 SimulaAds.invalidateNativeAd({ adUnitId: 'feed_native', position: 8 }); // force refresh
@@ -94,9 +93,9 @@ SimulaAds.invalidateNativeAds();                                        // clear
 SimulaAds.destroyPreloadedAd(id);                                       // release unused
 ```
 
-Metadata must be supplied to `preloadNativeAd` so the same immutable snapshot reaches both the
-preload request and `/seen`. Pass the same metadata to the later `<NativeAd>` so an expired or failed
-preload's live fallback is attributed too; it does not override a successfully consumed preload.
+`preloadNativeAd` does not accept metadata. Supply metadata to `<NativeAd>`: a successfully consumed
+preload sends that snapshot on `/seen`, while an expired or failed preload's live fallback sends it
+on `/load`.
 
 ### Performance notes
 
