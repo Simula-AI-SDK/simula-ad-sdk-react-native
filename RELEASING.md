@@ -9,7 +9,15 @@ contents before publishing.
 
 1. Create an npm granular access token with read and write access to
    `@simula/ads-react-native` and permission to bypass two-factor authentication.
-2. Add the token to the GitHub `npm` environment as an `NPM_TOKEN` secret.
+2. Create the GitHub `npm` environment and add the token as an `NPM_TOKEN`
+   secret. The second command prompts for the token without exposing it in shell
+   history:
+
+   ```sh
+   gh api --method PUT repos/Simula-AI-SDK/simula-ad-sdk-react-native/environments/npm
+   gh secret set NPM_TOKEN --env npm --repo Simula-AI-SDK/simula-ad-sdk-react-native
+   ```
+
 3. Optionally add required reviewers to the `npm` environment to require manual
    approval before publication.
 
