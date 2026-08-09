@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish (for example, 1.4.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate release version
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const packageVersion = require("./package.json").version;
+          const podspec = fs.readFileSync("simula-ads-react-native.podspec", "utf8");
+          const podspecVersion = podspec.match(/s\.version\s*=\s*"([^"]+)"/)?.[1];
+
+          if (process.env.RELEASE_VERSION !== packageVersion) {
+            throw new Error(`Requested version ${process.env.RELEASE_VERSION} does not match package version ${packageVersion}`);
+          }
+          if (podspecVersion !== packageVersion) {
+            throw new Error(`Podspec version ${podspecVersion ?? "missing"} does not match package version ${packageVersion}`);
+          }
+          NODE
+
+      - name: Run tests
+        run: npm test -- --ci --runInBand
+
+      - name: Build package
+        run: npm run build
+
+      - name: Verify package contents
+        run: npm pack --dry-run
+
+      - name: Create release package
+        run: npm pack
+
+      - name: Upload release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: "*.tgz"
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish to npm
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Download release package
+        uses: actions/download-artifact@v4
+        with:
+          name: npm-package
+          path: release-package
+
+      - name: Publish package
+        run: npm publish release-package/*.tgz --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
