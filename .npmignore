@@ -38,6 +38,7 @@ coverage/
 
 # Ignore docs and tooling config
 docs/
+.github/
 
 # AI tool config / skills — never ship to host apps
 .claude/
