@@ -45,6 +45,17 @@ Android `ad.simula:ad-sdk` version exists on Maven Central and the iOS
 `SimulaAdSDK` version exists on CocoaPods. It rejects versions that already
 exist on npm or already have a Git tag or GitHub release.
 
+The version determines the release channel:
+
+- Stable versions (`x.y.z`) use npm's `latest` tag and create a standard GitHub
+  release.
+- Development versions (`x.y.z-dev.N`) use npm's `dev` tag and create a GitHub
+  prerelease. Consumers must explicitly install these with
+  `npm install @simula/ads-react-native@dev`.
+
+Other version formats are rejected to prevent a prerelease from accidentally
+replacing npm's `latest` tag.
+
 The selected ref is built and tested, and its exact tarball is published through
 npm Trusted Publishing with automatic provenance. Only after publication
 succeeds does the workflow create the version tag and GitHub release. If any

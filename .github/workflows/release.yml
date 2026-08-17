@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to publish (for example, 1.4.0)
+        description: Version to publish (for example, 1.4.0 or 1.4.0-dev.1)
         required: true
         type: string
 
@@ -20,13 +20,16 @@ jobs:
     name: Build and test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      npm_tag: ${{ steps.release_metadata.outputs.npm_tag }}
+      is_prerelease: ${{ steps.release_metadata.outputs.is_prerelease }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
@@ -36,6 +39,7 @@ jobs:
         run: npm ci
 
       - name: Validate release metadata
+        id: release_metadata
         env:
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
@@ -48,6 +52,8 @@ jobs:
           const lockfilePackageVersion = packageLock.packages?.[""]?.version;
           const podspec = fs.readFileSync("simula-ads-react-native.podspec", "utf8");
           const podspecVersion = podspec.match(/s\.version\s*=\s*"([^"]+)"/)?.[1];
+          const stableVersion = /^\d+\.\d+\.\d+$/;
+          const devVersion = /^\d+\.\d+\.\d+-dev\.\d+$/;
 
           if (process.env.RELEASE_VERSION !== packageVersion) {
             throw new Error(`Requested version ${process.env.RELEASE_VERSION} does not match package version ${packageVersion}`);
@@ -58,6 +64,17 @@ jobs:
           if (podspecVersion !== packageVersion) {
             throw new Error(`Podspec version ${podspecVersion ?? "missing"} does not match package version ${packageVersion}`);
           }
+          if (!stableVersion.test(packageVersion) && !devVersion.test(packageVersion)) {
+            throw new Error(`Version ${packageVersion} must be stable (x.y.z) or a dev prerelease (x.y.z-dev.N)`);
+          }
+
+          const isPrerelease = devVersion.test(packageVersion);
+          const npmTag = isPrerelease ? "dev" : "latest";
+          fs.appendFileSync(
+            process.env.GITHUB_OUTPUT,
+            `npm_tag=${npmTag}\nis_prerelease=${isPrerelease}\n`,
+          );
+          console.log(`Release channel: npm tag ${npmTag}, prerelease ${isPrerelease}`);
           NODE
 
       - name: Verify native SDK versions exist
@@ -197,7 +214,7 @@ jobs:
 
     steps:
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
@@ -210,11 +227,11 @@ jobs:
           path: release-package
 
       - name: Publish package with trusted publishing
-        run: npm publish ./release-package/*.tgz --access public
+        run: npm publish ./release-package/*.tgz --access public --tag "${{ needs.verify.outputs.npm_tag }}"
 
   release:
     name: Create GitHub release
-    needs: publish
+    needs: [verify, publish]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -231,9 +248,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ inputs.version }}
+          IS_PRERELEASE: ${{ needs.verify.outputs.is_prerelease }}
         run: |
-          gh release create "$RELEASE_VERSION" ./release-package/*.tgz \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "$RELEASE_VERSION" \
+          release_args=(
+            --repo "$GITHUB_REPOSITORY"
+            --target "$GITHUB_SHA"
+            --title "$RELEASE_VERSION"
             --generate-notes
+          )
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            release_args+=(--prerelease)
+          fi
+          gh release create "$RELEASE_VERSION" ./release-package/*.tgz "${release_args[@]}"
