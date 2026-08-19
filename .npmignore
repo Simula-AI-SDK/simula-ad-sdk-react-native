@@ -32,6 +32,7 @@ ios/Podfile.lock
 
 # Ignore generated test output
 coverage/
+native-test/
 
 # Ignore packed tarball files
 *.tgz

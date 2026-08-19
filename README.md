@@ -15,9 +15,9 @@ Simula delivers ads that feel native to AI chat and character-driven application
 
 ## Requirements
 
-- React Native 0.60+
+- React Native 0.77+
 - React 16.8+
-- iOS 15.0+ / Android API 24+
+- iOS 15.0+ with Xcode 26.4.1+ / Android API 24+
 
 ## Getting Started
 
