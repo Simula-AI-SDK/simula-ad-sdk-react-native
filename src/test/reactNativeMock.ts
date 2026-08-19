@@ -36,6 +36,8 @@ export function __listenerCount(name: string): number {
 /** Test helper: reset all listener state between tests. */
 export function __reset(): void {
   for (const key of Object.keys(registry)) delete registry[key];
+  Object.assign(NativeModules.SimulaAdsModule, makeAdsModule());
+  Object.assign(NativeModules.SimulaMiniGameModule, makeMiniGameModule());
 }
 
 function makeAdsModule() {
@@ -69,20 +71,48 @@ function makeAdsModule() {
   };
 }
 
-export const NativeModules: any = {
-  SimulaAdsModule: makeAdsModule(),
-  SimulaMiniGameModule: {
+function makeMiniGameModule() {
+  return {
     showMiniGameMenu: jest.fn().mockResolvedValue(null),
+    hideMiniGameMenu: jest.fn(),
+    showMiniGameInvitation: jest.fn().mockResolvedValue(null),
+    hideMiniGameInvitation: jest.fn(),
+    showMiniGameInterstitial: jest.fn().mockResolvedValue(null),
+    hideMiniGameInterstitial: jest.fn(),
+    showCharacterSelector: jest.fn().mockResolvedValue(null),
+    hideCharacterSelector: jest.fn(),
     preload: jest.fn().mockResolvedValue(null),
     addListener: jest.fn(),
     removeListeners: jest.fn(),
-  },
+  };
+}
+
+export const NativeModules: any = {
+  SimulaAdsModule: makeAdsModule(),
+  SimulaMiniGameModule: makeMiniGameModule(),
 };
 
 export const Platform = {
   OS: "ios" as const,
   select: (obj: Record<string, any>) => obj.ios ?? obj.default,
 };
+
+const availableViewManagers = new Set([
+  "SimulaNativeAdView",
+  "SimulaMiniGameButtonView",
+]);
+
+export const UIManager = {
+  hasViewManagerConfig: (name: string) => availableViewManagers.has(name),
+};
+
+export function __setViewManagerAvailable(
+  name: string,
+  available: boolean,
+): void {
+  if (available) availableViewManagers.add(name);
+  else availableViewManagers.delete(name);
+}
 
 // Type-only export so `import { EmitterSubscription } from "react-native"` in the
 // source elides cleanly under ts-jest.

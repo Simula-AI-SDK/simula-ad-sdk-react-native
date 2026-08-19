@@ -41,7 +41,7 @@ jobs:
         with:
           gradle-version: 9.0.0
       - run: npm ci
-      - run: gradle -p native-test/android :simula-ads-react-native:compileDebugKotlin
+      - run: gradle -p native-test/android :simula-ads-react-native:assembleRelease
 
   ios:
     name: iOS native bridge
@@ -67,6 +67,7 @@ jobs:
           xcodebuild build
           -project native-test/ios/Pods/Pods.xcodeproj
           -scheme simula-ads-react-native
+          -configuration Release
           -destination "generic/platform=iOS Simulator"
           CODE_SIGNING_ALLOWED=NO
           ARCHS=arm64

@@ -40,8 +40,25 @@ interface RawAdEvent {
 
 type InstanceHandler = (event: SimulaAdEvent) => void;
 
-const handlers = new Map<string, InstanceHandler>();
-let subscription: EmitterSubscription | null = null;
+interface RouterState {
+  handlers: Map<string, InstanceHandler>;
+  subscription: EmitterSubscription | null;
+  toAdEvent: (raw: RawAdEvent) => SimulaAdEvent;
+}
+
+interface SimulaRuntimeGlobal {
+  __simulaAdsEventRouterState__?: RouterState;
+}
+
+// Fast Refresh and duplicate JS bundles can evaluate this module more than once
+// while the native process remains alive. Share routing state across evaluations
+// so instance registrations still use one native subscription.
+const runtimeGlobal = globalThis as typeof globalThis & SimulaRuntimeGlobal;
+const state = (runtimeGlobal.__simulaAdsEventRouterState__ ??= {
+  handlers: new Map<string, InstanceHandler>(),
+  subscription: null,
+  toAdEvent,
+});
 
 /** The event types that carry a `SimulaAdError`. */
 const ERROR_EVENT_TYPES = new Set([
@@ -82,24 +99,28 @@ function toAdEvent(raw: RawAdEvent): SimulaAdEvent {
   return event;
 }
 
+// Keep an existing process-wide subscription while updating the parser used by
+// its callback after Fast Refresh evaluates this module again.
+state.toAdEvent = toAdEvent;
+
 /** Lazily subscribes to the shared emitter on first registration. */
 function ensureSubscribed(): void {
-  if (subscription || handlers.size === 0) return;
+  if (state.subscription || state.handlers.size === 0) return;
   const emitter = getAdsEmitter();
   if (!emitter) return;
-  subscription = emitter.addListener(AD_EVENT_NAME, (raw: RawAdEvent) => {
+  state.subscription = emitter.addListener(AD_EVENT_NAME, (raw: RawAdEvent) => {
     if (!raw || typeof raw.instanceId !== "string") return;
-    const handler = handlers.get(raw.instanceId);
+    const handler = state.handlers.get(raw.instanceId);
     if (!handler) return; // no live instance — drop (e.g. post-destroy auto-preload)
-    handler(toAdEvent(raw));
+    handler(state.toAdEvent(raw));
   });
 }
 
 /** Removes the shared subscription once no instances remain. */
 function teardownIfIdle(): void {
-  if (handlers.size > 0 || !subscription) return;
-  subscription.remove();
-  subscription = null;
+  if (state.handlers.size > 0 || !state.subscription) return;
+  state.subscription.remove();
+  state.subscription = null;
 }
 
 /** Registers an instance's handler. Returns an unregister function. */
@@ -107,15 +128,20 @@ export function registerInstance(
   instanceId: string,
   handler: InstanceHandler,
 ): () => void {
-  handlers.set(instanceId, handler);
+  state.handlers.set(instanceId, handler);
   ensureSubscribed();
+  let registered = true;
   return () => {
-    handlers.delete(instanceId);
+    if (!registered) return;
+    registered = false;
+    if (state.handlers.get(instanceId) === handler) {
+      state.handlers.delete(instanceId);
+    }
     teardownIfIdle();
   };
 }
 
 /** Test-only: current number of registered instances. */
 export function __instanceCount(): number {
-  return handlers.size;
+  return state.handlers.size;
 }

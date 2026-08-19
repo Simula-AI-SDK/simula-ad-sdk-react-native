@@ -42,6 +42,9 @@ export interface UseRewardedAd {
 
 export function useRewardedAd(adUnitId: string): UseRewardedAd {
   const adRef = useRef<SimulaRewardedAd | null>(null);
+  const errorSourceRef = useRef<
+    "load" | "display" | "rewardVerification" | null
+  >(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
   const [earnedReward, setEarnedReward] = useState(false);
@@ -62,6 +65,7 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
     setImpressionRecorded(false);
     setAdValue(null);
     setError(undefined);
+    errorSourceRef.current = null;
     if (!isNonBlankString(adUnitId)) {
       adRef.current = null;
       warnInvalidIdentifier("useRewardedAd", "adUnitId");
@@ -83,6 +87,7 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
           setIsLoaded(true);
           setIsClosed(false);
           setError(undefined);
+          errorSourceRef.current = null;
           break;
         case "DISPLAYED":
           loadedSinceDisplay = false;
@@ -92,6 +97,8 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
           setRewardToken(undefined);
           setImpressionRecorded(false);
           setAdValue(null);
+          setError(undefined);
+          errorSourceRef.current = null;
           break;
         case "IMPRESSION":
           setImpressionRecorded(true);
@@ -109,22 +116,35 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
         case "REWARD_VERIFIED":
           setRewardVerified(true);
           setRewardToken(event.rewardToken ?? null);
+          if (errorSourceRef.current === "rewardVerification") {
+            errorSourceRef.current = null;
+            setError(undefined);
+          }
           break;
         case "LOAD_FAILED":
           // duplicate_request rejects the redundant load() call, NOT the ad — the
           // in-flight/ready ad survives natively, so isLoaded must not flip false.
           // The error (with retryInSeconds) is still surfaced as information.
           if (event.error?.code !== "duplicate_request") setIsLoaded(false);
-          if (event.error) setError(event.error);
+          if (event.error) {
+            errorSourceRef.current = "load";
+            setError(event.error);
+          }
           break;
         case "DISPLAY_FAILED":
           // no_presentation_context keeps the loaded ad natively (show() can be
           // retried); every other display failure means nothing is ready.
           if (event.error?.code !== "no_presentation_context") setIsLoaded(false);
-          if (event.error) setError(event.error);
+          if (event.error) {
+            errorSourceRef.current = "display";
+            setError(event.error);
+          }
           break;
         case "REWARD_VERIFICATION_FAILED":
-          if (event.error) setError(event.error);
+          if (event.error) {
+            errorSourceRef.current = "rewardVerification";
+            setError(event.error);
+          }
           break;
         default:
           break;
