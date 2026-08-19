@@ -16,6 +16,14 @@ android/local.properties
 ios/build/
 ios/Pods/
 ios/Podfile.lock
+native-test/android/.gradle/
+native-test/android/.kotlin/
+native-test/android/build/
+native-test/ios/.xcode.env*
+native-test/ios/build/
+native-test/ios/Pods/
+native-test/ios/Podfile.lock
+native-test/ios/*.xcworkspace/
 **/xcuserdata/
 *.xcuserstate
 DerivedData/
@@ -45,5 +53,3 @@ coverage/
 # Misc
 .env
 .env.local
-
-

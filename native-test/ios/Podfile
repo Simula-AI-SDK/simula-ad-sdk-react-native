@@ -1,0 +1,14 @@
+require_relative "../../node_modules/react-native/scripts/react_native_pods"
+
+install! "cocoapods", :integrate_targets => false
+platform :ios, "15.1"
+project "NativeCompile.xcodeproj"
+prepare_react_native_project!
+
+target "NativeCompile" do
+  use_react_native!(
+    :path => "../../node_modules/react-native",
+    :app_path => File.expand_path("../..", __dir__),
+  )
+  pod "simula-ads-react-native", :path => "../.."
+end

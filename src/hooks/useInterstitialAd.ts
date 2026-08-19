@@ -78,6 +78,7 @@ export function useInterstitialAd(adUnitId: string): UseInterstitialAd {
           setIsClosed(false);
           setImpressionRecorded(false);
           setAdValue(null);
+          setError(undefined);
           break;
         case "IMPRESSION":
           setImpressionRecorded(true);

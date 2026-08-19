@@ -17,6 +17,9 @@ module.exports = {
     "^.+\\.tsx?$": [
       "ts-jest",
       {
+        tsconfig: {
+          jsx: "react-jsx",
+        },
         diagnostics: {
           ignoreCodes: [6133, 6196],
         },

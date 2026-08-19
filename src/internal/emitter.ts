@@ -20,19 +20,25 @@ export const miniGameEmitter: NativeEventEmitter | null = SimulaMiniGameModule
  * component. The native module holds ONE view per surface type and ONE event
  * channel, so a second mount would share (and fight over) that channel.
  */
-const mountedSurfaces = new Set<string>();
+const mountedSurfaces = new Map<string, number>();
 
 export function warnIfDuplicateSurface(surface: string): () => void {
   if (!IS_DEVELOPMENT) return () => {};
-  if (mountedSurfaces.has(surface)) {
+  const mountedCount = mountedSurfaces.get(surface) ?? 0;
+  if (mountedCount > 0) {
     console.warn(
       `[SimulaMiniGame] Multiple <${surface}> instances are mounted at once. ` +
         `Each surface is a singleton natively (one view, one event channel); ` +
         `mount only one at a time to avoid missed or cross-routed events.`,
     );
   }
-  mountedSurfaces.add(surface);
+  mountedSurfaces.set(surface, mountedCount + 1);
+  let registered = true;
   return () => {
-    mountedSurfaces.delete(surface);
+    if (!registered) return;
+    registered = false;
+    const nextCount = (mountedSurfaces.get(surface) ?? 1) - 1;
+    if (nextCount === 0) mountedSurfaces.delete(surface);
+    else mountedSurfaces.set(surface, nextCount);
   };
 }
