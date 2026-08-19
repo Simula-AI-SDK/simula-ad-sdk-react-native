@@ -30,6 +30,7 @@ export const MiniGameInterstitial: React.FC<MiniGameInterstitialProps> = ({
     useSimulaContext();
   const wasOpenRef = useRef(false);
   const shownForOpenCycleRef = useRef(false);
+  const showGenerationRef = useRef(0);
 
   // Show/hide native interstitial based on isOpen prop
   useEffect(() => {
@@ -41,6 +42,7 @@ export const MiniGameInterstitial: React.FC<MiniGameInterstitialProps> = ({
     );
 
     if (action === 'show') {
+      const generation = ++showGenerationRef.current;
       SimulaMiniGameModule.showMiniGameInterstitial({
         apiKey,
         hasPrivacyConsent,
@@ -52,11 +54,16 @@ export const MiniGameInterstitial: React.FC<MiniGameInterstitialProps> = ({
         backgroundImage: backgroundImage ?? null,
         theme,
       }).catch((error: any) => {
+        if (showGenerationRef.current === generation) {
+          wasOpenRef.current = false;
+          shownForOpenCycleRef.current = false;
+        }
         console.error('[SimulaMiniGame] showMiniGameInterstitial failed:', error?.message || error);
       });
       wasOpenRef.current = true;
       shownForOpenCycleRef.current = true;
     } else if (action === 'hide') {
+      showGenerationRef.current += 1;
       SimulaMiniGameModule.hideMiniGameInterstitial();
       wasOpenRef.current = false;
       shownForOpenCycleRef.current = false;
@@ -75,6 +82,7 @@ export const MiniGameInterstitial: React.FC<MiniGameInterstitialProps> = ({
   useEffect(() => {
     if (!emitter) return;
     const subscription = emitter.addListener('onMiniGameInterstitialClick', () => {
+      if (!wasOpenRef.current) return;
       onClickRef.current();
     });
     return () => subscription.remove();
@@ -84,6 +92,8 @@ export const MiniGameInterstitial: React.FC<MiniGameInterstitialProps> = ({
   useEffect(() => {
     if (!emitter) return;
     const subscription = emitter.addListener('onMiniGameInterstitialClose', () => {
+      if (!wasOpenRef.current) return;
+      showGenerationRef.current += 1;
       wasOpenRef.current = false;
       SimulaMiniGameModule.hideMiniGameInterstitial();
       onCloseRef.current?.();
@@ -94,6 +104,7 @@ export const MiniGameInterstitial: React.FC<MiniGameInterstitialProps> = ({
   // If React unmounts while the native interstitial is still open, tear it down.
   useEffect(() => {
     return () => {
+      showGenerationRef.current += 1;
       if (wasOpenRef.current) {
         SimulaMiniGameModule?.hideMiniGameInterstitial();
         wasOpenRef.current = false;

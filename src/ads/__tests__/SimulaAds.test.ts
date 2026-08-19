@@ -256,11 +256,42 @@ describe("SimulaAds.updatePrimaryUserID", () => {
     expect(native.updatePrimaryUserID).toHaveBeenCalledWith("user-123");
   });
 
-  it("maps undefined / empty to null (clear)", () => {
-    SimulaAds.updatePrimaryUserID();
-    SimulaAds.updatePrimaryUserID(null);
-    expect(native.updatePrimaryUserID).toHaveBeenNthCalledWith(1, null);
-    expect(native.updatePrimaryUserID).toHaveBeenNthCalledWith(2, null);
+  it.each([undefined, null, "", " ", "\t\n"])(
+    "maps blank value %p to null (clear)",
+    (id) => {
+      SimulaAds.updatePrimaryUserID(id);
+      expect(native.updatePrimaryUserID).toHaveBeenCalledWith(null);
+    },
+  );
+});
+
+describe("SimulaAds preload concurrency", () => {
+  it("keeps reverse-resolving preloads associated with their callers", async () => {
+    const resolvers: Array<(value: string) => void> = [];
+    native.preloadNativeAd.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+
+    const first = SimulaAds.preloadNativeAd({ adUnitId: "first", position: 1 });
+    const second = SimulaAds.preloadNativeAd({ adUnitId: "second", position: 2 });
+    const third = SimulaAds.preloadNativeAd({ adUnitId: "third", position: 3 });
+    resolvers[2]("third-id");
+    resolvers[1]("second-id");
+    resolvers[0]("first-id");
+
+    await expect(Promise.all([first, second, third])).resolves.toEqual([
+      "first-id",
+      "second-id",
+      "third-id",
+    ]);
+    expect(native.preloadNativeAd.mock.calls).toEqual([
+      ["first", 1, null],
+      ["second", 2, null],
+      ["third", 3, null],
+    ]);
   });
 });
 

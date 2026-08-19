@@ -91,24 +91,21 @@ export function SimulaProvider({
   // Runtime consent changes after mount → push to the native store (which debounces
   // and re-syncs the session). Skipped on the first run since initialize already
   // applied the initial consent.
-  const didMount = useRef(false);
+  const privacyRuntimeKey = `${hasPrivacyConsent}:${privacyKey}`;
+  const previousPrivacyKey = useRef(privacyRuntimeKey);
   useEffect(() => {
-    if (!didMount.current) {
-      didMount.current = true;
-      return;
-    }
+    if (previousPrivacyKey.current === privacyRuntimeKey) return;
+    previousPrivacyKey.current = privacyRuntimeKey;
     SimulaPrivacy.update({ hasPrivacyConsent, ...(safePrivacy ?? {}) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasPrivacyConsent, privacyKey]);
+  }, [privacyRuntimeKey]);
 
   // Runtime ad-context changes after mount → replace the native targeting context.
   // Skipped on the first run since initialize already applied the initial value.
-  const didMountContext = useRef(false);
+  const previousAdContextKey = useRef(adContextKey);
   useEffect(() => {
-    if (!didMountContext.current) {
-      didMountContext.current = true;
-      return;
-    }
+    if (previousAdContextKey.current === adContextKey) return;
+    previousAdContextKey.current = adContextKey;
     SimulaAds.updateContext(safeAdContext ?? null);
     // adContextKey stands in for the (deep) adContext object.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -117,12 +114,10 @@ export function SimulaProvider({
   // Runtime primaryUserID changes after mount (login/logout) → patch the native PPID
   // (init is idempotent, so it wouldn't re-apply a changed id on its own). Skipped on
   // the first run since initialize already carried the initial value.
-  const didMountPpid = useRef(false);
+  const previousPrimaryUserID = useRef(primaryUserID ?? null);
   useEffect(() => {
-    if (!didMountPpid.current) {
-      didMountPpid.current = true;
-      return;
-    }
+    if (previousPrimaryUserID.current === (primaryUserID ?? null)) return;
+    previousPrimaryUserID.current = primaryUserID ?? null;
     SimulaAds.updatePrimaryUserID(primaryUserID ?? null);
   }, [primaryUserID]);
 

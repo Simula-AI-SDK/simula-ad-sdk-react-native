@@ -115,7 +115,9 @@ export const SimulaAds = {
     if (!isAdsModuleAvailable()) return warnAdsUnavailable("updatePrimaryUserID");
     // The native SDKs re-fire the IPv4 beacon for the new identity (and reset
     // its dedup on logout) as part of their own updatePrimaryUserID handling.
-    NativeAds!.updatePrimaryUserID(id ?? null);
+    NativeAds!.updatePrimaryUserID(
+      typeof id === "string" && id.trim() ? id : null,
+    );
   },
 
   /**

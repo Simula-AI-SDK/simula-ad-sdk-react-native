@@ -33,6 +33,7 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
     useSimulaContext();
   const wasOpenRef = useRef(false);
   const shownForOpenCycleRef = useRef(false);
+  const showGenerationRef = useRef(0);
 
   // Show / hide the native selector based on isOpen.
   useEffect(() => {
@@ -44,6 +45,7 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
     );
 
     if (action === "show") {
+      const generation = ++showGenerationRef.current;
       SimulaMiniGameModule.showCharacterSelector({
         apiKey,
         hasPrivacyConsent,
@@ -60,6 +62,10 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
           })) ?? null,
         theme,
       }).catch((error: unknown) => {
+        if (showGenerationRef.current === generation) {
+          wasOpenRef.current = false;
+          shownForOpenCycleRef.current = false;
+        }
         const err = error as { message?: string };
         console.error(
           "[SimulaCharacterSelector] show failed:",
@@ -69,6 +75,7 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
       wasOpenRef.current = true;
       shownForOpenCycleRef.current = true;
     } else if (action === "hide") {
+      showGenerationRef.current += 1;
       SimulaMiniGameModule.hideCharacterSelector();
       wasOpenRef.current = false;
       shownForOpenCycleRef.current = false;
@@ -93,7 +100,9 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
       emitter.addListener(
         "onCharacterSelectorSelect",
         (character: CharacterData) => {
+          if (!wasOpenRef.current) return;
           // Selection closes the selector natively.
+          showGenerationRef.current += 1;
           wasOpenRef.current = false;
           onSelectedRef.current(character);
         },
@@ -101,10 +110,13 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
       emitter.addListener(
         "onCharacterSelectorPreview",
         (character: CharacterData) => {
+          if (!wasOpenRef.current) return;
           onPreviewRef.current?.(character);
         },
       ),
       emitter.addListener("onCharacterSelectorClose", () => {
+        if (!wasOpenRef.current) return;
+        showGenerationRef.current += 1;
         wasOpenRef.current = false;
         onCloseRef.current();
       }),
@@ -115,6 +127,7 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
   // If React unmounts while the selector is still open, tear it down.
   useEffect(() => {
     return () => {
+      showGenerationRef.current += 1;
       if (wasOpenRef.current) {
         SimulaMiniGameModule?.hideCharacterSelector();
         wasOpenRef.current = false;

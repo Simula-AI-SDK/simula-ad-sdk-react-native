@@ -34,6 +34,7 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
     useSimulaContext();
   const wasOpenRef = useRef(false);
   const shownForOpenCycleRef = useRef(false);
+  const showGenerationRef = useRef(0);
 
   // Show/hide native invitation based on isOpen prop
   useEffect(() => {
@@ -45,6 +46,7 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
     );
 
     if (action === 'show') {
+      const generation = ++showGenerationRef.current;
       SimulaMiniGameModule.showMiniGameInvitation({
         apiKey,
         hasPrivacyConsent,
@@ -60,11 +62,16 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
         width: width ?? null,
         top: top ?? null,
       }).catch((error: any) => {
+        if (showGenerationRef.current === generation) {
+          wasOpenRef.current = false;
+          shownForOpenCycleRef.current = false;
+        }
         console.error('[SimulaMiniGame] showMiniGameInvitation failed:', error?.message || error);
       });
       wasOpenRef.current = true;
       shownForOpenCycleRef.current = true;
     } else if (action === 'hide') {
+      showGenerationRef.current += 1;
       SimulaMiniGameModule.hideMiniGameInvitation();
       wasOpenRef.current = false;
       shownForOpenCycleRef.current = false;
@@ -83,6 +90,7 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
   useEffect(() => {
     if (!emitter) return;
     const subscription = emitter.addListener('onMiniGameInvitationClick', () => {
+      if (!wasOpenRef.current) return;
       onClickRef.current();
     });
     return () => subscription.remove();
@@ -92,6 +100,8 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
   useEffect(() => {
     if (!emitter) return;
     const subscription = emitter.addListener('onMiniGameInvitationClose', () => {
+      if (!wasOpenRef.current) return;
+      showGenerationRef.current += 1;
       wasOpenRef.current = false;
       SimulaMiniGameModule.hideMiniGameInvitation();
       onCloseRef.current?.();
@@ -102,6 +112,7 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
   // If React unmounts while the native invitation is still open, tear it down.
   useEffect(() => {
     return () => {
+      showGenerationRef.current += 1;
       if (wasOpenRef.current) {
         SimulaMiniGameModule?.hideMiniGameInvitation();
         wasOpenRef.current = false;

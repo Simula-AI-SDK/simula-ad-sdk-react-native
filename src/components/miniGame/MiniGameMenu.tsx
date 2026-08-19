@@ -32,6 +32,7 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   const { apiKey, hasPrivacyConsent, devMode, primaryUserID } = useSimulaContext();
   const wasOpenRef = useRef(false);
   const shownForOpenCycleRef = useRef(false);
+  const showGenerationRef = useRef(0);
 
   // Show/hide native menu based on isOpen prop
   useEffect(() => {
@@ -43,6 +44,7 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
     );
 
     if (action === 'show') {
+      const generation = ++showGenerationRef.current;
       SimulaMiniGameModule.showMiniGameMenu({
         apiKey,
         hasPrivacyConsent,
@@ -57,11 +59,16 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
         theme,
         delegateChar,
       }).catch((error: any) => {
+        if (showGenerationRef.current === generation) {
+          wasOpenRef.current = false;
+          shownForOpenCycleRef.current = false;
+        }
         console.error('[SimulaMiniGame] showMiniGameMenu failed:', error?.message || error);
       });
       wasOpenRef.current = true;
       shownForOpenCycleRef.current = true;
     } else if (action === 'hide') {
+      showGenerationRef.current += 1;
       SimulaMiniGameModule.hideMiniGameMenu();
       wasOpenRef.current = false;
       shownForOpenCycleRef.current = false;
@@ -78,6 +85,8 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   useEffect(() => {
     if (!emitter) return;
     const subscription = emitter.addListener('onMiniGameMenuClose', () => {
+      if (!wasOpenRef.current) return;
+      showGenerationRef.current += 1;
       wasOpenRef.current = false;
       // Keep the open-cycle latch set until isOpen becomes false. Otherwise an
       // unrelated apiKey identity change would reopen a surface the user closed.
@@ -89,6 +98,7 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   // If React unmounts while the native menu is still open, tear it down.
   useEffect(() => {
     return () => {
+      showGenerationRef.current += 1;
       if (wasOpenRef.current) {
         SimulaMiniGameModule?.hideMiniGameMenu();
         wasOpenRef.current = false;

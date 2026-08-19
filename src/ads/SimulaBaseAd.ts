@@ -35,11 +35,16 @@ import {
   SimulaUnsubscribe,
 } from "./types";
 
-let counter = 0;
+interface SimulaRuntimeGlobal {
+  __simulaAdsInstanceCounter__?: number;
+}
+
+const runtimeGlobal = globalThis as typeof globalThis & SimulaRuntimeGlobal;
 
 /** Generates a process-unique instance id, e.g. `"int_1"` / `"rew_2"`. */
 function nextInstanceId(prefix: string): string {
-  counter += 1;
+  const counter = (runtimeGlobal.__simulaAdsInstanceCounter__ ?? 0) + 1;
+  runtimeGlobal.__simulaAdsInstanceCounter__ = counter;
   return `${prefix}_${counter}`;
 }
 
