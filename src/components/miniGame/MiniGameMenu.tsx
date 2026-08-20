@@ -11,6 +11,7 @@ import { useEffect, useRef } from 'react';
 import { NativeModules } from 'react-native';
 import { MiniGameMenuProps } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
+import { SimulaAds } from '../../ads/SimulaAds';
 import { miniGameEmitter as emitter, warnIfDuplicateSurface } from '../../internal/emitter';
 import { isNonBlankString } from '../../internal/identifiers';
 import { surfaceVisibilityAction } from '../../internal/surfaceVisibility';
@@ -29,7 +30,7 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
   theme = {},
   delegateChar = true,
 }) => {
-  const { apiKey, hasPrivacyConsent, devMode, primaryUserID } = useSimulaContext();
+  const { apiKey, hasPrivacyConsent, devMode, primaryUserID, initializationConfig } = useSimulaContext();
   const wasOpenRef = useRef(false);
   const shownForOpenCycleRef = useRef(false);
   const showGenerationRef = useRef(0);
@@ -45,27 +46,35 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
 
     if (action === 'show') {
       const generation = ++showGenerationRef.current;
-      SimulaMiniGameModule.showMiniGameMenu({
-        apiKey,
-        hasPrivacyConsent,
-        devMode,
-        primaryUserID: primaryUserID ?? null,
-        charName,
-        charID,
-        charImage,
-        messages: messages.map((m) => ({ role: m.role, content: m.content })),
-        charDesc: charDesc ?? null,
-        maxGamesToShow: maxGamesToShow ?? null,
-        theme,
-        delegateChar,
-      }).catch((error: any) => {
+      const show = async () => {
+        await SimulaAds.initialize(initializationConfig);
+        if (showGenerationRef.current !== generation) return;
+        wasOpenRef.current = true;
+        await SimulaMiniGameModule.showMiniGameMenu({
+          apiKey,
+          hasPrivacyConsent,
+          devMode,
+          primaryUserID: primaryUserID ?? null,
+          privacy: initializationConfig.privacy ?? null,
+          telemetryEnabled: initializationConfig.telemetryEnabled ?? true,
+          adContext: initializationConfig.adContext ?? null,
+          charName,
+          charID,
+          charImage,
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          charDesc: charDesc ?? null,
+          maxGamesToShow: maxGamesToShow ?? null,
+          theme,
+          delegateChar,
+        });
+      };
+      show().catch((error: any) => {
         if (showGenerationRef.current === generation) {
           wasOpenRef.current = false;
           shownForOpenCycleRef.current = false;
         }
         console.error('[SimulaMiniGame] showMiniGameMenu failed:', error?.message || error);
       });
-      wasOpenRef.current = true;
       shownForOpenCycleRef.current = true;
     } else if (action === 'hide') {
       showGenerationRef.current += 1;

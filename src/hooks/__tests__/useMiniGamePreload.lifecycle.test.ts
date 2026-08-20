@@ -4,12 +4,14 @@ import { SimulaProvider } from "../../context/SimulaProvider";
 import { NativeModules, __reset } from "../../test/reactNativeMock";
 import { mount } from "../../test/reactHarness";
 
-const native = NativeModules.SimulaMiniGameModule;
+const native = NativeModules.SimulaAdsModule;
+const miniGameNative = NativeModules.SimulaMiniGameModule;
 
 function preloadProbe(
   apiKey: string,
   onPreload: (preload: () => Promise<void>) => void,
   primaryUserID?: string,
+  overrides: Partial<React.ComponentProps<typeof SimulaProvider>> = {},
 ): React.ReactElement {
   function Probe(): null {
     onPreload(useMiniGamePreload());
@@ -20,6 +22,7 @@ function preloadProbe(
     primaryUserID,
     initializeOnMount: false,
     children: React.createElement(Probe),
+    ...overrides,
   });
 }
 
@@ -38,15 +41,35 @@ describe("useMiniGamePreload lifecycle", () => {
     const capture = (next: () => Promise<void>) => {
       preload = next;
     };
-    const tree = await mount(preloadProbe("first-key", capture, "user-1"));
+    const tree = await mount(
+      preloadProbe("first-key", capture, "user-1", {
+        privacy: { enableAdvertisingId: true, coppaApplies: false },
+        telemetryEnabled: false,
+        adContext: { category: "games" },
+      }),
+    );
     await preload?.();
-    expect(native.preload).toHaveBeenLastCalledWith(
-      expect.objectContaining({ apiKey: "first-key", primaryUserID: "user-1" }),
+    expect(native.initialize).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        apiKey: "first-key",
+        primaryUserID: "user-1",
+        privacy: expect.objectContaining({ enableAdvertisingId: true }),
+        telemetryEnabled: false,
+        adContext: expect.objectContaining({ category: "games" }),
+      }),
+    );
+    expect(miniGameNative.preload).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        apiKey: "first-key",
+        privacy: expect.objectContaining({ enableAdvertisingId: true }),
+        telemetryEnabled: false,
+        adContext: expect.objectContaining({ category: "games" }),
+      }),
     );
 
     await tree.update(preloadProbe("second-key", capture));
     await preload?.();
-    expect(native.preload).toHaveBeenLastCalledWith(
+    expect(native.initialize).toHaveBeenLastCalledWith(
       expect.objectContaining({ apiKey: "second-key", primaryUserID: null }),
     );
     await tree.unmount();
@@ -60,10 +83,10 @@ describe("useMiniGamePreload lifecycle", () => {
       }),
     );
     await expect(preload?.()).resolves.toBeUndefined();
-    expect(native.preload).not.toHaveBeenCalled();
+    expect(native.initialize).not.toHaveBeenCalled();
     await blank.unmount();
 
-    native.preload.mockRejectedValueOnce(new Error("offline"));
+    native.initialize.mockRejectedValueOnce(new Error("offline"));
     const valid = await mount(
       preloadProbe("api-key", (next) => {
         preload = next;

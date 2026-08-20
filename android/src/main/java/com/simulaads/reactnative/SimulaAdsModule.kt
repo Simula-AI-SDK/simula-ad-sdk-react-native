@@ -14,9 +14,7 @@ import ad.simula.ad.sdk.ads.SimulaInterstitialAdListener
 import ad.simula.ad.sdk.ads.SimulaRewardedAd
 import ad.simula.ad.sdk.ads.SimulaRewardedAdListener
 import ad.simula.ad.sdk.model.AdValue
-import ad.simula.ad.sdk.model.SimulaAdContext
 import ad.simula.ad.sdk.privacy.SimulaPrivacy
-import ad.simula.ad.sdk.privacy.SimulaPrivacyConfig
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 
@@ -63,9 +61,9 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
         val hasPrivacyConsent = config.getBooleanOrNull("hasPrivacyConsent") ?: true
         val telemetryEnabled = config.getBooleanOrNull("telemetryEnabled") ?: true
         val privacy = if (config.hasKey("privacy") && !config.isNull("privacy"))
-            convertPrivacyConfig(config.getMap("privacy")) else null
+            config.getMap("privacy").toSimulaPrivacyConfig() else null
         val adContext = if (config.hasKey("adContext") && !config.isNull("adContext"))
-            convertAdContext(config.getMap("adContext")) else null
+            config.getMap("adContext").toSimulaAdContext() else null
 
         // Idempotent natively (first valid call wins); any-context is fine (the SDK
         // retains the application context).
@@ -93,7 +91,7 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
      */
     @ReactMethod
     fun updateContext(context: ReadableMap) {
-        SimulaAds.updateContext(convertAdContext(context))
+        SimulaAds.updateContext(context.toSimulaAdContext())
     }
 
     /**
@@ -255,7 +253,7 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun applyConsent(config: ReadableMap) {
-        SimulaPrivacy.apply(convertPrivacyConfig(config))
+        config.toSimulaPrivacyConfig()?.let(SimulaPrivacy::apply)
     }
 
     @ReactMethod
@@ -418,49 +416,6 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
         is SimulaAdError.NoPresentationContext -> "no_presentation_context" to null
         is SimulaAdError.Network -> "network" to null
         SimulaAdError.AdUnitNotFound -> "ad_unit_not_found" to null
-    }
-
-    // ── Privacy conversion ──────────────────────────────────────────────────────
-
-    private fun convertPrivacyConfig(map: ReadableMap?): SimulaPrivacyConfig {
-        if (map == null) return SimulaPrivacyConfig()
-        return SimulaPrivacyConfig(
-            hasPrivacyConsent = map.getBooleanOrNull("hasPrivacyConsent") ?: true,
-            tcString = map.getStringOrNull("tcString"),
-            uspString = map.getStringOrNull("uspString"),
-            gppString = map.getStringOrNull("gppString"),
-            gppSid = map.getStringOrNull("gppSid"),
-            gdprApplies = map.getBooleanOrNull("gdprApplies"),
-            tcfPurpose1Consent = map.getBooleanOrNull("tcfPurpose1Consent"),
-            coppaApplies = map.getBooleanOrNull("coppaApplies") ?: false,
-            enableAdvertisingId = map.getBooleanOrNull("enableAdvertisingId") ?: false,
-        )
-    }
-
-    // ── Ad-context conversion ─────────────────────────────────────────────────
-
-    /**
-     * Builds a [SimulaAdContext] from a JS map. A null/empty map → null (no
-     * targeting / clear). `customContext` is converted recursively via
-     * [ReadableMap.toHashMap]; `tags` keeps only string entries.
-     */
-    private fun convertAdContext(map: ReadableMap?): SimulaAdContext? {
-        if (map == null || !map.keySetIterator().hasNextKey()) return null
-        val tags = map.getArray("tags")?.toArrayList()?.filterIsInstance<String>()
-        @Suppress("UNCHECKED_CAST")
-        val customContext = if (map.hasKey("customContext") && !map.isNull("customContext"))
-            map.getMap("customContext")?.toHashMap() as? Map<String, Any> else null
-        return SimulaAdContext(
-            searchTerm = map.getStringOrNull("searchTerm"),
-            tags = tags,
-            category = map.getStringOrNull("category"),
-            title = map.getStringOrNull("title"),
-            description = map.getStringOrNull("description"),
-            userProfile = map.getStringOrNull("userProfile"),
-            userEmail = map.getStringOrNull("userEmail"),
-            customContext = customContext,
-            nsfw = map.getBooleanOrNull("nsfw") ?: false,
-        )
     }
 
     // ── ReadableMap extensions ────────────────────────────────────────────────

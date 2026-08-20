@@ -105,12 +105,13 @@ on `/load`.
 - On the legacy RN architecture the card's height round-trips native→JS→native once per
   size change. The native side smooths this (provisional height + thresholding); keep
   `FlatList` `windowSize`/`removeClippedSubviews` reasonable for long feeds.
-- **Remounts no longer collapse the row**: when list virtualization unmounts and remounts
+- **Remounts avoid collapsing the row**: when list virtualization unmounts and remounts
   a slot, `<NativeAd>` seeds its height from the last measured value for that
   `adUnitId`/`position` and the native side re-renders the cached ad at that same size on
-  its first frame (on iOS the already-rendered WebView itself is reattached — no reload,
-  no flash). `SimulaAds.invalidateNativeAd(s)` clears the remembered height along with
-  the cached serve.
+  its first frame. On iOS, reattaching the already-rendered WebView is a best-effort fast
+  path; backgrounding, memory pressure, or renderer recovery may evict it and require a
+  fresh render. `SimulaAds.invalidateNativeAd(s)` clears the remembered height along
+  with the cached serve.
 
 ## `<CharacterSelector>` — "pick your partner" modal
 

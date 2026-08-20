@@ -10,6 +10,7 @@ import { useEffect, useRef } from 'react';
 import { NativeModules } from 'react-native';
 import { MiniGameInvitationProps } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
+import { SimulaAds } from '../../ads/SimulaAds';
 import { miniGameEmitter as emitter, warnIfDuplicateSurface } from '../../internal/emitter';
 import { isNonBlankString } from '../../internal/identifiers';
 import { surfaceVisibilityAction } from '../../internal/surfaceVisibility';
@@ -30,7 +31,7 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
   onClick,
   onClose,
 }) => {
-  const { apiKey, hasPrivacyConsent, devMode, primaryUserID } =
+  const { apiKey, hasPrivacyConsent, devMode, primaryUserID, initializationConfig } =
     useSimulaContext();
   const wasOpenRef = useRef(false);
   const shownForOpenCycleRef = useRef(false);
@@ -47,28 +48,36 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
 
     if (action === 'show') {
       const generation = ++showGenerationRef.current;
-      SimulaMiniGameModule.showMiniGameInvitation({
-        apiKey,
-        hasPrivacyConsent,
-        devMode,
-        primaryUserID: primaryUserID ?? null,
-        titleText: titleText ?? null,
-        subText: subText ?? null,
-        ctaText: ctaText ?? null,
-        charImage,
-        animation: animation ?? null,
-        theme,
-        autoCloseDuration: autoCloseDuration ?? null,
-        width: width ?? null,
-        top: top ?? null,
-      }).catch((error: any) => {
+      const show = async () => {
+        await SimulaAds.initialize(initializationConfig);
+        if (showGenerationRef.current !== generation) return;
+        wasOpenRef.current = true;
+        await SimulaMiniGameModule.showMiniGameInvitation({
+          apiKey,
+          hasPrivacyConsent,
+          devMode,
+          primaryUserID: primaryUserID ?? null,
+          privacy: initializationConfig.privacy ?? null,
+          telemetryEnabled: initializationConfig.telemetryEnabled ?? true,
+          adContext: initializationConfig.adContext ?? null,
+          titleText: titleText ?? null,
+          subText: subText ?? null,
+          ctaText: ctaText ?? null,
+          charImage,
+          animation: animation ?? null,
+          theme,
+          autoCloseDuration: autoCloseDuration ?? null,
+          width: width ?? null,
+          top: top ?? null,
+        });
+      };
+      show().catch((error: any) => {
         if (showGenerationRef.current === generation) {
           wasOpenRef.current = false;
           shownForOpenCycleRef.current = false;
         }
         console.error('[SimulaMiniGame] showMiniGameInvitation failed:', error?.message || error);
       });
-      wasOpenRef.current = true;
       shownForOpenCycleRef.current = true;
     } else if (action === 'hide') {
       showGenerationRef.current += 1;

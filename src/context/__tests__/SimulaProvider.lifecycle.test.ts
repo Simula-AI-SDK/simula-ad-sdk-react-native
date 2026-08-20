@@ -72,9 +72,20 @@ describe("SimulaProvider lifecycle", () => {
         primaryUserID: "user-2",
       }),
     );
-    expect(native.updateConsent).toHaveBeenCalledTimes(1);
+    expect(native.applyConsent).toHaveBeenCalledTimes(1);
     expect(native.updateContext).toHaveBeenCalledTimes(1);
     expect(native.updatePrimaryUserID).toHaveBeenCalledWith("user-2");
+    await tree.unmount();
+  });
+
+  it("replaces removed privacy fields instead of leaving stale native values", async () => {
+    const tree = await mount(
+      providerElement({ privacy: { enableAdvertisingId: true, coppaApplies: true } }),
+    );
+    await tree.update(providerElement({ privacy: {} }));
+
+    expect(native.applyConsent).toHaveBeenCalledWith({ hasPrivacyConsent: true });
+    expect(native.updateConsent).not.toHaveBeenCalled();
     await tree.unmount();
   });
 

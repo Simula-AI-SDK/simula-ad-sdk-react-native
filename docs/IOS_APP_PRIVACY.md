@@ -127,13 +127,13 @@ Simula SDK does NOT track users across apps or websites.
 | Used for tracking? | No |
 | Purpose | Third-Party Advertising |
 
-> **Reason:** Temporary session IDs (NOT IDFA).
+> **Reason:** App-scoped device and temporary session identifiers. IDFA is included only
+> when the host explicitly enables collection and ATT authorizes it.
 
 ### Data Types NOT Collected
 
 Select "No" for all of these:
 
-- ❌ Contact Info (name, email, phone, address)
 - ❌ Health & Fitness
 - ❌ Financial Info
 - ❌ Location
@@ -142,9 +142,12 @@ Select "No" for all of these:
 - ❌ User Content (photos, videos, audio)
 - ❌ Browsing History
 - ❌ Search History
-- ❌ Identifiers → User ID
 - ❌ Purchases
 - ❌ Diagnostics
+
+Declare **Contact Info → Email Address** when supplying `adContext.userEmail`, and
+**Identifiers → User ID** when supplying `primaryUserID`. These are not collected by
+the default configuration.
 
 ---
 
@@ -152,11 +155,14 @@ Select "No" for all of these:
 
 ### Do You Need ATT Permission?
 
-**Likely NO** for Simula SDK because:
+**By default, NO** for Simula SDK because:
 
-- ✅ We don't access IDFA
+- ✅ IDFA collection is disabled unless `enableAdvertisingId: true`
 - ✅ We don't track users across apps
 - ✅ We use contextual targeting (content-based, not user-based)
+
+The SDK may read and report the current ATT authorization status without prompting.
+This is separate from IDFA collection. COPPA suppresses both ATT status and IDFA.
 
 ### When ATT IS Required
 
@@ -176,14 +182,10 @@ Add to `Info.plist`:
 <string>This allows us to show you relevant ads based on your interests.</string>
 ```
 
-And request permission in code:
+And request permission through the SDK:
 
-```swift
-import AppTrackingTransparency
-
-ATTrackingManager.requestTrackingAuthorization { status in
-    // Handle status
-}
+```ts
+const status = await SimulaPrivacy.requestTrackingAuthorization();
 ```
 
 ---
@@ -202,8 +204,9 @@ The SDK collects:
 - Ad interaction events (when ads are viewed or clicked)
 - Temporary session identifiers
 
-The SDK does NOT collect:
-- Apple Advertising Identifier (IDFA)
+By default, the SDK does NOT collect:
+- Apple Advertising Identifier (IDFA); apps that explicitly enable advertising-ID
+  collection and receive ATT authorization must disclose that collection
 - Location data
 - Personal information (name, email, phone)
 - Device fingerprints
@@ -235,8 +238,9 @@ To request data deletion, contact support@simula.ad.
 
 ### Issue: "Your app uses the AppTrackingTransparency framework"
 
-**Cause:** Another SDK in your app uses IDFA.
-**Solution:** Simula SDK doesn't require ATT. Check other SDKs.
+**Cause:** Simula ATT-status support or another SDK references AppTrackingTransparency.
+**Solution:** ATT status reads do not prompt. Add `NSUserTrackingUsageDescription` only
+when your app calls the prompt API, and disclose IDFA if you enable its collection.
 
 ### Issue: "Privacy nutrition labels incomplete"
 
@@ -257,7 +261,7 @@ To request data deletion, contact support@simula.ad.
 | Privacy Manifest | Required (iOS 17+) | `ios/PrivacyInfo.xcprivacy` |
 | SKAdNetwork | Recommended | `ios/SKAdNetworkItems.plist` |
 | App Privacy Labels | Required | App Store Connect |
-| ATT Permission | Not required | — |
+| ATT Permission | Not required by default | Required before opt-in IDFA collection |
 | Privacy Policy | Required | Your website |
 
 ---
@@ -265,8 +269,6 @@ To request data deletion, contact support@simula.ad.
 ## Questions?
 
 Contact admin@simula.ad for App Store submission assistance.
-
-
 
 
 

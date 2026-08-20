@@ -71,6 +71,7 @@ function surfaceElement(
   apiKey: string,
   onClose: jest.Mock,
   onClick: jest.Mock,
+  providerOverrides: Partial<React.ComponentProps<typeof SimulaProvider>> = {},
 ): React.ReactElement {
   const child = React.createElement(surface.component, {
     ...surface.props,
@@ -82,6 +83,7 @@ function surfaceElement(
     apiKey,
     initializeOnMount: false,
     children: child,
+    ...providerOverrides,
   });
 }
 
@@ -95,6 +97,60 @@ afterEach(() => {
 });
 
 describe.each(surfaces)("$name surface lifecycle", (surface) => {
+  it("initializes canonically with the complete provider snapshot before showing", async () => {
+    const show = native[surface.show] as jest.Mock;
+    const ads = NativeModules.SimulaAdsModule;
+    const tree = await mount(
+      surfaceElement(surface, true, "api-key", jest.fn(), jest.fn(), {
+        privacy: { enableAdvertisingId: true, coppaApplies: false },
+        telemetryEnabled: false,
+        adContext: { category: "games" },
+      }),
+    );
+
+    expect(ads.initialize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: "api-key",
+        privacy: expect.objectContaining({ enableAdvertisingId: true }),
+        telemetryEnabled: false,
+        adContext: expect.objectContaining({ category: "games" }),
+      }),
+    );
+    expect(ads.initialize.mock.invocationCallOrder[0]).toBeLessThan(
+      show.mock.invocationCallOrder[0],
+    );
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        privacy: expect.objectContaining({ enableAdvertisingId: true }),
+        telemetryEnabled: false,
+        adContext: expect.objectContaining({ category: "games" }),
+      }),
+    );
+    await tree.unmount();
+  });
+
+  it("ignores stale native events while canonical initialization is pending", async () => {
+    const ads = NativeModules.SimulaAdsModule;
+    const initialization = deferred<null>();
+    ads.initialize.mockReturnValueOnce(initialization.promise);
+    const onClose = jest.fn();
+    const onClick = jest.fn();
+    const tree = await mount(
+      surfaceElement(surface, true, "api-key", onClose, onClick),
+    );
+
+    await runInAct(() => {
+      __emit(surface.closeEvent, {});
+      if (surface.clickEvent) __emit(surface.clickEvent, {});
+    });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onClick).not.toHaveBeenCalled();
+
+    await runInAct(() => initialization.resolve(null));
+    expect(native[surface.show]).toHaveBeenCalledTimes(1);
+    await tree.unmount();
+  });
+
   it("permits a new prop-driven attempt after native show rejects", async () => {
     const error = jest.spyOn(console, "error").mockImplementation(() => undefined);
     const show = native[surface.show] as jest.Mock;
