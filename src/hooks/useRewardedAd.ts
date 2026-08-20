@@ -2,9 +2,9 @@
  * useRewardedAd — component-scoped imperative rewarded minigame.
  *
  * Like `useInterstitialAd`, plus reward state: `earnedReward`, `rewardVerified`,
- * and `rewardToken`. Reward verification is durable and server-side — the native
- * SDK may deliver REWARD_VERIFIED long after close (even after a relaunch), so the
- * hook only reflects events while mounted; persist the token yourself if needed.
+ * and `rewardToken`. Server verification/SSV is durable and can complete after a
+ * relaunch, but the JS `REWARD_VERIFIED` callback is best effort and only available
+ * while the originating native ad instance and this hook remain alive.
  *
  *   const { isLoaded, load, show, rewardToken } = useRewardedAd('reward_slot');
  */
