@@ -10,6 +10,7 @@ import { useEffect, useRef } from 'react';
 import { NativeModules } from 'react-native';
 import { MiniGameInterstitialProps } from '../../types';
 import { useSimulaContext } from '../../context/SimulaProvider';
+import { SimulaAds } from '../../ads/SimulaAds';
 import { miniGameEmitter as emitter, warnIfDuplicateSurface } from '../../internal/emitter';
 import { isNonBlankString } from '../../internal/identifiers';
 import { surfaceVisibilityAction } from '../../internal/surfaceVisibility';
@@ -26,7 +27,7 @@ export const MiniGameInterstitial: React.FC<MiniGameInterstitialProps> = ({
   onClick,
   onClose,
 }) => {
-  const { apiKey, hasPrivacyConsent, devMode, primaryUserID } =
+  const { apiKey, hasPrivacyConsent, devMode, primaryUserID, initializationConfig } =
     useSimulaContext();
   const wasOpenRef = useRef(false);
   const shownForOpenCycleRef = useRef(false);
@@ -43,24 +44,32 @@ export const MiniGameInterstitial: React.FC<MiniGameInterstitialProps> = ({
 
     if (action === 'show') {
       const generation = ++showGenerationRef.current;
-      SimulaMiniGameModule.showMiniGameInterstitial({
-        apiKey,
-        hasPrivacyConsent,
-        devMode,
-        primaryUserID: primaryUserID ?? null,
-        charImage,
-        invitationText: invitationText ?? null,
-        ctaText: ctaText ?? null,
-        backgroundImage: backgroundImage ?? null,
-        theme,
-      }).catch((error: any) => {
+      const show = async () => {
+        await SimulaAds.initialize(initializationConfig);
+        if (showGenerationRef.current !== generation) return;
+        wasOpenRef.current = true;
+        await SimulaMiniGameModule.showMiniGameInterstitial({
+          apiKey,
+          hasPrivacyConsent,
+          devMode,
+          primaryUserID: primaryUserID ?? null,
+          privacy: initializationConfig.privacy ?? null,
+          telemetryEnabled: initializationConfig.telemetryEnabled ?? true,
+          adContext: initializationConfig.adContext ?? null,
+          charImage,
+          invitationText: invitationText ?? null,
+          ctaText: ctaText ?? null,
+          backgroundImage: backgroundImage ?? null,
+          theme,
+        });
+      };
+      show().catch((error: any) => {
         if (showGenerationRef.current === generation) {
           wasOpenRef.current = false;
           shownForOpenCycleRef.current = false;
         }
         console.error('[SimulaMiniGame] showMiniGameInterstitial failed:', error?.message || error);
       });
-      wasOpenRef.current = true;
       shownForOpenCycleRef.current = true;
     } else if (action === 'hide') {
       showGenerationRef.current += 1;

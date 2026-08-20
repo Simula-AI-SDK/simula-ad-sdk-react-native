@@ -309,24 +309,25 @@ class SimulaMiniGameModule: RCTEventEmitter {
     /// Returns a SimulaProvider for the given config, reusing the cached instance
     /// when the config is unchanged so its warm session survives across re-shows.
     ///
-    /// Prefers the imperative SDK's shared provider (`SimulaAds.shared`) when its
-    /// config matches, so the imperative and declarative paths share one warm
-    /// session (mirrors the SDK's own `SimulaProviderView`). Falls back to a
-    /// locally-cached provider, then to a freshly created one.
+    /// Prefers the imperative SDK's shared provider (`SimulaAds.shared`) for the
+    /// winning API key, so runtime privacy/identity updates remain authoritative and
+    /// every surface shares one warm session. Falls back to a fully configured local
+    /// provider only when no matching shared provider exists.
     private func reusableProvider(apiKey: String,
                                   devMode: Bool,
                                   primaryUserID: String?,
-                                  hasPrivacyConsent: Bool) -> SimulaProvider {
-        let key = "\(apiKey)|\(devMode)|\(primaryUserID ?? "")|\(hasPrivacyConsent)"
+                                  hasPrivacyConsent: Bool,
+                                  props: NSDictionary) -> SimulaProvider {
+        let privacy = convertPrivacyConfig(props["privacy"])
+        let telemetryEnabled = props["telemetryEnabled"] as? Bool ?? true
+        let adContext = convertAdContext(props["adContext"])
+        let key = "\(apiKey)|\(devMode)|\(primaryUserID ?? "")|\(hasPrivacyConsent)|\(String(describing: props["privacy"]))|\(telemetryEnabled)|\(String(describing: props["adContext"]))"
 
         // `SimulaAds` is @MainActor; we're on methodQueue = .main, so this read is
         // safe. When the host called SimulaAds.initialize (e.g. via SimulaProvider's
         // initializeOnMount or preload), reuse that already-warm session.
         if let shared = MainActor.assumeIsolated({ SimulaAds.shared }),
-           shared.apiKey == apiKey,
-           shared.devMode == devMode,
-           (shared.primaryUserID ?? "") == (primaryUserID ?? ""),
-           shared.hasPrivacyConsent == hasPrivacyConsent {
+           shared.apiKey == apiKey {
             cachedProvider = shared
             cachedProviderKey = key
             return shared
@@ -339,7 +340,10 @@ class SimulaMiniGameModule: RCTEventEmitter {
             apiKey: apiKey,
             devMode: devMode,
             primaryUserID: primaryUserID,
-            hasPrivacyConsent: hasPrivacyConsent
+            hasPrivacyConsent: hasPrivacyConsent,
+            privacy: privacy,
+            telemetryEnabled: telemetryEnabled,
+            adContext: adContext
         )
         cachedProvider = provider
         cachedProviderKey = key
@@ -378,7 +382,8 @@ class SimulaMiniGameModule: RCTEventEmitter {
             apiKey: apiKey,
             devMode: devMode,
             primaryUserID: primaryUserID,
-            hasPrivacyConsent: hasPrivacyConsent
+            hasPrivacyConsent: hasPrivacyConsent,
+            props: props
         )
 
         let menuView = MiniGameMenuWrapper(
@@ -454,7 +459,8 @@ class SimulaMiniGameModule: RCTEventEmitter {
             apiKey: apiKey,
             devMode: devMode,
             primaryUserID: primaryUserID,
-            hasPrivacyConsent: hasPrivacyConsent
+            hasPrivacyConsent: hasPrivacyConsent,
+            props: props
         )
 
         let buttonView = MiniGameButtonWrapper(
@@ -514,7 +520,8 @@ class SimulaMiniGameModule: RCTEventEmitter {
             apiKey: apiKey,
             devMode: devMode,
             primaryUserID: primaryUserID,
-            hasPrivacyConsent: hasPrivacyConsent
+            hasPrivacyConsent: hasPrivacyConsent,
+            props: props
         )
 
         let invitationView = MiniGameInvitationWrapper(
@@ -588,7 +595,8 @@ class SimulaMiniGameModule: RCTEventEmitter {
             apiKey: apiKey,
             devMode: devMode,
             primaryUserID: primaryUserID,
-            hasPrivacyConsent: hasPrivacyConsent
+            hasPrivacyConsent: hasPrivacyConsent,
+            props: props
         )
 
         let interstitialView = MiniGameInterstitialWrapper(
@@ -651,6 +659,9 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let devMode = props["devMode"] as? Bool ?? false
         let primaryUserID = props["primaryUserID"] as? String
         let hasPrivacyConsent = props["hasPrivacyConsent"] as? Bool ?? true
+        let privacy = convertPrivacyConfig(props["privacy"])
+        let telemetryEnabled = props["telemetryEnabled"] as? Bool ?? true
+        let adContext = convertAdContext(props["adContext"])
 
         // Initialize the imperative SDK (idempotent) so its shared session warms and
         // is reused by every declarative surface via reusableProvider — unifying the
@@ -661,7 +672,10 @@ class SimulaMiniGameModule: RCTEventEmitter {
                 apiKey: apiKey,
                 devMode: devMode,
                 primaryUserID: primaryUserID,
-                hasPrivacyConsent: hasPrivacyConsent
+                hasPrivacyConsent: hasPrivacyConsent,
+                privacy: privacy,
+                telemetryEnabled: telemetryEnabled,
+                adContext: adContext
             )
         }
 
@@ -671,7 +685,8 @@ class SimulaMiniGameModule: RCTEventEmitter {
             apiKey: apiKey,
             devMode: devMode,
             primaryUserID: primaryUserID,
-            hasPrivacyConsent: hasPrivacyConsent
+            hasPrivacyConsent: hasPrivacyConsent,
+            props: props
         )
         // Completion-based session warm-up — no bridge-created task (the bridge is compiled
         // by the host's Xcode; the task lives inside the prebuilt SDK binary, SDK >= 1.1.4).
@@ -707,7 +722,8 @@ class SimulaMiniGameModule: RCTEventEmitter {
             apiKey: apiKey,
             devMode: devMode,
             primaryUserID: primaryUserID,
-            hasPrivacyConsent: hasPrivacyConsent
+            hasPrivacyConsent: hasPrivacyConsent,
+            props: props
         )
 
         let view = CharacterSelectorWrapper(
@@ -790,6 +806,62 @@ class SimulaMiniGameModule: RCTEventEmitter {
             return CharacterData(id: id, name: name, imageUrl: imageUrl, description: description)
         }
         return characters.isEmpty ? nil : characters
+    }
+
+    private func convertPrivacyConfig(_ raw: Any?) -> SimulaPrivacyConfig? {
+        guard let dict = raw as? [String: Any] else { return nil }
+        return SimulaPrivacyConfig(
+            hasPrivacyConsent: dict["hasPrivacyConsent"] as? Bool ?? true,
+            tcString: dict["tcString"] as? String,
+            uspString: dict["uspString"] as? String,
+            gppString: dict["gppString"] as? String,
+            gppSid: dict["gppSid"] as? String,
+            gdprApplies: dict["gdprApplies"] as? Bool,
+            tcfPurpose1Consent: dict["tcfPurpose1Consent"] as? Bool,
+            coppaApplies: dict["coppaApplies"] as? Bool ?? false,
+            enableAdvertisingId: dict["enableAdvertisingId"] as? Bool ?? false
+        )
+    }
+
+    private func convertAdContext(_ raw: Any?) -> SimulaAdContext? {
+        guard let dict = raw as? [String: Any], !dict.isEmpty else { return nil }
+        return SimulaAdContext(
+            searchTerm: dict["searchTerm"] as? String,
+            tags: dict["tags"] as? [String],
+            category: dict["category"] as? String,
+            title: dict["title"] as? String,
+            description: dict["description"] as? String,
+            userProfile: dict["userProfile"] as? String,
+            userEmail: dict["userEmail"] as? String,
+            customContext: convertCustomContext(dict["customContext"]),
+            nsfw: dict["nsfw"] as? Bool ?? false
+        )
+    }
+
+    private func convertCustomContext(_ raw: Any?) -> [String: JSONValue]? {
+        guard let dict = raw as? [String: Any], !dict.isEmpty else { return nil }
+        var out: [String: JSONValue] = [:]
+        for (key, value) in dict { out[key] = Self.jsonValue(value) }
+        return out
+    }
+
+    private static func jsonValue(_ value: Any) -> JSONValue {
+        if let string = value as? String { return .string(string) }
+        if let number = value as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() { return .bool(number.boolValue) }
+            let asDouble = number.doubleValue
+            if asDouble == asDouble.rounded() && abs(asDouble) < 1e15 {
+                return .int(number.intValue)
+            }
+            return .double(asDouble)
+        }
+        if let array = value as? [Any] { return .array(array.map { jsonValue($0) }) }
+        if let object = value as? [String: Any] {
+            var out: [String: JSONValue] = [:]
+            for (key, nested) in object { out[key] = jsonValue(nested) }
+            return .object(out)
+        }
+        return .null
     }
 
     private func convertCharacterSelectorTheme(_ raw: Any?) -> CharacterSelectorTheme {

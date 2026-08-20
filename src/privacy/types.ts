@@ -20,9 +20,13 @@ export interface SimulaPrivacyConfig {
   gdprApplies?: boolean;
   /** Explicit TCF Purpose 1 ("store/access information on a device") consent. */
   tcfPurpose1Consent?: boolean;
-  /** Whether COPPA (child-directed) treatment applies. Suppresses PII + ad id. */
+  /** Whether COPPA treatment applies. Suppresses PII, advertising ID, and iOS ATT status. */
   coppaApplies?: boolean;
-  /** Opt-in switch for advertising-identifier (IDFA/GAID) collection. Default false. */
+  /**
+   * Opt-in switch for advertising-identifier (IDFA/GAID) collection. Default false.
+   * On iOS the SDK may still read and report ATT authorization status without prompting;
+   * this flag controls IDFA collection, not ATT status reporting.
+   */
   enableAdvertisingId?: boolean;
 }
 

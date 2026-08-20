@@ -5,6 +5,7 @@
 import { ReactNode } from "react";
 import { SimulaPrivacyConfig } from "../privacy/types";
 import { SimulaAdContext } from "../ads/context";
+import type { SimulaInitConfig } from "../ads/SimulaAds";
 
 /**
  * Message format for conversation context
@@ -49,6 +50,8 @@ export interface SimulaContextValue {
   hasPrivacyConsent: boolean;
   devMode: boolean;
   primaryUserID?: string;
+  /** Complete, JSON-safe snapshot used by eager and demand-driven native initialization. */
+  initializationConfig: SimulaInitConfig;
 }
 
 /**

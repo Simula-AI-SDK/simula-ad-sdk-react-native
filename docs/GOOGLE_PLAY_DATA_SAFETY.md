@@ -12,10 +12,10 @@ This document helps you complete the **Data Safety** section in Google Play Cons
 |-----------|-----------|--------|---------|
 | Messages/Text | ✅ Yes | ✅ Yes (Simula) | Advertising |
 | App interactions | ✅ Yes | ✅ Yes (Simula) | Advertising, Analytics |
-| Device info | ✅ Yes | ✅ Yes (Simula) | Advertising |
-| Advertising ID | ❌ No | ❌ No | — |
+| Device or other IDs | ✅ Yes | ✅ Yes (Simula) | Advertising |
+| Advertising ID | Conditional | Conditional | Advertising (only when explicitly enabled) |
 | Location | ❌ No | ❌ No | — |
-| Personal info | ❌ No | ❌ No | — |
+| Personal info | Conditional | Conditional | When the host supplies PPID/user email |
 
 ---
 
@@ -65,16 +65,23 @@ This document helps you complete the **Data Safety** section in Google Play Cons
 
 ---
 
-#### ✅ Device or other IDs (Session ID only)
+#### ✅ Device or other IDs
 
 | Question | Answer |
 |----------|--------|
 | Is this data collected, shared, or both? | **Both** |
-| Is this data processed ephemerally? | **Yes** (session-scoped, temporary) |
+| Is this data processed ephemerally? | **No** for app-scoped device ID; session IDs are temporary |
 | Is this data required or optional? | **Required** |
 | Why is this data collected? | **Advertising or marketing** |
 
-> **Note:** Simula generates temporary session IDs (NOT Android Advertising ID). These expire when the session ends and cannot be used to track users across apps.
+> **Note:** Simula sends an app-scoped device identifier and generates temporary session IDs.
+> GAID collection is disabled by default and occurs only when the host explicitly sets
+> `enableAdvertisingId: true`, consent permits it, and COPPA does not apply.
+
+#### ⚠️ Personal info / User ID (configuration-dependent)
+
+Declare these fields when your integration supplies `primaryUserID` or `adContext.userEmail`.
+They are not collected by the default configuration.
 
 ---
 
@@ -83,7 +90,7 @@ This document helps you complete the **Data Safety** section in Google Play Cons
 Explicitly select **"Not collected"** for:
 
 - ❌ **Location** (precise or approximate)
-- ❌ **Personal info** (name, email, address, phone)
+- ❌ **Personal info** only when you do not supply PPID or `adContext.userEmail`
 - ❌ **Financial info**
 - ❌ **Health and fitness**
 - ❌ **Contacts**
@@ -92,7 +99,7 @@ Explicitly select **"Not collected"** for:
 - ❌ **Files and docs**
 - ❌ **Calendar**
 - ❌ **Web browsing history**
-- ❌ **Advertising ID** (AAID/GAID)
+- ❌ **Advertising ID** (AAID/GAID), only when `enableAdvertisingId` remains disabled
 
 ---
 
@@ -106,13 +113,12 @@ This app uses the Simula Ad SDK to display contextual advertisements.
 Data collected:
 • Conversation context (to show relevant ads)
 • Ad interaction data (impressions and clicks)
-• Temporary session identifiers
+• App-scoped device and temporary session identifiers
 
-Data NOT collected:
-• Advertising ID (GAID)
+Data NOT collected by the default configuration:
+• Advertising ID (GAID); disclose it if your app explicitly enables collection
 • Location
-• Personal information
-• Device identifiers
+• Personal information, unless the app explicitly supplies PPID/user email
 
 All data is transmitted securely via HTTPS. Session data is temporary and 
 not linked to user identity. For data deletion requests, contact [your email] 
@@ -168,8 +174,6 @@ Before submitting to Play Store, verify:
 ## Questions?
 
 Contact admin@simula.ad for Data Safety form assistance.
-
-
 
 
 

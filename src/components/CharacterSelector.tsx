@@ -10,6 +10,7 @@ import { useEffect, useRef } from "react";
 import { NativeModules } from "react-native";
 import { CharacterSelectorProps, CharacterData } from "../types";
 import { useSimulaContext } from "../context/SimulaProvider";
+import { SimulaAds } from "../ads/SimulaAds";
 import {
   miniGameEmitter as emitter,
   warnIfDuplicateSurface,
@@ -29,7 +30,7 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
   characters,
   theme = {},
 }) => {
-  const { apiKey, hasPrivacyConsent, devMode, primaryUserID } =
+  const { apiKey, hasPrivacyConsent, devMode, primaryUserID, initializationConfig } =
     useSimulaContext();
   const wasOpenRef = useRef(false);
   const shownForOpenCycleRef = useRef(false);
@@ -46,22 +47,31 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
 
     if (action === "show") {
       const generation = ++showGenerationRef.current;
-      SimulaMiniGameModule.showCharacterSelector({
-        apiKey,
-        hasPrivacyConsent,
-        devMode,
-        primaryUserID: primaryUserID ?? null,
-        title: title ?? null,
-        ctaText: ctaText ?? null,
-        characters:
-          characters?.map((c) => ({
-            id: c.id,
-            name: c.name,
-            imageUrl: c.imageUrl,
-            description: c.description,
-          })) ?? null,
-        theme,
-      }).catch((error: unknown) => {
+      const show = async () => {
+        await SimulaAds.initialize(initializationConfig);
+        if (showGenerationRef.current !== generation) return;
+        wasOpenRef.current = true;
+        await SimulaMiniGameModule.showCharacterSelector({
+          apiKey,
+          hasPrivacyConsent,
+          devMode,
+          primaryUserID: primaryUserID ?? null,
+          privacy: initializationConfig.privacy ?? null,
+          telemetryEnabled: initializationConfig.telemetryEnabled ?? true,
+          adContext: initializationConfig.adContext ?? null,
+          title: title ?? null,
+          ctaText: ctaText ?? null,
+          characters:
+            characters?.map((c) => ({
+              id: c.id,
+              name: c.name,
+              imageUrl: c.imageUrl,
+              description: c.description,
+            })) ?? null,
+          theme,
+        });
+      };
+      show().catch((error: unknown) => {
         if (showGenerationRef.current === generation) {
           wasOpenRef.current = false;
           shownForOpenCycleRef.current = false;
@@ -72,7 +82,6 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
           err?.message || error,
         );
       });
-      wasOpenRef.current = true;
       shownForOpenCycleRef.current = true;
     } else if (action === "hide") {
       showGenerationRef.current += 1;

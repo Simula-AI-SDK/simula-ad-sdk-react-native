@@ -43,9 +43,10 @@ export const SimulaPrivacy = {
   },
 
   /**
-   * iOS: presents the ATT prompt (if undetermined) and resolves the resulting
-   * status. Requires `NSUserTrackingUsageDescription` in Info.plist. Android: no
-   * ATT — resolves `'unavailable'`.
+   * iOS: presents the ATT prompt (if undetermined), records the resulting status
+   * independently of IDFA opt-in, and resolves it. Requires
+   * `NSUserTrackingUsageDescription` in Info.plist. Android: no ATT — resolves
+   * `'unavailable'`.
    */
   async requestTrackingAuthorization(): Promise<TrackingAuthorizationStatus> {
     if (!isAdsModuleAvailable()) {

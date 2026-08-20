@@ -37,11 +37,6 @@ export function SimulaProvider({
   adContext,
   initializeOnMount = true,
 }: SimulaProviderProps): React.JSX.Element {
-  const contextValue = useMemo<SimulaContextValue>(
-    () => ({ apiKey, hasPrivacyConsent, devMode, primaryUserID }),
-    [apiKey, hasPrivacyConsent, devMode, primaryUserID],
-  );
-
   // Snapshot host objects so malformed values cannot crash render or cross the bridge.
   const privacySnapshot = useMemo(
     () => (privacy == null ? undefined : safeJsonSnapshot(privacy)),
@@ -58,13 +53,8 @@ export function SimulaProvider({
   const adContextKey = adContextSnapshot?.identity ?? "null";
   const safePrivacy = privacySnapshot?.value;
   const safeAdContext = adContextSnapshot?.value;
-
-  // Eager init: warms the native session off the first ad's critical path, and on
-  // Android is the only path that enables telemetry. Native init is idempotent
-  // (first valid call wins), so re-running on a prop change is a harmless no-op.
-  useEffect(() => {
-    if (!initializeOnMount || !isNonBlankString(apiKey)) return;
-    SimulaAds.initialize({
+  const initializationConfig = useMemo(
+    () => ({
       apiKey,
       devMode,
       primaryUserID,
@@ -72,7 +62,34 @@ export function SimulaProvider({
       privacy: safePrivacy,
       telemetryEnabled,
       adContext: safeAdContext,
-    }).catch((error: unknown) => {
+    }),
+    [
+      apiKey,
+      devMode,
+      primaryUserID,
+      hasPrivacyConsent,
+      telemetryEnabled,
+      privacyKey,
+      adContextKey,
+    ],
+  );
+  const contextValue = useMemo<SimulaContextValue>(
+    () => ({
+      apiKey,
+      hasPrivacyConsent,
+      devMode,
+      primaryUserID,
+      initializationConfig,
+    }),
+    [apiKey, hasPrivacyConsent, devMode, primaryUserID, initializationConfig],
+  );
+
+  // Eager init: warms the native session off the first ad's critical path, and on
+  // Android is the only path that enables telemetry. Native init is idempotent
+  // (first valid call wins), so re-running on a prop change is a harmless no-op.
+  useEffect(() => {
+    if (!initializeOnMount || !isNonBlankString(apiKey)) return;
+    SimulaAds.initialize(initializationConfig).catch((error: unknown) => {
       console.error("[Simula] initialize failed:", error);
     });
     // privacyKey / adContextKey stand in for the (deep) privacy / adContext objects.
@@ -96,7 +113,7 @@ export function SimulaProvider({
   useEffect(() => {
     if (previousPrivacyKey.current === privacyRuntimeKey) return;
     previousPrivacyKey.current = privacyRuntimeKey;
-    SimulaPrivacy.update({ hasPrivacyConsent, ...(safePrivacy ?? {}) });
+    SimulaPrivacy.apply({ hasPrivacyConsent, ...(safePrivacy ?? {}) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [privacyRuntimeKey]);
 

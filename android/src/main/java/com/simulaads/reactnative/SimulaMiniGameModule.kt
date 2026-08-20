@@ -86,6 +86,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
             props.getBoolean("hasPrivacyConsent") else true
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
         val primaryUserID = props.getStringOrNull("primaryUserID")
+        val privacy = props.getMapOrNull("privacy").toSimulaPrivacyConfig()
+        val adContext = props.getMapOrNull("adContext").toSimulaAdContext()
         // Coerce to one of the supported values (parity with iOS convertMaxGamesToShow).
         val maxGamesToShow = when (
             if (props.hasKey("maxGamesToShow") && !props.isNull("maxGamesToShow"))
@@ -113,6 +115,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
                         hasPrivacyConsent = hasPrivacyConsent,
                         devMode = devMode,
                         primaryUserID = primaryUserID,
+                        privacy = privacy,
+                        adContext = adContext,
                     ) {
                         MiniGameMenu(
                             isOpen = isMenuOpen,
@@ -170,6 +174,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
             props.getBoolean("hasPrivacyConsent") else true
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
         val primaryUserID = props.getStringOrNull("primaryUserID")
+        val privacy = props.getMapOrNull("privacy").toSimulaPrivacyConfig()
+        val adContext = props.getMapOrNull("adContext").toSimulaAdContext()
 
         val text = props.getStringOrNull("text")
         val showPulsate = if (props.hasKey("showPulsate")) props.getBoolean("showPulsate") else false
@@ -188,6 +194,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
                         hasPrivacyConsent = hasPrivacyConsent,
                         devMode = devMode,
                         primaryUserID = primaryUserID,
+                        privacy = privacy,
+                        adContext = adContext,
                     ) {
                         MiniGameButton(
                             text = text,
@@ -238,6 +246,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
             props.getBoolean("hasPrivacyConsent") else true
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
         val primaryUserID = props.getStringOrNull("primaryUserID")
+        val privacy = props.getMapOrNull("privacy").toSimulaPrivacyConfig()
+        val adContext = props.getMapOrNull("adContext").toSimulaAdContext()
 
         val titleText = props.getStringOrNull("titleText") ?: "Want to play a game?"
         val subText = props.getStringOrNull("subText") ?: "Take a break and challenge yourself!"
@@ -269,6 +279,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
                         hasPrivacyConsent = hasPrivacyConsent,
                         devMode = devMode,
                         primaryUserID = primaryUserID,
+                        privacy = privacy,
+                        adContext = adContext,
                     ) {
                         MiniGameInvitation(
                             titleText = titleText,
@@ -333,6 +345,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
             props.getBoolean("hasPrivacyConsent") else true
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
         val primaryUserID = props.getStringOrNull("primaryUserID")
+        val privacy = props.getMapOrNull("privacy").toSimulaPrivacyConfig()
+        val adContext = props.getMapOrNull("adContext").toSimulaAdContext()
 
         val charImage = props.getString("charImage")
         if (charImage == null) {
@@ -357,6 +371,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
                         hasPrivacyConsent = hasPrivacyConsent,
                         devMode = devMode,
                         primaryUserID = primaryUserID,
+                        privacy = privacy,
+                        adContext = adContext,
                     ) {
                         MiniGameInterstitial(
                             charImage = charImage,
@@ -417,6 +433,10 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         val primaryUserID = props.getStringOrNull("primaryUserID")
         val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
             props.getBoolean("hasPrivacyConsent") else true
+        val privacy = props.getMapOrNull("privacy").toSimulaPrivacyConfig()
+        val telemetryEnabled = if (props.hasKey("telemetryEnabled"))
+            props.getBoolean("telemetryEnabled") else true
+        val adContext = props.getMapOrNull("adContext").toSimulaAdContext()
 
         SimulaAds.initialize(
             context = reactApplicationContext,
@@ -424,6 +444,9 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
             devMode = devMode,
             primaryUserID = primaryUserID,
             hasPrivacyConsent = hasPrivacyConsent,
+            privacy = privacy,
+            telemetryEnabled = telemetryEnabled,
+            adContext = adContext,
         )
         promise.resolve(null)
     }
@@ -452,6 +475,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
             props.getBoolean("hasPrivacyConsent") else true
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
         val primaryUserID = props.getStringOrNull("primaryUserID")
+        val privacy = props.getMapOrNull("privacy").toSimulaPrivacyConfig()
+        val adContext = props.getMapOrNull("adContext").toSimulaAdContext()
         val title = props.getStringOrNull("title") ?: "Select Your Game Partner"
         val ctaText = props.getStringOrNull("ctaText") ?: "🚀 Launch Game"
         val characters = convertCharacters(
@@ -472,6 +497,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
                         hasPrivacyConsent = hasPrivacyConsent,
                         devMode = devMode,
                         primaryUserID = primaryUserID,
+                        privacy = privacy,
+                        adContext = adContext,
                     ) {
                         CharacterSelector(
                             isOpen = isCharacterSelectorOpen,
@@ -674,6 +701,10 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
 
     private fun ReadableMap.getStringOrNull(key: String): String? {
         return if (hasKey(key) && !isNull(key)) getString(key) else null
+    }
+
+    private fun ReadableMap.getMapOrNull(key: String): ReadableMap? {
+        return if (hasKey(key) && !isNull(key)) getMap(key) else null
     }
 
     private fun ReadableMap.getIntOrNull(key: String): Int? {
