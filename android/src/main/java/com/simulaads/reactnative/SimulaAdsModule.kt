@@ -117,12 +117,12 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun getUserAgent(promise: Promise) {
-        promise.resolve(SimulaAds.userAgent)
+        promise.resolve(if (SimulaAds.isInitialized) SimulaAds.userAgent else null)
     }
 
     @ReactMethod
     fun getDeviceId(promise: Promise) {
-        promise.resolve(SimulaAds.deviceId)
+        promise.resolve(if (SimulaAds.isInitialized) SimulaAds.deviceId else null)
     }
 
     // ── Native ad (imperative) ────────────────────────────────────────────────

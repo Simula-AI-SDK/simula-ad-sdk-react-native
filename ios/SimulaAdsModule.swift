@@ -277,6 +277,10 @@ class SimulaAdsModule: RCTEventEmitter {
     func getUserAgent(_ resolve: @escaping RCTPromiseResolveBlock,
                       reject: @escaping RCTPromiseRejectBlock) {
         runOnMain {
+            guard SimulaAds.isInitialized else {
+                resolve(NSNull())
+                return
+            }
             resolve(SimulaAds.userAgent)
         }
     }
@@ -285,6 +289,10 @@ class SimulaAdsModule: RCTEventEmitter {
     func getDeviceId(_ resolve: @escaping RCTPromiseResolveBlock,
                      reject: @escaping RCTPromiseRejectBlock) {
         runOnMain {
+            guard SimulaAds.isInitialized else {
+                resolve(NSNull())
+                return
+            }
             resolve(SimulaAds.deviceId as Any? ?? NSNull())
         }
     }

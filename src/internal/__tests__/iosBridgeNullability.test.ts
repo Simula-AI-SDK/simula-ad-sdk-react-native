@@ -90,6 +90,21 @@ describe("iOS bridge string nullability contract", () => {
     );
   });
 
+  it("does not evaluate native diagnostic properties before initialization", () => {
+    expect(moduleSource).toMatch(
+      /func getUserAgent[\s\S]*?runOnMain \{\s*guard SimulaAds\.isInitialized else \{\s*resolve\(NSNull\(\)\)\s*return\s*\}\s*resolve\(SimulaAds\.userAgent\)/,
+    );
+    expect(moduleSource).toMatch(
+      /func getDeviceId[\s\S]*?runOnMain \{\s*guard SimulaAds\.isInitialized else \{\s*resolve\(NSNull\(\)\)\s*return\s*\}\s*resolve\(SimulaAds\.deviceId/,
+    );
+    expect(androidModuleSource).toContain(
+      "promise.resolve(if (SimulaAds.isInitialized) SimulaAds.userAgent else null)",
+    );
+    expect(androidModuleSource).toContain(
+      "promise.resolve(if (SimulaAds.isInitialized) SimulaAds.deviceId else null)",
+    );
+  });
+
   it("uses distinct bridge names for the native SDK's overloaded metadata setters", () => {
     expect(bridge).toContain(
       "setMetadataValue:(NSString * _Nonnull)instanceId key:(NSString * _Nullable)key value:(NSString * _Nullable)value",

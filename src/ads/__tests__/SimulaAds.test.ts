@@ -324,4 +324,14 @@ describe("SimulaAds diagnostics", () => {
     await expect(SimulaAds.userAgent()).resolves.toBe("UA/9");
     await expect(SimulaAds.deviceId()).resolves.toBe("dev-9");
   });
+
+  it("propagates native nulls before initialization", async () => {
+    native.isInitialized.mockResolvedValueOnce(false);
+    native.getUserAgent.mockResolvedValueOnce(null);
+    native.getDeviceId.mockResolvedValueOnce(null);
+
+    await expect(SimulaAds.isInitialized()).resolves.toBe(false);
+    await expect(SimulaAds.userAgent()).resolves.toBeNull();
+    await expect(SimulaAds.deviceId()).resolves.toBeNull();
+  });
 });
