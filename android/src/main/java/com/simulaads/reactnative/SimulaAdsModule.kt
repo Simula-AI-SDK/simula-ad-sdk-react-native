@@ -37,6 +37,11 @@ import java.util.concurrent.ConcurrentHashMap
 class SimulaAdsModule(reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
 
+    private companion object {
+        const val INITIALIZATION_CONFLICT = "INITIALIZATION_CONFLICT"
+        const val INITIALIZATION_FAILED = "INITIALIZATION_FAILED"
+    }
+
     override fun getName(): String = "SimulaAdsModule"
 
     private data class AdEntry(
@@ -65,19 +70,30 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
         val adContext = if (config.hasKey("adContext") && !config.isNull("adContext"))
             config.getMap("adContext").toSimulaAdContext() else null
 
-        // Idempotent natively (first valid call wins); any-context is fine (the SDK
-        // retains the application context).
-        SimulaAds.initialize(
-            context = reactApplicationContext,
-            apiKey = apiKey,
-            devMode = devMode,
-            primaryUserID = primaryUserID,
-            hasPrivacyConsent = hasPrivacyConsent,
-            privacy = privacy,
-            telemetryEnabled = telemetryEnabled,
-            adContext = adContext,
-        )
-        promise.resolve(null)
+        val outcome = SimulaInitializationState.initialize(apiKey) {
+            SimulaAds.initialize(
+                context = reactApplicationContext,
+                apiKey = apiKey,
+                devMode = devMode,
+                primaryUserID = primaryUserID,
+                hasPrivacyConsent = hasPrivacyConsent,
+                privacy = privacy,
+                telemetryEnabled = telemetryEnabled,
+                adContext = adContext,
+            )
+        }
+
+        when (outcome) {
+            SimulaInitializationOutcome.Conflict -> promise.reject(
+                INITIALIZATION_CONFLICT,
+                "The process is already owned by a different Simula SDK configuration",
+            )
+            SimulaInitializationOutcome.Failed -> promise.reject(
+                INITIALIZATION_FAILED,
+                "Simula SDK initialization failed",
+            )
+            SimulaInitializationOutcome.Accepted -> promise.resolve(null)
+        }
     }
 
     @ReactMethod

@@ -28,6 +28,24 @@ const iosNativeAdSource = readFileSync(
   resolve(repositoryRoot, "ios/SimulaNativeAdView.swift"),
   "utf8",
 );
+const iosMiniGameSource = readFileSync(
+  resolve(repositoryRoot, "ios/SimulaMiniGameModule.swift"),
+  "utf8",
+);
+const androidMiniGameSource = readFileSync(
+  resolve(
+    repositoryRoot,
+    "android/src/main/java/com/simulaads/reactnative/SimulaMiniGameModule.kt",
+  ),
+  "utf8",
+);
+const androidInitializationSource = readFileSync(
+  resolve(
+    repositoryRoot,
+    "android/src/main/java/com/simulaads/reactnative/SimulaInitializationState.kt",
+  ),
+  "utf8",
+);
 
 describe("iOS bridge string nullability contract", () => {
   it("accepts nullable host-controlled identifiers at the Objective-C boundary", () => {
@@ -103,6 +121,37 @@ describe("iOS bridge string nullability contract", () => {
     expect(androidModuleSource).toContain(
       "promise.resolve(if (SimulaAds.isInitialized) SimulaAds.deviceId else null)",
     );
+  });
+
+  it("rejects incompatible process initialization instead of reporting success", () => {
+    expect(moduleSource).toContain("let didInitialize = SimulaAds.initialize(");
+    expect(moduleSource).toContain("SimulaAds.shared?.apiKey == apiKey");
+    expect(moduleSource).toContain('"INITIALIZATION_CONFLICT"');
+    expect(androidModuleSource).toContain('INITIALIZATION_CONFLICT = "INITIALIZATION_CONFLICT"');
+    expect(androidModuleSource).toContain("SimulaInitializationState.initialize(apiKey)");
+    expect(androidInitializationSource).toContain("private var apiKey: String? = null");
+    expect(androidInitializationSource).toContain(
+      "if (SimulaAds.isInitialized) return@synchronized SimulaInitializationOutcome.Conflict",
+    );
+    expect(iosMiniGameSource).toContain("shared.apiKey == apiKey else { return nil }");
+  });
+
+  it("keeps the iOS navigation proxy transparent to the SDK coordinator", () => {
+    expect(iosMiniGameSource).toContain("didStartProvisionalNavigation navigation:");
+    expect(iosMiniGameSource).toContain("original?.webView?(webView, didCommit: navigation)");
+    expect(iosMiniGameSource).toContain("original?.webViewWebContentProcessDidTerminate?(webView)");
+    expect(iosMiniGameSource).toContain("decidePolicyFor: navigationResponse");
+    expect(iosMiniGameSource).toContain("forwardNavigationAction(");
+    expect(iosMiniGameSource).toContain("if original != nil {");
+    expect(iosMiniGameSource).toContain("if let originalUI {");
+  });
+
+  it("passes telemetryEnabled to every Android mini-game provider", () => {
+    const providerBlocks = androidMiniGameSource.match(/SimulaProvider\([\s\S]*?\) \{/g) ?? [];
+    expect(providerBlocks).toHaveLength(5);
+    for (const block of providerBlocks) {
+      expect(block).toContain("telemetryEnabled = telemetryEnabled");
+    }
   });
 
   it("uses distinct bridge names for the native SDK's overloaded metadata setters", () => {

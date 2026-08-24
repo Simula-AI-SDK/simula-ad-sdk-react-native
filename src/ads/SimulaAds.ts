@@ -4,7 +4,8 @@
  * Call `SimulaAds.initialize(...)` once at app startup (or mount a `SimulaProvider`
  * with `initializeOnMount`, which does this for you). It warms a shared server
  * session off the ad critical path, installs telemetry, and — on Android — is the
- * only way to enable telemetry. Idempotent: the first valid call wins natively.
+ * only way to enable telemetry. The first valid API key owns the native SDK for
+ * the process lifetime; same-key calls are idempotent and a different key rejects.
  */
 import {
   NativeAds,
@@ -21,6 +22,7 @@ import {
   warnInvalidIdentifier,
 } from "../internal/identifiers";
 import { safeJsonSnapshot } from "../internal/safeJson";
+import { markApiKeyAccepted } from "../internal/initializationState";
 
 export interface SimulaInitConfig {
   apiKey: string;
@@ -77,7 +79,11 @@ export function toNativePrivacy(
 }
 
 export const SimulaAds = {
-  /** Initializes the SDK. Resolves once native init returns (session warms in the background). */
+  /**
+   * Initializes the SDK. Resolves once native init returns (session warms in the
+   * background). Rejects with `INITIALIZATION_CONFLICT` if another API key already
+   * owns the process; switching keys requires an app-process restart.
+   */
   async initialize(config: SimulaInitConfig): Promise<void> {
     if (!isAdsModuleAvailable()) {
       warnAdsUnavailable("initialize");
@@ -87,6 +93,7 @@ export const SimulaAds = {
     // The IPv4 resolution beacon now lives in the native SDKs (fired after
     // session creation, carrying the server session id) — no JS-side work here.
     await NativeAds!.initialize(toNativeConfig({ ...config, apiKey }));
+    markApiKeyAccepted(apiKey);
   },
 
   /** Whether the SDK has been initialized with a valid API key. */

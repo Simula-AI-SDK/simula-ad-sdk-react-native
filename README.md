@@ -31,6 +31,10 @@ Full integration guides, API references, and examples are available at:
 - [Rewarded Ad](https://docs.simula.ad/react-native-sdk/rewarded-ad) -- rewarded ad with server-side verification
 - [Character Selector](https://docs.simula.ad/react-native-sdk/character-selector) -- character discovery component
 
+## Initialization
+
+The first valid API key owns the native SDK for the lifetime of the app process. Repeated initialization with the same key is safe and idempotent. Attempting to switch to another key rejects with `INITIALIZATION_CONFLICT`; restart the app process to use a different key. Initialize through this React Native package rather than racing it with direct Kotlin or Swift initialization.
+
 ## Publisher Metadata
 
 Attach publisher-defined dimensions to an ad before loading it:

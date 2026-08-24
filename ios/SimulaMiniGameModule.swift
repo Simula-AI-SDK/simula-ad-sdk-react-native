@@ -8,6 +8,8 @@ import SimulaAdSDK
 @objc(SimulaMiniGameModule)
 class SimulaMiniGameModule: RCTEventEmitter {
 
+    private static let initializationConflictCode = "INITIALIZATION_CONFLICT"
+
     // Menu/Interstitial are presented as .overFullScreen modals so they join
     // the main window's presentedViewController chain.  The Swift SDK's
     // presentViewController() then walks that chain, finds our hosting VC,
@@ -30,14 +32,6 @@ class SimulaMiniGameModule: RCTEventEmitter {
     // WebView, so it's presented plainly (no WebView-scan timer / link interceptor).
     private var characterSelectorHostingController: UIHostingController<CharacterSelectorWrapper>?
 
-    // A single SimulaProvider is cached and reused across re-shows so the SDK's
-    // per-provider session cache actually applies — without this, a fresh
-    // provider every show forces a new createSession() round-trip on the ad
-    // path. Keyed by the full config; a config change replaces the previous one.
-    // The SDK is built around one shared provider, so every minigame surface
-    // (menu/button/invitation/interstitial) reuses it.
-    private var cachedProvider: SimulaProvider?
-    private var cachedProviderKey: String?
     private var hasListeners = false
 
     // MARK: - UIApplication.open() interceptor
@@ -300,54 +294,15 @@ class SimulaMiniGameModule: RCTEventEmitter {
         removeSubviewOverlay(&invitationHostingController)
         removeCharacterSelectorOverlay()
         UIApplication.shared.isStatusBarHidden = false
-        cachedProvider = nil
-        cachedProviderKey = nil
     }
 
     // MARK: - Provider reuse
 
-    /// Returns a SimulaProvider for the given config, reusing the cached instance
-    /// when the config is unchanged so its warm session survives across re-shows.
-    ///
-    /// Prefers the imperative SDK's shared provider (`SimulaAds.shared`) for the
-    /// winning API key, so runtime privacy/identity updates remain authoritative and
-    /// every surface shares one warm session. Falls back to a fully configured local
-    /// provider only when no matching shared provider exists.
-    private func reusableProvider(apiKey: String,
-                                  devMode: Bool,
-                                  primaryUserID: String?,
-                                  hasPrivacyConsent: Bool,
-                                  props: NSDictionary) -> SimulaProvider {
-        let privacy = convertPrivacyConfig(props["privacy"])
-        let telemetryEnabled = props["telemetryEnabled"] as? Bool ?? true
-        let adContext = convertAdContext(props["adContext"])
-        let key = "\(apiKey)|\(devMode)|\(primaryUserID ?? "")|\(hasPrivacyConsent)|\(String(describing: props["privacy"]))|\(telemetryEnabled)|\(String(describing: props["adContext"]))"
-
-        // `SimulaAds` is @MainActor; we're on methodQueue = .main, so this read is
-        // safe. When the host called SimulaAds.initialize (e.g. via SimulaProvider's
-        // initializeOnMount or preload), reuse that already-warm session.
-        if let shared = MainActor.assumeIsolated({ SimulaAds.shared }),
-           shared.apiKey == apiKey {
-            cachedProvider = shared
-            cachedProviderKey = key
-            return shared
-        }
-
-        if let cached = cachedProvider, cachedProviderKey == key {
-            return cached
-        }
-        let provider = SimulaProvider(
-            apiKey: apiKey,
-            devMode: devMode,
-            primaryUserID: primaryUserID,
-            hasPrivacyConsent: hasPrivacyConsent,
-            privacy: privacy,
-            telemetryEnabled: telemetryEnabled,
-            adContext: adContext
-        )
-        cachedProvider = provider
-        cachedProviderKey = key
-        return provider
+    /// React Native surfaces share the provider accepted by the imperative initialization path.
+    private func reusableProvider(apiKey: String) -> SimulaProvider? {
+        guard let shared = MainActor.assumeIsolated({ SimulaAds.shared }),
+              shared.apiKey == apiKey else { return nil }
+        return shared
     }
 
     // MARK: - MiniGameMenu
@@ -368,23 +323,20 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let charImage = props["charImage"] as? String ?? ""
         let charDesc = props["charDesc"] as? String
         let delegateChar = props["delegateChar"] as? Bool ?? true
-        let hasPrivacyConsent = props["hasPrivacyConsent"] as? Bool ?? true
-        let devMode = props["devMode"] as? Bool ?? false
-        let primaryUserID = props["primaryUserID"] as? String
         let maxGamesToShow = convertMaxGamesToShow(props["maxGamesToShow"])
 
         let messages = convertMessages(props["messages"])
         let theme = convertTheme(props["theme"])
 
+        guard let provider = self.reusableProvider(apiKey: apiKey) else {
+            reject(
+                Self.initializationConflictCode,
+                "The process is already owned by a different Simula SDK configuration",
+                nil
+            )
+            return
+        }
         self.removeFullscreenOverlay(&self.menuHostingController)
-
-        let provider = self.reusableProvider(
-            apiKey: apiKey,
-            devMode: devMode,
-            primaryUserID: primaryUserID,
-            hasPrivacyConsent: hasPrivacyConsent,
-            props: props
-        )
 
         let menuView = MiniGameMenuWrapper(
             provider: provider,
@@ -444,24 +396,21 @@ class SimulaMiniGameModule: RCTEventEmitter {
             return
         }
 
-        let hasPrivacyConsent = props["hasPrivacyConsent"] as? Bool ?? true
-        let devMode = props["devMode"] as? Bool ?? false
-        let primaryUserID = props["primaryUserID"] as? String
         let text = props["text"] as? String
         let showPulsate = props["showPulsate"] as? Bool ?? false
         let showBadge = props["showBadge"] as? Bool ?? false
         let theme = convertButtonTheme(props["theme"])
         let width = convertDimension(props["width"])
 
+        guard let provider = self.reusableProvider(apiKey: apiKey) else {
+            reject(
+                Self.initializationConflictCode,
+                "The process is already owned by a different Simula SDK configuration",
+                nil
+            )
+            return
+        }
         self.removeSubviewOverlay(&self.buttonHostingController)
-
-        let provider = self.reusableProvider(
-            apiKey: apiKey,
-            devMode: devMode,
-            primaryUserID: primaryUserID,
-            hasPrivacyConsent: hasPrivacyConsent,
-            props: props
-        )
 
         let buttonView = MiniGameButtonWrapper(
             provider: provider,
@@ -502,9 +451,6 @@ class SimulaMiniGameModule: RCTEventEmitter {
             return
         }
 
-        let hasPrivacyConsent = props["hasPrivacyConsent"] as? Bool ?? true
-        let devMode = props["devMode"] as? Bool ?? false
-        let primaryUserID = props["primaryUserID"] as? String
         let titleText = props["titleText"] as? String ?? "Want to play a game?"
         let subText = props["subText"] as? String ?? "Take a break and challenge yourself!"
         let ctaText = props["ctaText"] as? String ?? "Play a Game"
@@ -514,15 +460,15 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let width = props["width"]
         let top = props["top"]
 
+        guard let provider = self.reusableProvider(apiKey: apiKey) else {
+            reject(
+                Self.initializationConflictCode,
+                "The process is already owned by a different Simula SDK configuration",
+                nil
+            )
+            return
+        }
         self.removeSubviewOverlay(&self.invitationHostingController)
-
-        let provider = self.reusableProvider(
-            apiKey: apiKey,
-            devMode: devMode,
-            primaryUserID: primaryUserID,
-            hasPrivacyConsent: hasPrivacyConsent,
-            props: props
-        )
 
         let invitationView = MiniGameInvitationWrapper(
             provider: provider,
@@ -581,23 +527,20 @@ class SimulaMiniGameModule: RCTEventEmitter {
             return
         }
 
-        let hasPrivacyConsent = props["hasPrivacyConsent"] as? Bool ?? true
-        let devMode = props["devMode"] as? Bool ?? false
-        let primaryUserID = props["primaryUserID"] as? String
         let invitationText = props["invitationText"] as? String ?? "Want to play a game?"
         let ctaText = props["ctaText"] as? String ?? "Play a Game"
         let backgroundImage = props["backgroundImage"] as? String
         let theme = convertInterstitialTheme(props["theme"])
 
+        guard let provider = self.reusableProvider(apiKey: apiKey) else {
+            reject(
+                Self.initializationConflictCode,
+                "The process is already owned by a different Simula SDK configuration",
+                nil
+            )
+            return
+        }
         self.removeFullscreenOverlay(&self.interstitialHostingController)
-
-        let provider = self.reusableProvider(
-            apiKey: apiKey,
-            devMode: devMode,
-            primaryUserID: primaryUserID,
-            hasPrivacyConsent: hasPrivacyConsent,
-            props: props
-        )
 
         let interstitialView = MiniGameInterstitialWrapper(
             provider: provider,
@@ -667,8 +610,8 @@ class SimulaMiniGameModule: RCTEventEmitter {
         // is reused by every declarative surface via reusableProvider — unifying the
         // imperative + declarative session. SimulaAds is @MainActor; methodQueue is
         // .main, so this is safe.
-        MainActor.assumeIsolated {
-            SimulaAds.initialize(
+        let accepted = MainActor.assumeIsolated {
+            let didInitialize = SimulaAds.initialize(
                 apiKey: apiKey,
                 devMode: devMode,
                 primaryUserID: primaryUserID,
@@ -677,17 +620,27 @@ class SimulaMiniGameModule: RCTEventEmitter {
                 telemetryEnabled: telemetryEnabled,
                 adContext: adContext
             )
+            return didInitialize || SimulaAds.shared?.apiKey == apiKey
+        }
+        guard accepted else {
+            reject(
+                Self.initializationConflictCode,
+                "The process is already owned by a different Simula SDK configuration",
+                nil
+            )
+            return
         }
 
         // Warm (and cache) the provider so the first real show reuses a live
         // session instead of paying the createSession() round-trip on the ad path.
-        let provider = self.reusableProvider(
-            apiKey: apiKey,
-            devMode: devMode,
-            primaryUserID: primaryUserID,
-            hasPrivacyConsent: hasPrivacyConsent,
-            props: props
-        )
+        guard let provider = self.reusableProvider(apiKey: apiKey) else {
+            reject(
+                Self.initializationConflictCode,
+                "The process is already owned by a different Simula SDK configuration",
+                nil
+            )
+            return
+        }
         // Completion-based session warm-up — no bridge-created task (the bridge is compiled
         // by the host's Xcode; the task lives inside the prebuilt SDK binary, SDK >= 1.1.4).
         MainActor.assumeIsolated { // methodQueue = .main
@@ -708,23 +661,20 @@ class SimulaMiniGameModule: RCTEventEmitter {
             return
         }
 
-        let hasPrivacyConsent = props["hasPrivacyConsent"] as? Bool ?? true
-        let devMode = props["devMode"] as? Bool ?? false
-        let primaryUserID = props["primaryUserID"] as? String
         let title = props["title"] as? String ?? "Select Your Game Partner"
         let ctaText = props["ctaText"] as? String ?? "🚀 Launch Game"
         let characters = convertCharacters(props["characters"])
         let theme = convertCharacterSelectorTheme(props["theme"])
 
+        guard let provider = self.reusableProvider(apiKey: apiKey) else {
+            reject(
+                Self.initializationConflictCode,
+                "The process is already owned by a different Simula SDK configuration",
+                nil
+            )
+            return
+        }
         self.removeCharacterSelectorOverlay()
-
-        let provider = self.reusableProvider(
-            apiKey: apiKey,
-            devMode: devMode,
-            primaryUserID: primaryUserID,
-            hasPrivacyConsent: hasPrivacyConsent,
-            props: props
-        )
 
         let view = CharacterSelectorWrapper(
             provider: provider,
@@ -1359,6 +1309,31 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
 
     // MARK: - WKNavigationDelegate
 
+    private func forwardNavigationAction(
+        _ webView: WKWebView,
+        navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        switch original?.webView?(
+            webView,
+            decidePolicyFor: navigationAction,
+            decisionHandler: decisionHandler
+        ) {
+        case .some:
+            break
+        case .none:
+            decisionHandler(.allow)
+        }
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        original?.webView?(webView, didStartProvisionalNavigation: navigation)
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        original?.webView?(webView, didCommit: navigation)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         original?.webView?(webView, didFinish: navigation)
     }
@@ -1371,20 +1346,58 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
         original?.webView?(webView, didFailProvisionalNavigation: navigation, withError: error)
     }
 
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        original?.webViewWebContentProcessDidTerminate?(webView)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationResponse: WKNavigationResponse,
+        decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+    ) {
+        switch original?.webView?(
+            webView,
+            decidePolicyFor: navigationResponse,
+            decisionHandler: decisionHandler
+        ) {
+        case .some:
+            break
+        case .none:
+            decisionHandler(.allow)
+        }
+    }
+
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
+        if original != nil {
+            forwardNavigationAction(
+                webView,
+                navigationAction: navigationAction,
+                decisionHandler: decisionHandler
+            )
+            return
+        }
+
         guard let url = navigationAction.request.url else {
-            decisionHandler(.allow)
+            forwardNavigationAction(
+                webView,
+                navigationAction: navigationAction,
+                decisionHandler: decisionHandler
+            )
             return
         }
 
         let scheme = url.scheme?.lowercased() ?? ""
 
         if internalSchemes.contains(scheme) {
-            decisionHandler(.allow)
+            forwardNavigationAction(
+                webView,
+                navigationAction: navigationAction,
+                decisionHandler: decisionHandler
+            )
             return
         }
 
@@ -1406,10 +1419,13 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
             return
         }
 
-        // Everything else (same-origin, cross-domain, iframes) — allow.
-        // If a server redirect lands on apps.apple.com, this method is called
-        // again and the App Store check above catches it.
-        decisionHandler(.allow)
+        // Preserve the SDK coordinator's click attribution, navigation identity, and any future
+        // routing behavior for everything this proxy does not handle itself.
+        forwardNavigationAction(
+            webView,
+            navigationAction: navigationAction,
+            decisionHandler: decisionHandler
+        )
     }
 
     // MARK: - WKUIDelegate (target="_blank" / window.open)
@@ -1420,6 +1436,15 @@ class WKNavigationDelegateProxy: NSObject, WKNavigationDelegate, WKUIDelegate, S
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
+        if let originalUI {
+            return originalUI.webView?(
+                webView,
+                createWebViewWith: configuration,
+                for: navigationAction,
+                windowFeatures: windowFeatures
+            )
+        }
+
         if let url = navigationAction.request.url {
             let scheme = url.scheme?.lowercased() ?? ""
             if let appID = SimulaMiniGameModule.appStoreID(from: url) {

@@ -133,6 +133,17 @@ describe("SimulaAds.initialize", () => {
       customContext: { tier: "pro" },
     });
   });
+
+  it("propagates native initialization conflicts", async () => {
+    const conflict = Object.assign(new Error("different process key"), {
+      code: "INITIALIZATION_CONFLICT",
+    });
+    native.initialize.mockRejectedValueOnce(conflict);
+
+    await expect(SimulaAds.initialize({ apiKey: "second-key" })).rejects.toMatchObject({
+      code: "INITIALIZATION_CONFLICT",
+    });
+  });
 });
 
 describe("SimulaAds.updateContext", () => {

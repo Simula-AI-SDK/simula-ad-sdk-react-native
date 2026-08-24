@@ -8,13 +8,24 @@
  * and all other logic internally.
  */
 
-import React, { createContext, useContext, useEffect, useMemo, useRef } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { SimulaProviderProps, SimulaContextValue } from "../types";
 import { SimulaAds } from "../ads/SimulaAds";
 import { SimulaPrivacy } from "../privacy/SimulaPrivacy";
 import { toNativeAdContext } from "../ads/context";
 import { isNonBlankString } from "../internal/identifiers";
 import { safeJsonSnapshot } from "../internal/safeJson";
+import {
+  getAcceptedApiKey,
+  subscribeToAcceptedApiKey,
+} from "../internal/initializationState";
 
 const SimulaContext = createContext<SimulaContextValue | null>(null);
 
@@ -37,6 +48,11 @@ export function SimulaProvider({
   adContext,
   initializeOnMount = true,
 }: SimulaProviderProps): React.JSX.Element {
+  const [initializedApiKey, setInitializedApiKey] = useState(getAcceptedApiKey);
+  useEffect(
+    () => subscribeToAcceptedApiKey(setInitializedApiKey),
+    [],
+  );
   // Snapshot host objects so malformed values cannot crash render or cross the bridge.
   const privacySnapshot = useMemo(
     () => (privacy == null ? undefined : safeJsonSnapshot(privacy)),
@@ -85,8 +101,8 @@ export function SimulaProvider({
   );
 
   // Eager init: warms the native session off the first ad's critical path, and on
-  // Android is the only path that enables telemetry. Native init is idempotent
-  // (first valid call wins), so re-running on a prop change is a harmless no-op.
+  // Android is the only path that enables telemetry. Same-key native init is
+  // idempotent; changing apiKey cannot replace the process owner and is reported.
   useEffect(() => {
     if (!initializeOnMount || !isNonBlankString(apiKey)) return;
     SimulaAds.initialize(initializationConfig).catch((error: unknown) => {
@@ -105,38 +121,45 @@ export function SimulaProvider({
     adContextKey,
   ]);
 
+  // A rejected key must not push its identity or targeting state into the process owner.
+  // Explicit SimulaAds.initialize calls update the same accepted-key state.
+  const canApplyRuntimeUpdates = initializedApiKey === apiKey;
+
   // Runtime consent changes after mount → push to the native store (which debounces
   // and re-syncs the session). Skipped on the first run since initialize already
   // applied the initial consent.
   const privacyRuntimeKey = `${hasPrivacyConsent}:${privacyKey}`;
   const previousPrivacyKey = useRef(privacyRuntimeKey);
   useEffect(() => {
+    if (!canApplyRuntimeUpdates) return;
     if (previousPrivacyKey.current === privacyRuntimeKey) return;
     previousPrivacyKey.current = privacyRuntimeKey;
     SimulaPrivacy.apply({ hasPrivacyConsent, ...(safePrivacy ?? {}) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [privacyRuntimeKey]);
+  }, [privacyRuntimeKey, canApplyRuntimeUpdates]);
 
   // Runtime ad-context changes after mount → replace the native targeting context.
   // Skipped on the first run since initialize already applied the initial value.
   const previousAdContextKey = useRef(adContextKey);
   useEffect(() => {
+    if (!canApplyRuntimeUpdates) return;
     if (previousAdContextKey.current === adContextKey) return;
     previousAdContextKey.current = adContextKey;
     SimulaAds.updateContext(safeAdContext ?? null);
     // adContextKey stands in for the (deep) adContext object.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adContextKey]);
+  }, [adContextKey, canApplyRuntimeUpdates]);
 
   // Runtime primaryUserID changes after mount (login/logout) → patch the native PPID
   // (init is idempotent, so it wouldn't re-apply a changed id on its own). Skipped on
   // the first run since initialize already carried the initial value.
   const previousPrimaryUserID = useRef(primaryUserID ?? null);
   useEffect(() => {
+    if (!canApplyRuntimeUpdates) return;
     if (previousPrimaryUserID.current === (primaryUserID ?? null)) return;
     previousPrimaryUserID.current = primaryUserID ?? null;
     SimulaAds.updatePrimaryUserID(primaryUserID ?? null);
-  }, [primaryUserID]);
+  }, [primaryUserID, canApplyRuntimeUpdates]);
 
   return (
     <SimulaContext.Provider value={contextValue}>

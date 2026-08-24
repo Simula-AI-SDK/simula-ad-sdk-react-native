@@ -151,7 +151,26 @@ describe.each(surfaces)("$name surface lifecycle", (surface) => {
     await tree.unmount();
   });
 
-  it("permits a new prop-driven attempt after native show rejects", async () => {
+  it("does not present after canonical initialization rejects", async () => {
+    const ads = NativeModules.SimulaAdsModule;
+    const show = native[surface.show] as jest.Mock;
+    const error = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    ads.initialize.mockRejectedValueOnce(
+      Object.assign(new Error("different process key"), {
+        code: "INITIALIZATION_CONFLICT",
+      }),
+    );
+
+    const tree = await mount(
+      surfaceElement(surface, true, "second-key", jest.fn(), jest.fn()),
+    );
+
+    expect(show).not.toHaveBeenCalled();
+    await tree.unmount();
+    error.mockRestore();
+  });
+
+  it("permits a new open attempt after native show rejects", async () => {
     const error = jest.spyOn(console, "error").mockImplementation(() => undefined);
     const show = native[surface.show] as jest.Mock;
     show.mockRejectedValueOnce(new Error("presentation failed"));
@@ -159,11 +178,14 @@ describe.each(surfaces)("$name surface lifecycle", (surface) => {
     const onClick = jest.fn();
 
     const tree = await mount(
-      surfaceElement(surface, true, "first-key", onClose, onClick),
+      surfaceElement(surface, true, "api-key", onClose, onClick),
     );
     expect(show).toHaveBeenCalledTimes(1);
     await tree.update(
-      surfaceElement(surface, true, "second-key", onClose, onClick),
+      surfaceElement(surface, false, "api-key", onClose, onClick),
+    );
+    await tree.update(
+      surfaceElement(surface, true, "api-key", onClose, onClick),
     );
     expect(show).toHaveBeenCalledTimes(2);
 
