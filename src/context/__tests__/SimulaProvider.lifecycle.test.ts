@@ -1,5 +1,6 @@
 import React, { StrictMode } from "react";
 import { SimulaProvider, useSimulaContext } from "../SimulaProvider";
+import { SimulaAds } from "../../ads/SimulaAds";
 import { NativeModules, __reset } from "../../test/reactNativeMock";
 import { mount } from "../../test/reactHarness";
 
@@ -75,6 +76,54 @@ describe("SimulaProvider lifecycle", () => {
     expect(native.applyConsent).toHaveBeenCalledTimes(1);
     expect(native.updateContext).toHaveBeenCalledTimes(1);
     expect(native.updatePrimaryUserID).toHaveBeenCalledWith("user-2");
+    await tree.unmount();
+  });
+
+  it("does not apply runtime state from a rejected process key", async () => {
+    const error = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    const tree = await mount(providerElement());
+    native.initialize.mockRejectedValueOnce(
+      Object.assign(new Error("different process key"), {
+        code: "INITIALIZATION_CONFLICT",
+      }),
+    );
+
+    await tree.update(
+      providerElement({
+        apiKey: "second-key",
+        hasPrivacyConsent: false,
+        privacy: { coppaApplies: true },
+        adContext: { category: "other-key" },
+        primaryUserID: "other-user",
+      }),
+    );
+
+    expect(native.applyConsent).not.toHaveBeenCalled();
+    expect(native.updateContext).not.toHaveBeenCalled();
+    expect(native.updatePrimaryUserID).not.toHaveBeenCalled();
+    await tree.unmount();
+    error.mockRestore();
+  });
+
+  it("gates manual-provider updates by the explicitly accepted key", async () => {
+    await SimulaAds.initialize({ apiKey: "manual-key" });
+    const tree = await mount(
+      providerElement({ apiKey: "other-key", initializeOnMount: false }),
+    );
+
+    await tree.update(
+      providerElement({
+        apiKey: "other-key",
+        initializeOnMount: false,
+        privacy: { coppaApplies: true },
+        adContext: { category: "other-key" },
+        primaryUserID: "other-user",
+      }),
+    );
+
+    expect(native.applyConsent).not.toHaveBeenCalled();
+    expect(native.updateContext).not.toHaveBeenCalled();
+    expect(native.updatePrimaryUserID).not.toHaveBeenCalled();
     await tree.unmount();
   });
 

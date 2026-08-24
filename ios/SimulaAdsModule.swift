@@ -29,6 +29,7 @@ class SimulaAdsModule: RCTEventEmitter {
 
     private static let eventName = "SimulaAds_onAdEvent"
     private static let invalidArgumentCode = "INVALID_ARGUMENT"
+    private static let initializationConflictCode = "INITIALIZATION_CONFLICT"
 
     private var hasListeners = false
 
@@ -161,7 +162,7 @@ class SimulaAdsModule: RCTEventEmitter {
         let adContext = convertAdContext(config["adContext"])
 
         runOnMain {
-            SimulaAds.initialize(
+            let didInitialize = SimulaAds.initialize(
                 apiKey: apiKey,
                 devMode: devMode,
                 primaryUserID: primaryUserID,
@@ -170,7 +171,15 @@ class SimulaAdsModule: RCTEventEmitter {
                 telemetryEnabled: telemetryEnabled,
                 adContext: adContext
             )
-            resolve(nil)
+            if didInitialize || SimulaAds.shared?.apiKey == apiKey {
+                resolve(nil)
+            } else {
+                reject(
+                    Self.initializationConflictCode,
+                    "The process is already owned by a different Simula SDK configuration",
+                    nil
+                )
+            }
         }
     }
 
@@ -277,6 +286,10 @@ class SimulaAdsModule: RCTEventEmitter {
     func getUserAgent(_ resolve: @escaping RCTPromiseResolveBlock,
                       reject: @escaping RCTPromiseRejectBlock) {
         runOnMain {
+            guard SimulaAds.isInitialized else {
+                resolve(NSNull())
+                return
+            }
             resolve(SimulaAds.userAgent)
         }
     }
@@ -285,6 +298,10 @@ class SimulaAdsModule: RCTEventEmitter {
     func getDeviceId(_ resolve: @escaping RCTPromiseResolveBlock,
                      reject: @escaping RCTPromiseRejectBlock) {
         runOnMain {
+            guard SimulaAds.isInitialized else {
+                resolve(NSNull())
+                return
+            }
             resolve(SimulaAds.deviceId as Any? ?? NSNull())
         }
     }

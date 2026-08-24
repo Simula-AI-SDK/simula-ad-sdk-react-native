@@ -2,7 +2,7 @@ import React from "react";
 import { useMiniGamePreload } from "../useMiniGamePreload";
 import { SimulaProvider } from "../../context/SimulaProvider";
 import { NativeModules, __reset } from "../../test/reactNativeMock";
-import { mount } from "../../test/reactHarness";
+import { mount, runInAct } from "../../test/reactHarness";
 
 const native = NativeModules.SimulaAdsModule;
 const miniGameNative = NativeModules.SimulaMiniGameModule;
@@ -48,7 +48,9 @@ describe("useMiniGamePreload lifecycle", () => {
         adContext: { category: "games" },
       }),
     );
-    await preload?.();
+    await runInAct(async () => {
+      await preload?.();
+    });
     expect(native.initialize).toHaveBeenLastCalledWith(
       expect.objectContaining({
         apiKey: "first-key",
@@ -68,7 +70,9 @@ describe("useMiniGamePreload lifecycle", () => {
     );
 
     await tree.update(preloadProbe("second-key", capture));
-    await preload?.();
+    await runInAct(async () => {
+      await preload?.();
+    });
     expect(native.initialize).toHaveBeenLastCalledWith(
       expect.objectContaining({ apiKey: "second-key", primaryUserID: null }),
     );
@@ -82,7 +86,9 @@ describe("useMiniGamePreload lifecycle", () => {
         preload = next;
       }),
     );
-    await expect(preload?.()).resolves.toBeUndefined();
+    await runInAct(async () => {
+      await expect(preload?.()).resolves.toBeUndefined();
+    });
     expect(native.initialize).not.toHaveBeenCalled();
     await blank.unmount();
 
@@ -92,7 +98,9 @@ describe("useMiniGamePreload lifecycle", () => {
         preload = next;
       }),
     );
-    await expect(preload?.()).resolves.toBeUndefined();
+    await runInAct(async () => {
+      await expect(preload?.()).resolves.toBeUndefined();
+    });
     await valid.unmount();
   });
 });

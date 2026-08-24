@@ -133,6 +133,17 @@ describe("SimulaAds.initialize", () => {
       customContext: { tier: "pro" },
     });
   });
+
+  it("propagates native initialization conflicts", async () => {
+    const conflict = Object.assign(new Error("different process key"), {
+      code: "INITIALIZATION_CONFLICT",
+    });
+    native.initialize.mockRejectedValueOnce(conflict);
+
+    await expect(SimulaAds.initialize({ apiKey: "second-key" })).rejects.toMatchObject({
+      code: "INITIALIZATION_CONFLICT",
+    });
+  });
 });
 
 describe("SimulaAds.updateContext", () => {
@@ -323,5 +334,15 @@ describe("SimulaAds diagnostics", () => {
     native.getDeviceId.mockResolvedValueOnce("dev-9");
     await expect(SimulaAds.userAgent()).resolves.toBe("UA/9");
     await expect(SimulaAds.deviceId()).resolves.toBe("dev-9");
+  });
+
+  it("propagates native nulls before initialization", async () => {
+    native.isInitialized.mockResolvedValueOnce(false);
+    native.getUserAgent.mockResolvedValueOnce(null);
+    native.getDeviceId.mockResolvedValueOnce(null);
+
+    await expect(SimulaAds.isInitialized()).resolves.toBe(false);
+    await expect(SimulaAds.userAgent()).resolves.toBeNull();
+    await expect(SimulaAds.deviceId()).resolves.toBeNull();
   });
 });

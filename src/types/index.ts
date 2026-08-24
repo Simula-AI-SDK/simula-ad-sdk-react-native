@@ -20,6 +20,7 @@ export interface Message {
  * Props for SimulaProvider
  */
 export interface SimulaProviderProps {
+  /** Process-lifetime SDK key. Changing it after initialization is unsupported. */
   apiKey: string;
   children: ReactNode;
   hasPrivacyConsent?: boolean;

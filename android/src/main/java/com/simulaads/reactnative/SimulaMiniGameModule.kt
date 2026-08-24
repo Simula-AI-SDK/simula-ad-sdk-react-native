@@ -87,6 +87,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
         val primaryUserID = props.getStringOrNull("primaryUserID")
         val privacy = props.getMapOrNull("privacy").toSimulaPrivacyConfig()
+        val telemetryEnabled = if (props.hasKey("telemetryEnabled"))
+            props.getBoolean("telemetryEnabled") else true
         val adContext = props.getMapOrNull("adContext").toSimulaAdContext()
         // Coerce to one of the supported values (parity with iOS convertMaxGamesToShow).
         val maxGamesToShow = when (
@@ -117,6 +119,7 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
                         primaryUserID = primaryUserID,
                         privacy = privacy,
                         adContext = adContext,
+                        telemetryEnabled = telemetryEnabled,
                     ) {
                         MiniGameMenu(
                             isOpen = isMenuOpen,
@@ -175,6 +178,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
         val primaryUserID = props.getStringOrNull("primaryUserID")
         val privacy = props.getMapOrNull("privacy").toSimulaPrivacyConfig()
+        val telemetryEnabled = if (props.hasKey("telemetryEnabled"))
+            props.getBoolean("telemetryEnabled") else true
         val adContext = props.getMapOrNull("adContext").toSimulaAdContext()
 
         val text = props.getStringOrNull("text")
@@ -196,6 +201,7 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
                         primaryUserID = primaryUserID,
                         privacy = privacy,
                         adContext = adContext,
+                        telemetryEnabled = telemetryEnabled,
                     ) {
                         MiniGameButton(
                             text = text,
@@ -247,6 +253,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
         val primaryUserID = props.getStringOrNull("primaryUserID")
         val privacy = props.getMapOrNull("privacy").toSimulaPrivacyConfig()
+        val telemetryEnabled = if (props.hasKey("telemetryEnabled"))
+            props.getBoolean("telemetryEnabled") else true
         val adContext = props.getMapOrNull("adContext").toSimulaAdContext()
 
         val titleText = props.getStringOrNull("titleText") ?: "Want to play a game?"
@@ -281,6 +289,7 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
                         primaryUserID = primaryUserID,
                         privacy = privacy,
                         adContext = adContext,
+                        telemetryEnabled = telemetryEnabled,
                     ) {
                         MiniGameInvitation(
                             titleText = titleText,
@@ -346,6 +355,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
         val primaryUserID = props.getStringOrNull("primaryUserID")
         val privacy = props.getMapOrNull("privacy").toSimulaPrivacyConfig()
+        val telemetryEnabled = if (props.hasKey("telemetryEnabled"))
+            props.getBoolean("telemetryEnabled") else true
         val adContext = props.getMapOrNull("adContext").toSimulaAdContext()
 
         val charImage = props.getString("charImage")
@@ -373,6 +384,7 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
                         primaryUserID = primaryUserID,
                         privacy = privacy,
                         adContext = adContext,
+                        telemetryEnabled = telemetryEnabled,
                     ) {
                         MiniGameInterstitial(
                             charImage = charImage,
@@ -438,17 +450,28 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
             props.getBoolean("telemetryEnabled") else true
         val adContext = props.getMapOrNull("adContext").toSimulaAdContext()
 
-        SimulaAds.initialize(
-            context = reactApplicationContext,
-            apiKey = apiKey,
-            devMode = devMode,
-            primaryUserID = primaryUserID,
-            hasPrivacyConsent = hasPrivacyConsent,
-            privacy = privacy,
-            telemetryEnabled = telemetryEnabled,
-            adContext = adContext,
-        )
-        promise.resolve(null)
+        when (SimulaInitializationState.initialize(apiKey) {
+            SimulaAds.initialize(
+                context = reactApplicationContext,
+                apiKey = apiKey,
+                devMode = devMode,
+                primaryUserID = primaryUserID,
+                hasPrivacyConsent = hasPrivacyConsent,
+                privacy = privacy,
+                telemetryEnabled = telemetryEnabled,
+                adContext = adContext,
+            )
+        }) {
+            SimulaInitializationOutcome.Accepted -> promise.resolve(null)
+            SimulaInitializationOutcome.Conflict -> promise.reject(
+                "INITIALIZATION_CONFLICT",
+                "The process is already owned by a different Simula SDK configuration",
+            )
+            SimulaInitializationOutcome.Failed -> promise.reject(
+                "INITIALIZATION_FAILED",
+                "Simula SDK initialization failed",
+            )
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -476,6 +499,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
         val primaryUserID = props.getStringOrNull("primaryUserID")
         val privacy = props.getMapOrNull("privacy").toSimulaPrivacyConfig()
+        val telemetryEnabled = if (props.hasKey("telemetryEnabled"))
+            props.getBoolean("telemetryEnabled") else true
         val adContext = props.getMapOrNull("adContext").toSimulaAdContext()
         val title = props.getStringOrNull("title") ?: "Select Your Game Partner"
         val ctaText = props.getStringOrNull("ctaText") ?: "🚀 Launch Game"
@@ -499,6 +524,7 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
                         primaryUserID = primaryUserID,
                         privacy = privacy,
                         adContext = adContext,
+                        telemetryEnabled = telemetryEnabled,
                     ) {
                         CharacterSelector(
                             isOpen = isCharacterSelectorOpen,
