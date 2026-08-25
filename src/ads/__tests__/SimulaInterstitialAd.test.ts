@@ -2,7 +2,12 @@ import { SimulaInterstitialAd } from "../SimulaInterstitialAd";
 import { SimulaRewardedAd } from "../SimulaRewardedAd";
 import { SimulaAdEventType } from "../types";
 import { AD_EVENT_NAME } from "../../internal/nativeModules";
-import { NativeModules, __emit, __reset } from "../../test/reactNativeMock";
+import {
+  NativeModules,
+  __emit,
+  __listenerCount,
+  __reset,
+} from "../../test/reactNativeMock";
 
 const native = NativeModules.SimulaAdsModule;
 
@@ -123,6 +128,28 @@ describe("SimulaInterstitialAd", () => {
     __emit(AD_EVENT_NAME, { instanceId, adType: "interstitial", type: "LOADED" });
     expect(loaded).toHaveBeenCalledTimes(1); // unsubscribed
     ad.destroy();
+  });
+
+  it("fans repeated JS listeners out through one native subscription", () => {
+    const ad = SimulaInterstitialAd.create("unit");
+    const instanceId = native.createInterstitial.mock.calls[0][0];
+    const listeners = Array.from({ length: 100 }, () => jest.fn());
+    const unsubscribe = listeners.map((listener) =>
+      ad.addAdEventListener(SimulaAdEventType.CLICKED, listener),
+    );
+
+    expect(__listenerCount(AD_EVENT_NAME)).toBe(1);
+    __emit(AD_EVENT_NAME, {
+      instanceId,
+      adType: "interstitial",
+      type: "CLICKED",
+    });
+    for (const listener of listeners) expect(listener).toHaveBeenCalledTimes(1);
+
+    unsubscribe.forEach((off) => off());
+    expect(__listenerCount(AD_EVENT_NAME)).toBe(1);
+    ad.destroy();
+    expect(__listenerCount(AD_EVENT_NAME)).toBe(0);
   });
 
   it("keeps the loaded mirror when native still holds a ready ad", () => {

@@ -35,6 +35,24 @@ Full integration guides, API references, and examples are available at:
 
 The first valid API key owns the native SDK for the lifetime of the app process. Repeated initialization with the same key is safe and idempotent. Attempting to switch to another key rejects with `INITIALIZATION_CONFLICT`; restart the app process to use a different key. Initialize through this React Native package rather than racing it with direct Kotlin or Swift initialization.
 
+## Interstitial Click Lifecycle
+
+`useInterstitialAd` exposes `clickCount` and `wasClicked` for the currently displayed impression:
+
+```tsx
+const {
+  isLoaded,
+  clickCount,
+  wasClicked,
+  load,
+  show,
+} = useInterstitialAd("feed_interstitial");
+```
+
+Both values reset when the next `DISPLAYED` event starts a new impression. They are not reset by component rerenders, `CLOSED`, or a `LOADED` event from native auto-preload while the current ad is still displayed. For imperative ads, subscribe to `SimulaAdEventType.CLICKED` when an immediate callback is preferable. These APIs only observe native lifecycle events; native SDKs remain responsible for click telemetry and network beacons.
+
+The current pinned Kotlin and Swift click callbacks identify the ad instance but do not expose the impression/ad ID or click source. Consequently, `CLICKED` has no event-specific payload in React Native. Correlate it through the ad instance/placement; the bridge intentionally does not infer unavailable identifiers or sources.
+
 ## Publisher Metadata
 
 Attach publisher-defined dimensions to an ad before loading it:

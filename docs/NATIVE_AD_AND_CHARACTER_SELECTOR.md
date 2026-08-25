@@ -158,9 +158,17 @@ ad.addAdEventsListener((event) => {
 });
 ```
 
-The hooks surface the same: `useInterstitialAd` / `useRewardedAd` now return
-`impressionRecorded: boolean` and `adValue: AdValue | null`. Rewarded ads also emit
-`CLICKED` now (parity with interstitial).
+The hooks surface the same: `useInterstitialAd` / `useRewardedAd` return
+`impressionRecorded: boolean` and `adValue: AdValue | null`. `useInterstitialAd`
+also returns `clickCount` and `wasClicked` for the current displayed impression.
+These reset on the next `DISPLAYED`, not on rerenders, `CLOSED`, or a native
+auto-preload `LOADED` for the next ad. Rewarded ads also emit `CLICKED` (parity
+with interstitial).
+
+`CLICKED` has no event-specific payload. The current pinned Kotlin and Swift
+delegate APIs provide only the ad instance, not the impression/ad ID or click
+source, so the React Native bridges do not invent those values. Native telemetry
+and click beacons remain owned by the native SDKs.
 
 `AdValue`: `{ valueMicros, currencyCode, precisionType, expectedCpm, expectedRevenue }`
 — serve-time estimates derived from the floor CPM (`valueMicros` is micros, `5000` =
