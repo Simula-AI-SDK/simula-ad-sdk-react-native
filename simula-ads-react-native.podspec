@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "simula-ads-react-native"
-  s.version      = "1.4.0-dev.6"
+  s.version      = "1.4.0-dev.7"
   s.summary      = "Simula Ad SDK for React Native"
   s.description  = "React Native bridge for Simula's native iOS Ad SDK with mini-game support."
   s.homepage     = "https://github.com/Simula-AI-SDK/simula-ad-sdk-react-native"
@@ -23,7 +23,8 @@ Pod::Spec.new do |s|
   # 1.1.6 defers SDK init off the main thread (deferred startup) and adds the
   # `simulaAdsDidInitialize` notification this bridge's native-ad host view observes.
   # 1.1.8+ routes NativeAd metadata to /load or /seen based on preload consumption.
-  s.dependency "SimulaAdSDK", "1.1.9-dev.8"
+  # 1.2.0-dev.1 adds interaction-aware CTA routing and StoreKit product prewarming.
+  s.dependency "SimulaAdSDK", "1.2.0-dev.1"
 
   s.frameworks = "StoreKit", "SafariServices"
 end

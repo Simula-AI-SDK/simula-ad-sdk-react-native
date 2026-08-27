@@ -6,7 +6,7 @@
  * relaunch, but the JS `REWARD_VERIFIED` callback is best effort and only available
  * while the originating native ad instance and this hook remain alive.
  *
- *   const { isLoaded, load, show, rewardToken } = useRewardedAd('reward_slot');
+ *   const { isLoaded, clickCount, load, show, rewardToken } = useRewardedAd('reward_slot');
  */
 import { useEffect, useRef, useState, useCallback } from "react";
 import { SimulaRewardedAd } from "../ads/SimulaRewardedAd";
@@ -29,6 +29,10 @@ export interface UseRewardedAd {
   rewardToken: string | null | undefined;
   /** True once the impression was recorded for the current show. */
   impressionRecorded: boolean;
+  /** Number of CLICKED events received for the current displayed impression. */
+  clickCount: number;
+  /** Whether the current displayed impression has received a CLICKED event. */
+  wasClicked: boolean;
   /** Estimated per-impression revenue (set on the PAID event), else null. */
   adValue: AdValue | null;
   error: SimulaAdError | undefined;
@@ -53,6 +57,7 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
     undefined,
   );
   const [impressionRecorded, setImpressionRecorded] = useState(false);
+  const [clickCount, setClickCount] = useState(0);
   const [adValue, setAdValue] = useState<AdValue | null>(null);
   const [error, setError] = useState<SimulaAdError | undefined>(undefined);
 
@@ -63,6 +68,7 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
     setRewardVerified(false);
     setRewardToken(undefined);
     setImpressionRecorded(false);
+    setClickCount(0);
     setAdValue(null);
     setError(undefined);
     errorSourceRef.current = null;
@@ -96,12 +102,16 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
           setRewardVerified(false);
           setRewardToken(undefined);
           setImpressionRecorded(false);
+          setClickCount(0);
           setAdValue(null);
           setError(undefined);
           errorSourceRef.current = null;
           break;
         case "IMPRESSION":
           setImpressionRecorded(true);
+          break;
+        case "CLICKED":
+          setClickCount((count) => count + 1);
           break;
         case "PAID":
           if (event.adValue) setAdValue(event.adValue);
@@ -186,6 +196,8 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
     rewardVerified,
     rewardToken,
     impressionRecorded,
+    clickCount,
+    wasClicked: clickCount > 0,
     adValue,
     error,
     load,

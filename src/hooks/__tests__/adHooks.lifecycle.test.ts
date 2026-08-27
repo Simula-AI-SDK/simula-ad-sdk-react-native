@@ -88,6 +88,49 @@ describe("ad hook lifecycle", () => {
     await tree.unmount();
   });
 
+  it("tracks repeatable rewarded clicks for the current displayed impression", async () => {
+    let latest: UseRewardedAd | undefined;
+    function Probe(): null {
+      latest = useRewardedAd("rewarded");
+      return null;
+    }
+
+    const tree = await mount(React.createElement(Probe));
+    const instanceId = native.createRewarded.mock.calls[0][0];
+
+    await runInAct(() => {
+      __emit(AD_EVENT_NAME, {
+        instanceId,
+        adType: "rewarded",
+        type: "DISPLAYED",
+      });
+      __emit(AD_EVENT_NAME, {
+        instanceId,
+        adType: "rewarded",
+        type: "CLICKED",
+      });
+      __emit(AD_EVENT_NAME, {
+        instanceId,
+        adType: "rewarded",
+        type: "CLICKED",
+      });
+    });
+    expect(latest?.clickCount).toBe(2);
+    expect(latest?.wasClicked).toBe(true);
+
+    await runInAct(() => {
+      __emit(AD_EVENT_NAME, {
+        instanceId,
+        adType: "rewarded",
+        type: "DISPLAYED",
+      });
+    });
+    expect(latest?.clickCount).toBe(0);
+    expect(latest?.wasClicked).toBe(false);
+
+    await tree.unmount();
+  });
+
   it("keeps one live native subscription through React StrictMode effect replay", async () => {
     let latest: UseInterstitialAd | undefined;
     function Probe(): null {

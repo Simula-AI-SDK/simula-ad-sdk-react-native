@@ -389,6 +389,7 @@ class SimulaNativeAdHostView: UIView {
         case .noFill: return "no_fill"
         case .network: return "network"
         case .adUnitNotFound: return "ad_unit_not_found"
+        @unknown default: return "unknown"
         }
     }
 
@@ -399,6 +400,7 @@ class SimulaNativeAdHostView: UIView {
         case .noFill: return "No ad available to show right now (no fill)."
         case .network: return "Network error while loading the ad — check the connection and try again."
         case .adUnitNotFound: return "Ad unit id is not registered for this app — check the ad unit id in your Simula dashboard."
+        @unknown default: return "Unknown native ad error."
         }
     }
 }

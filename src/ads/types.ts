@@ -61,7 +61,8 @@ export type SimulaAdErrorCode =
   | "network"
   | "ad_unit_not_found"
   | "unsupported_platform"
-  | "verification_failed";
+  | "verification_failed"
+  | "unknown";
 
 /**
  * Estimate quality of an {@link AdValue}. Currently the native SDKs only ever
