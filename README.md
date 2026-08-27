@@ -35,9 +35,9 @@ Full integration guides, API references, and examples are available at:
 
 The first valid API key owns the native SDK for the lifetime of the app process. Repeated initialization with the same key is safe and idempotent. Attempting to switch to another key rejects with `INITIALIZATION_CONFLICT`; restart the app process to use a different key. Initialize through this React Native package rather than racing it with direct Kotlin or Swift initialization.
 
-## Interstitial Click Lifecycle
+## Click Lifecycle
 
-`useInterstitialAd` exposes `clickCount` and `wasClicked` for the currently displayed impression:
+`useInterstitialAd` and `useRewardedAd` expose `clickCount` and `wasClicked` for the currently displayed impression:
 
 ```tsx
 const {

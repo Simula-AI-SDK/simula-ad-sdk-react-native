@@ -159,11 +159,10 @@ ad.addAdEventsListener((event) => {
 ```
 
 The hooks surface the same: `useInterstitialAd` / `useRewardedAd` return
-`impressionRecorded: boolean` and `adValue: AdValue | null`. `useInterstitialAd`
-also returns `clickCount` and `wasClicked` for the current displayed impression.
-These reset on the next `DISPLAYED`, not on rerenders, `CLOSED`, or a native
-auto-preload `LOADED` for the next ad. Rewarded ads also emit `CLICKED` (parity
-with interstitial).
+`impressionRecorded: boolean`, `adValue: AdValue | null`, `clickCount`, and
+`wasClicked` for the current displayed impression. These reset on the next
+`DISPLAYED`, not on rerenders, `CLOSED`, or a native auto-preload `LOADED` for
+the next ad.
 
 `CLICKED` has no event-specific payload. The current pinned Kotlin and Swift
 delegate APIs provide only the ad instance, not the impression/ad ID or click
