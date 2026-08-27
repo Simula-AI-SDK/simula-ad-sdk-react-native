@@ -22,6 +22,115 @@ afterEach(() => {
 });
 
 describe("ad hook lifecycle", () => {
+  it("tracks clicks per displayed interstitial without resetting for auto-preload or rerenders", async () => {
+    let latest: UseInterstitialAd | undefined;
+    function Probe({ render }: { render: number }): null {
+      void render;
+      latest = useInterstitialAd("interstitial");
+      return null;
+    }
+
+    const tree = await mount(React.createElement(Probe, { render: 0 }));
+    const instanceId = native.createInterstitial.mock.calls[0][0];
+
+    await runInAct(() => {
+      __emit(AD_EVENT_NAME, {
+        instanceId,
+        adType: "interstitial",
+        type: "DISPLAYED",
+      });
+      __emit(AD_EVENT_NAME, {
+        instanceId,
+        adType: "interstitial",
+        type: "CLICKED",
+      });
+      __emit(AD_EVENT_NAME, {
+        instanceId,
+        adType: "interstitial",
+        type: "CLICKED",
+      });
+    });
+    expect(latest?.clickCount).toBe(2);
+    expect(latest?.wasClicked).toBe(true);
+
+    await tree.update(React.createElement(Probe, { render: 1 }));
+    expect(native.createInterstitial).toHaveBeenCalledTimes(1);
+    expect(latest?.clickCount).toBe(2);
+
+    // Native may auto-preload the next ad before the current one closes. Neither
+    // event starts a displayed impression, so the current click lifecycle remains.
+    await runInAct(() => {
+      __emit(AD_EVENT_NAME, {
+        instanceId,
+        adType: "interstitial",
+        type: "LOADED",
+      });
+      __emit(AD_EVENT_NAME, {
+        instanceId,
+        adType: "interstitial",
+        type: "CLOSED",
+      });
+    });
+    expect(latest?.clickCount).toBe(2);
+    expect(latest?.wasClicked).toBe(true);
+    expect(latest?.isLoaded).toBe(true);
+
+    await runInAct(() => {
+      __emit(AD_EVENT_NAME, {
+        instanceId,
+        adType: "interstitial",
+        type: "DISPLAYED",
+      });
+    });
+    expect(latest?.clickCount).toBe(0);
+    expect(latest?.wasClicked).toBe(false);
+
+    await tree.unmount();
+  });
+
+  it("keeps one live native subscription through React StrictMode effect replay", async () => {
+    let latest: UseInterstitialAd | undefined;
+    function Probe(): null {
+      latest = useInterstitialAd("strict_interstitial");
+      return null;
+    }
+
+    const tree = await mount(
+      React.createElement(
+        React.StrictMode,
+        null,
+        React.createElement(Probe),
+      ),
+    );
+    const instanceIds = native.createInterstitial.mock.calls.map(
+      ([instanceId]: [string]) => instanceId,
+    );
+    const activeInstanceId = instanceIds.at(-1)!;
+
+    expect(instanceIds).toHaveLength(2);
+    expect(new Set(instanceIds).size).toBe(2);
+    expect(native.destroyAd).toHaveBeenCalledTimes(1);
+    expect(__listenerCount(AD_EVENT_NAME)).toBe(1);
+
+    await runInAct(() => {
+      __emit(AD_EVENT_NAME, {
+        instanceId: instanceIds[0],
+        adType: "interstitial",
+        type: "CLICKED",
+      });
+      __emit(AD_EVENT_NAME, {
+        instanceId: activeInstanceId,
+        adType: "interstitial",
+        type: "CLICKED",
+      });
+    });
+    expect(latest?.clickCount).toBe(1);
+
+    await tree.unmount();
+    expect(native.destroyAd).toHaveBeenCalledTimes(2);
+    expect(__listenerCount(AD_EVENT_NAME)).toBe(0);
+  });
+
   it("clears a display error after an interstitial retry succeeds", async () => {
     let latest: UseInterstitialAd | undefined;
     function Probe(): null {

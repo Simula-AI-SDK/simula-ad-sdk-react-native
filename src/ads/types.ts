@@ -110,9 +110,15 @@ export interface SimulaAdLoadOptions {
   charDesc?: string;
 }
 
-/** An event delivered to an ad's listener. */
+/**
+ * An event delivered to an ad's listener.
+ *
+ * `CLICKED` currently has no event-specific payload. The pinned native SDK
+ * callbacks identify the ad instance but expose neither its impression id nor
+ * a click source, so the bridge does not synthesize either value.
+ */
 export interface SimulaAdEvent {
-  /** The ad instance the event belongs to. */
+  /** Lifecycle event type for the ad instance whose listener received it. */
   type: SimulaAnyAdEventType;
   /** Present on LOAD_FAILED / DISPLAY_FAILED / REWARD_VERIFICATION_FAILED. */
   error?: SimulaAdError;
