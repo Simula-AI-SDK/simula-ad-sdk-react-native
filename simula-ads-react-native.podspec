@@ -25,7 +25,7 @@ Pod::Spec.new do |s|
   # 1.1.8+ routes NativeAd metadata to /load or /seen based on preload consumption.
   # 1.2.0 adds interaction-aware CTA routing, attributed StoreKit prewarming,
   # and interruption-safe fullscreen gate timing.
-  s.dependency "SimulaAdSDK", "1.2.0"
+  s.dependency "SimulaAdSDK", "1.2.0-dev.2"
 
   s.frameworks = "StoreKit", "SafariServices"
 end
