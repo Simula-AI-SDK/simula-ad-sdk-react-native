@@ -60,12 +60,10 @@ export abstract class SimulaBaseAd {
   /** Convenience mirror of native readiness — informational only. */
   private _loaded = false;
 
-  /**
-   * True when a LOADED arrived after the most recent DISPLAYED — i.e. the native
-   * auto-preload delivered the NEXT ad while the current unit was still on screen.
-   * The later CLOSED then refers to the shown unit, not the ready one, so it must
-   * not reset [_loaded].
-   */
+  /** Whether a displayed ad is still awaiting its CLOSED event. */
+  private displayInProgress = false;
+
+  /** Whether another ad became ready while the displayed ad was still open. */
   private loadedSinceDisplay = false;
 
   private destroyed = false;
@@ -106,9 +104,10 @@ export abstract class SimulaBaseAd {
     switch (event.type) {
       case "LOADED":
         this._loaded = true;
-        this.loadedSinceDisplay = true;
+        if (this.displayInProgress) this.loadedSinceDisplay = true;
         break;
       case "DISPLAYED":
+        this.displayInProgress = true;
         this.loadedSinceDisplay = false;
         break;
       case "CLOSED":
@@ -116,6 +115,8 @@ export abstract class SimulaBaseAd {
         // auto-preload can deliver the next ad while this unit's end screens are still
         // up, so its LOADED may precede this CLOSED — native still holds a ready ad.
         if (!this.loadedSinceDisplay) this._loaded = false;
+        this.displayInProgress = false;
+        this.loadedSinceDisplay = false;
         break;
       case "LOAD_FAILED":
         // duplicate_request rejects the redundant load() call, NOT the ad — the
@@ -210,7 +211,10 @@ export abstract class SimulaBaseAd {
     });
   }
 
-  /** Presents a loaded ad. Fire-and-forget — outcome arrives as DISPLAYED / DISPLAY_FAILED. */
+  /**
+   * Presents a loaded ad. Outcomes arrive as events. A creative that fails before
+   * becoming visible may close without first emitting DISPLAYED.
+   */
   show(): void {
     if (!this.requireNative("show")) return;
     NativeAds!.showAd(this.instanceId);

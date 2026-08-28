@@ -81,22 +81,15 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
     const ad = SimulaRewardedAd.create(adUnitId);
     adRef.current = ad;
 
-    // True when a LOADED arrived after the most recent DISPLAYED — the native
-    // auto-preload delivered the NEXT ad while the current unit was still on screen,
-    // so the later CLOSED (for the shown unit) must not reset isLoaded.
-    let loadedSinceDisplay = false;
-
     const off = ad.addAdEventsListener((event) => {
+      setIsLoaded(ad.loaded);
       switch (event.type) {
         case "LOADED":
-          loadedSinceDisplay = true;
-          setIsLoaded(true);
           setIsClosed(false);
           setError(undefined);
           errorSourceRef.current = null;
           break;
         case "DISPLAYED":
-          loadedSinceDisplay = false;
           setIsClosed(false);
           setEarnedReward(false);
           setRewardVerified(false);
@@ -117,7 +110,6 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
           if (event.adValue) setAdValue(event.adValue);
           break;
         case "CLOSED":
-          if (!loadedSinceDisplay) setIsLoaded(false);
           setIsClosed(true);
           break;
         case "EARNED_REWARD":
@@ -135,7 +127,6 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
           // duplicate_request rejects the redundant load() call, NOT the ad — the
           // in-flight/ready ad survives natively, so isLoaded must not flip false.
           // The error (with retryInSeconds) is still surfaced as information.
-          if (event.error?.code !== "duplicate_request") setIsLoaded(false);
           if (event.error) {
             errorSourceRef.current = "load";
             setError(event.error);
@@ -144,7 +135,6 @@ export function useRewardedAd(adUnitId: string): UseRewardedAd {
         case "DISPLAY_FAILED":
           // no_presentation_context keeps the loaded ad natively (show() can be
           // retried); every other display failure means nothing is ready.
-          if (event.error?.code !== "no_presentation_context") setIsLoaded(false);
           if (event.error) {
             errorSourceRef.current = "display";
             setError(event.error);

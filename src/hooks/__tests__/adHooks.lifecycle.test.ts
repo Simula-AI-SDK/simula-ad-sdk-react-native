@@ -131,6 +131,34 @@ describe("ad hook lifecycle", () => {
     await tree.unmount();
   });
 
+  it("clears rewarded readiness when a creative closes before display", async () => {
+    let latest: UseRewardedAd | undefined;
+    function Probe(): null {
+      latest = useRewardedAd("rewarded");
+      return null;
+    }
+
+    const tree = await mount(React.createElement(Probe));
+    const instanceId = native.createRewarded.mock.calls[0][0];
+
+    await runInAct(() => {
+      __emit(AD_EVENT_NAME, {
+        instanceId,
+        adType: "rewarded",
+        type: "LOADED",
+      });
+      __emit(AD_EVENT_NAME, {
+        instanceId,
+        adType: "rewarded",
+        type: "CLOSED",
+      });
+    });
+
+    expect(latest?.isLoaded).toBe(false);
+    expect(latest?.isClosed).toBe(true);
+    await tree.unmount();
+  });
+
   it("keeps one live native subscription through React StrictMode effect replay", async () => {
     let latest: UseInterstitialAd | undefined;
     function Probe(): null {

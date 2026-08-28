@@ -296,4 +296,15 @@ describe("SimulaRewardedAd", () => {
     expect(token).toBe("tok_abc");
     ad.destroy();
   });
+
+  it("clears the loaded mirror when a creative closes before display", () => {
+    const ad = SimulaRewardedAd.create("reward");
+    const instanceId = native.createRewarded.mock.calls[0][0];
+
+    __emit(AD_EVENT_NAME, { instanceId, adType: "rewarded", type: "LOADED" });
+    __emit(AD_EVENT_NAME, { instanceId, adType: "rewarded", type: "CLOSED" });
+
+    expect(ad.loaded).toBe(false);
+    ad.destroy();
+  });
 });
