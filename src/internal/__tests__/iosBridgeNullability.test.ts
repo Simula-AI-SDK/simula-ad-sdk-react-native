@@ -136,14 +136,12 @@ describe("iOS bridge string nullability contract", () => {
     expect(iosMiniGameSource).toContain("shared.apiKey == apiKey else { return nil }");
   });
 
-  it("keeps the iOS navigation proxy transparent to the SDK coordinator", () => {
-    expect(iosMiniGameSource).toContain("didStartProvisionalNavigation navigation:");
-    expect(iosMiniGameSource).toContain("original?.webView?(webView, didCommit: navigation)");
-    expect(iosMiniGameSource).toContain("original?.webViewWebContentProcessDidTerminate?(webView)");
-    expect(iosMiniGameSource).toContain("decidePolicyFor: navigationResponse");
-    expect(iosMiniGameSource).toContain("forwardNavigationAction(");
-    expect(iosMiniGameSource).toContain("if original != nil {");
-    expect(iosMiniGameSource).toContain("if let originalUI {");
+  it("leaves iOS navigation and StoreKit routing with the native SDK", () => {
+    expect(iosMiniGameSource).not.toContain("method_exchangeImplementations");
+    expect(iosMiniGameSource).not.toContain("WKNavigationDelegateProxy");
+    expect(iosMiniGameSource).not.toContain("webView.navigationDelegate =");
+    expect(iosMiniGameSource).not.toContain("simula_openURL");
+    expect(iosMiniGameSource).not.toContain("SKStoreProductViewController()");
   });
 
   it("passes telemetryEnabled to every Android mini-game provider", () => {
