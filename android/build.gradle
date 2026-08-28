@@ -95,9 +95,9 @@ dependencies {
     // React Native
     implementation 'com.facebook.react:react-android:+'
 
-    // Simula Ad SDK (native Kotlin SDK from Maven Central). 1.1.9-dev.7 adds
-    // repeatable CTA clicks and lifecycle-safe automatic destination routing.
-    implementation 'ad.simula:ad-sdk:1.1.9-dev.7'
+    // Simula Ad SDK (native Kotlin SDK from Maven Central). 1.1.9-dev.8 hardens
+    // fullscreen creative readiness, renderer failures, and store-return routing.
+    implementation 'ad.simula:ad-sdk:1.1.9-dev.8'
 
     // Jetpack Compose (needed to host MiniGameMenu composable)
     implementation platform('androidx.compose:compose-bom:2024.02.00')
