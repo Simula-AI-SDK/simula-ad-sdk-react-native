@@ -162,6 +162,19 @@ class SimulaAdsModule: RCTEventEmitter {
         let adContext = convertAdContext(config["adContext"])
 
         runOnMain {
+            guard let environmentRequest = SimulaBridgeAPIEnvironmentState.requestIfCompatible(
+                apiKey: apiKey,
+                rawEnvironment: config["apiEnvironment"]
+            ) else {
+                reject(
+                    Self.initializationConflictCode,
+                    "The process is already owned by a different Simula SDK configuration",
+                    nil
+                )
+                return
+            }
+            let alreadyOwned = SimulaBridgeAPIEnvironmentState.owns(environmentRequest)
+            let environmentAccepted = SimulaAds.configureAPIEnvironment(environmentRequest.environment)
             let didInitialize = SimulaAds.initialize(
                 apiKey: apiKey,
                 devMode: devMode,
@@ -171,7 +184,16 @@ class SimulaAdsModule: RCTEventEmitter {
                 telemetryEnabled: telemetryEnabled,
                 adContext: adContext
             )
-            if didInitialize || SimulaAds.shared?.apiKey == apiKey {
+            let sharedOwnerMatches = SimulaAds.shared?.apiKey == apiKey
+            if didInitialize || (sharedOwnerMatches && (alreadyOwned || environmentAccepted)) {
+                guard SimulaBridgeAPIEnvironmentState.commit(environmentRequest) else {
+                    reject(
+                        Self.initializationConflictCode,
+                        "The process is already owned by a different Simula SDK configuration",
+                        nil
+                    )
+                    return
+                }
                 resolve(nil)
             } else {
                 reject(

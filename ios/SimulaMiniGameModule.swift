@@ -196,10 +196,19 @@ class SimulaMiniGameModule: RCTEventEmitter {
     // MARK: - Provider reuse
 
     /// React Native surfaces share the provider accepted by the imperative initialization path.
-    private func reusableProvider(apiKey: String) -> SimulaProvider? {
-        guard let shared = MainActor.assumeIsolated({ SimulaAds.shared }),
-              shared.apiKey == apiKey else { return nil }
-        return shared
+    private func reusableProvider(apiKey: String, rawEnvironment: Any?) -> SimulaProvider? {
+        MainActor.assumeIsolated {
+            guard let environmentRequest = SimulaBridgeAPIEnvironmentState.requestIfCompatible(
+                apiKey: apiKey,
+                rawEnvironment: rawEnvironment
+            ) else { return nil }
+            let alreadyOwned = SimulaBridgeAPIEnvironmentState.owns(environmentRequest)
+            let environmentAccepted = SimulaAds.configureAPIEnvironment(environmentRequest.environment)
+            guard let shared = SimulaAds.shared, shared.apiKey == apiKey else { return nil }
+            guard alreadyOwned || environmentAccepted else { return nil }
+            guard SimulaBridgeAPIEnvironmentState.commit(environmentRequest) else { return nil }
+            return shared
+        }
     }
 
     // MARK: - MiniGameMenu
@@ -223,7 +232,10 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let messages = convertMessages(props["messages"])
         let theme = convertTheme(props["theme"])
 
-        guard let provider = self.reusableProvider(apiKey: apiKey) else {
+        guard let provider = self.reusableProvider(
+            apiKey: apiKey,
+            rawEnvironment: props["apiEnvironment"]
+        ) else {
             reject(
                 Self.initializationConflictCode,
                 "The process is already owned by a different Simula SDK configuration",
@@ -297,7 +309,10 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let theme = convertButtonTheme(props["theme"])
         let width = convertDimension(props["width"])
 
-        guard let provider = self.reusableProvider(apiKey: apiKey) else {
+        guard let provider = self.reusableProvider(
+            apiKey: apiKey,
+            rawEnvironment: props["apiEnvironment"]
+        ) else {
             reject(
                 Self.initializationConflictCode,
                 "The process is already owned by a different Simula SDK configuration",
@@ -355,7 +370,10 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let width = props["width"]
         let top = props["top"]
 
-        guard let provider = self.reusableProvider(apiKey: apiKey) else {
+        guard let provider = self.reusableProvider(
+            apiKey: apiKey,
+            rawEnvironment: props["apiEnvironment"]
+        ) else {
             reject(
                 Self.initializationConflictCode,
                 "The process is already owned by a different Simula SDK configuration",
@@ -427,7 +445,10 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let backgroundImage = props["backgroundImage"] as? String
         let theme = convertInterstitialTheme(props["theme"])
 
-        guard let provider = self.reusableProvider(apiKey: apiKey) else {
+        guard let provider = self.reusableProvider(
+            apiKey: apiKey,
+            rawEnvironment: props["apiEnvironment"]
+        ) else {
             reject(
                 Self.initializationConflictCode,
                 "The process is already owned by a different Simula SDK configuration",
@@ -506,6 +527,12 @@ class SimulaMiniGameModule: RCTEventEmitter {
         // imperative + declarative session. SimulaAds is @MainActor; methodQueue is
         // .main, so this is safe.
         let accepted = MainActor.assumeIsolated {
+            guard let environmentRequest = SimulaBridgeAPIEnvironmentState.requestIfCompatible(
+                apiKey: apiKey,
+                rawEnvironment: props["apiEnvironment"]
+            ) else { return false }
+            let alreadyOwned = SimulaBridgeAPIEnvironmentState.owns(environmentRequest)
+            let environmentAccepted = SimulaAds.configureAPIEnvironment(environmentRequest.environment)
             let didInitialize = SimulaAds.initialize(
                 apiKey: apiKey,
                 devMode: devMode,
@@ -515,7 +542,11 @@ class SimulaMiniGameModule: RCTEventEmitter {
                 telemetryEnabled: telemetryEnabled,
                 adContext: adContext
             )
-            return didInitialize || SimulaAds.shared?.apiKey == apiKey
+            let sharedOwnerMatches = SimulaAds.shared?.apiKey == apiKey
+            guard didInitialize || (sharedOwnerMatches && (alreadyOwned || environmentAccepted)) else {
+                return false
+            }
+            return SimulaBridgeAPIEnvironmentState.commit(environmentRequest)
         }
         guard accepted else {
             reject(
@@ -528,7 +559,10 @@ class SimulaMiniGameModule: RCTEventEmitter {
 
         // Warm (and cache) the provider so the first real show reuses a live
         // session instead of paying the createSession() round-trip on the ad path.
-        guard let provider = self.reusableProvider(apiKey: apiKey) else {
+        guard let provider = self.reusableProvider(
+            apiKey: apiKey,
+            rawEnvironment: props["apiEnvironment"]
+        ) else {
             reject(
                 Self.initializationConflictCode,
                 "The process is already owned by a different Simula SDK configuration",
@@ -561,7 +595,10 @@ class SimulaMiniGameModule: RCTEventEmitter {
         let characters = convertCharacters(props["characters"])
         let theme = convertCharacterSelectorTheme(props["theme"])
 
-        guard let provider = self.reusableProvider(apiKey: apiKey) else {
+        guard let provider = self.reusableProvider(
+            apiKey: apiKey,
+            rawEnvironment: props["apiEnvironment"]
+        ) else {
             reject(
                 Self.initializationConflictCode,
                 "The process is already owned by a different Simula SDK configuration",

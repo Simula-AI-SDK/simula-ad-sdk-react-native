@@ -52,6 +52,7 @@ export const MiniGameMenu: React.FC<MiniGameMenuProps> = ({
         wasOpenRef.current = true;
         await SimulaMiniGameModule.showMiniGameMenu({
           apiKey,
+          apiEnvironment: initializationConfig.apiEnvironment,
           hasPrivacyConsent,
           devMode,
           primaryUserID: primaryUserID ?? null,

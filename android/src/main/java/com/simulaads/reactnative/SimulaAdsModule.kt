@@ -61,6 +61,7 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
             promise.reject("INVALID_CONFIG", "Missing required config: apiKey")
             return
         }
+        val apiEnvironment = config.toSimulaApiEnvironment()
         val devMode = config.getBooleanOrNull("devMode") ?: false
         val primaryUserID = config.getStringOrNull("primaryUserID")?.takeIf { it.isNotBlank() }
         val hasPrivacyConsent = config.getBooleanOrNull("hasPrivacyConsent") ?: true
@@ -70,7 +71,8 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
         val adContext = if (config.hasKey("adContext") && !config.isNull("adContext"))
             config.getMap("adContext").toSimulaAdContext() else null
 
-        val outcome = SimulaInitializationState.initialize(apiKey) {
+        val outcome = SimulaInitializationState.initialize(apiKey, apiEnvironment) {
+            SimulaAds.configureApiEnvironment(reactApplicationContext, apiEnvironment)
             SimulaAds.initialize(
                 context = reactApplicationContext,
                 apiKey = apiKey,

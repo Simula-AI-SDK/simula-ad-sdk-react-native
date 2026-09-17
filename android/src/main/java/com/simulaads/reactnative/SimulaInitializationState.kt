@@ -1,6 +1,7 @@
 package com.simulaads.reactnative
 
 import ad.simula.ad.sdk.ads.SimulaAds
+import ad.simula.ad.sdk.ads.SimulaApiEnvironment
 
 internal enum class SimulaInitializationOutcome {
     Accepted,
@@ -8,20 +9,49 @@ internal enum class SimulaInitializationOutcome {
     Failed,
 }
 
-/** Tracks React Native's process-key claim because the Android SDK exposes no effective-key getter. */
+/** Tracks React Native's process configuration because the SDK exposes no effective-key getter. */
 internal object SimulaInitializationState {
     private val lock = Any()
     private var apiKey: String? = null
+    private var apiEnvironment: SimulaApiEnvironment? = null
 
-    fun initialize(requestedApiKey: String, initializeNative: () -> Unit): SimulaInitializationOutcome =
+    fun claim(
+        requestedApiKey: String,
+        requestedApiEnvironment: SimulaApiEnvironment,
+    ): SimulaInitializationOutcome = synchronized(lock) {
+        val currentApiKey = apiKey
+        val currentApiEnvironment = apiEnvironment
+        if (currentApiKey != null || currentApiEnvironment != null) {
+            return@synchronized if (
+                currentApiKey == requestedApiKey && currentApiEnvironment == requestedApiEnvironment
+            ) {
+                SimulaInitializationOutcome.Accepted
+            } else {
+                SimulaInitializationOutcome.Conflict
+            }
+        }
+        if (SimulaAds.isInitialized) return@synchronized SimulaInitializationOutcome.Conflict
+        apiKey = requestedApiKey
+        apiEnvironment = requestedApiEnvironment
+        SimulaInitializationOutcome.Accepted
+    }
+
+    fun initialize(
+        requestedApiKey: String,
+        requestedApiEnvironment: SimulaApiEnvironment,
+        initializeNative: () -> Unit,
+    ): SimulaInitializationOutcome =
         synchronized(lock) {
             val currentApiKey = apiKey
-            if (currentApiKey != null) {
-                return@synchronized if (currentApiKey == requestedApiKey) {
-                    SimulaInitializationOutcome.Accepted
-                } else {
-                    SimulaInitializationOutcome.Conflict
-                }
+            val currentApiEnvironment = apiEnvironment
+            if (
+                (currentApiKey != null || currentApiEnvironment != null) &&
+                (currentApiKey != requestedApiKey || currentApiEnvironment != requestedApiEnvironment)
+            ) {
+                return@synchronized SimulaInitializationOutcome.Conflict
+            }
+            if (currentApiKey == requestedApiKey && SimulaAds.isInitialized) {
+                return@synchronized SimulaInitializationOutcome.Accepted
             }
 
             // An imperative owner created outside this package cannot be verified because the
@@ -33,6 +63,7 @@ internal object SimulaInitializationState {
                 onSuccess = {
                     if (SimulaAds.isInitialized) {
                         apiKey = requestedApiKey
+                        apiEnvironment = requestedApiEnvironment
                         SimulaInitializationOutcome.Accepted
                     } else {
                         SimulaInitializationOutcome.Conflict

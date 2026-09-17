@@ -3,6 +3,7 @@ import { useMiniGamePreload } from "../useMiniGamePreload";
 import { SimulaProvider } from "../../context/SimulaProvider";
 import { NativeModules, __reset } from "../../test/reactNativeMock";
 import { mount, runInAct } from "../../test/reactHarness";
+import { resetAcceptedInitializationForTests } from "../../internal/initializationState";
 
 const native = NativeModules.SimulaAdsModule;
 const miniGameNative = NativeModules.SimulaMiniGameModule;
@@ -27,6 +28,7 @@ function preloadProbe(
 }
 
 beforeEach(() => {
+  resetAcceptedInitializationForTests();
   __reset();
   jest.clearAllMocks();
 });
@@ -44,6 +46,7 @@ describe("useMiniGamePreload lifecycle", () => {
     const tree = await mount(
       preloadProbe("first-key", capture, "user-1", {
         privacy: { enableAdvertisingId: true, coppaApplies: false },
+        apiEnvironment: "staging",
         telemetryEnabled: false,
         adContext: { category: "games" },
       }),
@@ -54,6 +57,7 @@ describe("useMiniGamePreload lifecycle", () => {
     expect(native.initialize).toHaveBeenLastCalledWith(
       expect.objectContaining({
         apiKey: "first-key",
+        apiEnvironment: "staging",
         primaryUserID: "user-1",
         privacy: expect.objectContaining({ enableAdvertisingId: true }),
         telemetryEnabled: false,
@@ -63,18 +67,23 @@ describe("useMiniGamePreload lifecycle", () => {
     expect(miniGameNative.preload).toHaveBeenLastCalledWith(
       expect.objectContaining({
         apiKey: "first-key",
+        apiEnvironment: "staging",
         privacy: expect.objectContaining({ enableAdvertisingId: true }),
         telemetryEnabled: false,
         adContext: expect.objectContaining({ category: "games" }),
       }),
     );
 
-    await tree.update(preloadProbe("second-key", capture));
+    await tree.update(
+      preloadProbe("first-key", capture, "user-2", {
+        apiEnvironment: "staging",
+      }),
+    );
     await runInAct(async () => {
       await preload?.();
     });
     expect(native.initialize).toHaveBeenLastCalledWith(
-      expect.objectContaining({ apiKey: "second-key", primaryUserID: null }),
+      expect.objectContaining({ apiKey: "first-key", primaryUserID: "user-2" }),
     );
     await tree.unmount();
   });

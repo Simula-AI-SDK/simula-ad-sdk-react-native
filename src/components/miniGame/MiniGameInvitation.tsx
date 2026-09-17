@@ -54,6 +54,7 @@ export const MiniGameInvitation: React.FC<MiniGameInvitationProps> = ({
         wasOpenRef.current = true;
         await SimulaMiniGameModule.showMiniGameInvitation({
           apiKey,
+          apiEnvironment: initializationConfig.apiEnvironment,
           hasPrivacyConsent,
           devMode,
           primaryUserID: primaryUserID ?? null,

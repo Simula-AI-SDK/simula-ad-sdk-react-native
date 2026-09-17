@@ -50,6 +50,7 @@ export const MiniGameInterstitial: React.FC<MiniGameInterstitialProps> = ({
         wasOpenRef.current = true;
         await SimulaMiniGameModule.showMiniGameInterstitial({
           apiKey,
+          apiEnvironment: initializationConfig.apiEnvironment,
           hasPrivacyConsent,
           devMode,
           primaryUserID: primaryUserID ?? null,

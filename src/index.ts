@@ -51,7 +51,7 @@ export type {
   CharacterSelectorProps,
 } from "./types";
 
-export type { SimulaInitConfig } from "./ads/SimulaAds";
+export type { SimulaAPIEnvironment, SimulaInitConfig } from "./ads/SimulaAds";
 export type { SimulaAdContext } from "./ads/context";
 export type {
   NativeAdProps,

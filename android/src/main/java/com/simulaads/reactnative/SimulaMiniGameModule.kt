@@ -105,6 +105,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         val theme = if (props.hasKey("theme") && !props.isNull("theme"))
             convertTheme(props.getMap("theme")) else MiniGameTheme()
 
+        if (!prepareProviderConfiguration(apiKey, props, promise)) return
+
         activity.runOnUiThread {
             removeComposeView(menuComposeView)
 
@@ -188,6 +190,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         val theme = if (props.hasKey("theme") && !props.isNull("theme"))
             convertButtonTheme(props.getMap("theme")) else MiniGameButtonTheme()
         val width = props.getDimensionOrNull("width")
+
+        if (!prepareProviderConfiguration(apiKey, props, promise)) return
 
         activity.runOnUiThread {
             removeComposeView(buttonComposeView)
@@ -274,6 +278,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
             props.getDouble("autoCloseDuration").toLong() else null
         val width = props.getDimensionOrNull("width")
         val top = props.getDimensionOrNull("top")
+
+        if (!prepareProviderConfiguration(apiKey, props, promise)) return
 
         activity.runOnUiThread {
             removeComposeView(invitationComposeView)
@@ -370,6 +376,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         val theme = if (props.hasKey("theme") && !props.isNull("theme"))
             convertInterstitialTheme(props.getMap("theme")) else MiniGameInterstitialTheme()
 
+        if (!prepareProviderConfiguration(apiKey, props, promise)) return
+
         activity.runOnUiThread {
             removeComposeView(interstitialComposeView)
 
@@ -442,6 +450,7 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
             return
         }
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
+        val apiEnvironment = props.toSimulaApiEnvironment()
         val primaryUserID = props.getStringOrNull("primaryUserID")
         val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
             props.getBoolean("hasPrivacyConsent") else true
@@ -450,7 +459,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
             props.getBoolean("telemetryEnabled") else true
         val adContext = props.getMapOrNull("adContext").toSimulaAdContext()
 
-        when (SimulaInitializationState.initialize(apiKey) {
+        when (SimulaInitializationState.initialize(apiKey, apiEnvironment) {
+            SimulaAds.configureApiEnvironment(reactApplicationContext, apiEnvironment)
             SimulaAds.initialize(
                 context = reactApplicationContext,
                 apiKey = apiKey,
@@ -510,6 +520,8 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         )
         val theme = if (props.hasKey("theme") && !props.isNull("theme"))
             convertCharacterSelectorTheme(props.getMap("theme")) else CharacterSelectorTheme()
+
+        if (!prepareProviderConfiguration(apiKey, props, promise)) return
 
         activity.runOnUiThread {
             removeComposeView(characterSelectorComposeView)
@@ -590,6 +602,33 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
             (v.parent as? ViewGroup)?.removeView(v)
             v.disposeComposition()
         }
+    }
+
+    private fun prepareProviderConfiguration(
+        apiKey: String,
+        props: ReadableMap,
+        promise: Promise,
+    ): Boolean {
+        val apiEnvironment = props.toSimulaApiEnvironment()
+        if (
+            SimulaInitializationState.claim(apiKey, apiEnvironment) ==
+            SimulaInitializationOutcome.Conflict
+        ) {
+            promise.reject(
+                "INITIALIZATION_CONFLICT",
+                "The process is already owned by a different Simula SDK configuration",
+            )
+            return false
+        }
+        return runCatching {
+            SimulaAds.configureApiEnvironment(reactApplicationContext, apiEnvironment)
+        }.fold(
+            onSuccess = { true },
+            onFailure = {
+                promise.reject("INITIALIZATION_FAILED", "Simula SDK initialization failed")
+                false
+            },
+        )
     }
 
     private fun sendEvent(eventName: String, params: Any?) {

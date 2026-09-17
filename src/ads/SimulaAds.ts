@@ -5,7 +5,8 @@
  * with `initializeOnMount`, which does this for you). It warms a shared server
  * session off the ad critical path, installs telemetry, and — on Android — is the
  * only way to enable telemetry. The first valid API key owns the native SDK for
- * the process lifetime; same-key calls are idempotent and a different key rejects.
+ * the process lifetime; same-configuration calls are idempotent and a different
+ * key or API environment rejects.
  */
 import {
   NativeAds,
@@ -22,10 +23,22 @@ import {
   warnInvalidIdentifier,
 } from "../internal/identifiers";
 import { safeJsonSnapshot } from "../internal/safeJson";
-import { markApiKeyAccepted } from "../internal/initializationState";
+import {
+  assertInitializationCompatible,
+  markInitializationAccepted,
+} from "../internal/initializationState";
+
+export type SimulaAPIEnvironment = "production" | "staging";
+
+/** Runtime-safe environment mapping. Unknown values can never become an endpoint. */
+export function normalizeAPIEnvironment(value: unknown): SimulaAPIEnvironment {
+  return value === "staging" ? "staging" : "production";
+}
 
 export interface SimulaInitConfig {
   apiKey: string;
+  /** API backend. Default production. Staging also requires native host opt-in. */
+  apiEnvironment?: SimulaAPIEnvironment;
   /** Development mode. Default false. */
   devMode?: boolean;
   /** Optional primary user identifier (suppressed without consent / under COPPA). */
@@ -51,6 +64,7 @@ function toNativeConfig(config: SimulaInitConfig): Record<string, unknown> {
       : null;
   return {
     apiKey: config.apiKey,
+    apiEnvironment: normalizeAPIEnvironment(config.apiEnvironment),
     devMode: config.devMode ?? false,
     primaryUserID,
     hasPrivacyConsent: config.hasPrivacyConsent ?? true,
@@ -81,8 +95,8 @@ export function toNativePrivacy(
 export const SimulaAds = {
   /**
    * Initializes the SDK. Resolves once native init returns (session warms in the
-   * background). Rejects with `INITIALIZATION_CONFLICT` if another API key already
-   * owns the process; switching keys requires an app-process restart.
+   * background). Rejects with `INITIALIZATION_CONFLICT` if another API key or API
+   * environment already owns the process; switching either requires a process restart.
    */
   async initialize(config: SimulaInitConfig): Promise<void> {
     if (!isAdsModuleAvailable()) {
@@ -90,10 +104,14 @@ export const SimulaAds = {
       return;
     }
     const apiKey = requireNonBlankString(config?.apiKey, "apiKey");
+    const apiEnvironment = normalizeAPIEnvironment(config?.apiEnvironment);
+    assertInitializationCompatible(apiKey, apiEnvironment);
     // The IPv4 resolution beacon now lives in the native SDKs (fired after
     // session creation, carrying the server session id) — no JS-side work here.
-    await NativeAds!.initialize(toNativeConfig({ ...config, apiKey }));
-    markApiKeyAccepted(apiKey);
+    await NativeAds!.initialize(
+      toNativeConfig({ ...config, apiKey, apiEnvironment }),
+    );
+    markInitializationAccepted(apiKey, apiEnvironment);
   },
 
   /** Whether the SDK has been initialized with a valid API key. */
