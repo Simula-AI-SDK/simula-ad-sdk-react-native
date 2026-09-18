@@ -153,6 +153,13 @@ describe("iOS bridge string nullability contract", () => {
       androidModuleSource.indexOf("SimulaAds.initialize("),
     );
     expect(androidMiniGameSource.match(/prepareProviderConfiguration\(/g)).toHaveLength(6);
+    const androidPreloadPath = androidMiniGameSource.slice(
+      androidMiniGameSource.indexOf("fun preload(props:"),
+      androidMiniGameSource.indexOf("private fun removeComposeView"),
+    );
+    expect(androidPreloadPath.indexOf("val apiEnvironment = props.toSimulaApiEnvironment()")).toBeLessThan(
+      androidPreloadPath.indexOf("SimulaInitializationState.initialize(apiKey, apiEnvironment)"),
+    );
     expect(moduleSource).toContain("guard SimulaAds.configureAPIEnvironment(apiEnvironment) else");
     expect(iosMiniGameSource).toContain("SimulaAds.configureAPIEnvironment(apiEnvironment)");
     expect(moduleSource).toContain('"API_ENVIRONMENT_UNAVAILABLE"');

@@ -85,7 +85,6 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
         val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
             props.getBoolean("hasPrivacyConsent") else true
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
-        val apiEnvironment = props.toSimulaApiEnvironment()
         val primaryUserID = props.getStringOrNull("primaryUserID")
         val privacy = props.getMapOrNull("privacy").toSimulaPrivacyConfig()
         val telemetryEnabled = if (props.hasKey("telemetryEnabled"))
@@ -451,6 +450,7 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
             return
         }
         val devMode = if (props.hasKey("devMode")) props.getBoolean("devMode") else false
+        val apiEnvironment = props.toSimulaApiEnvironment()
         val primaryUserID = props.getStringOrNull("primaryUserID")
         val hasPrivacyConsent = if (props.hasKey("hasPrivacyConsent"))
             props.getBoolean("hasPrivacyConsent") else true
