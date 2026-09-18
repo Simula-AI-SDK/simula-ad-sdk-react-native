@@ -92,6 +92,39 @@ describe("SimulaAds.initialize", () => {
     expect(native.updateContext).toHaveBeenCalledWith({ category: "profile" });
   });
 
+  it("leaves mutable native configuration unchanged when duplicate fields are omitted", async () => {
+    await SimulaAds.initialize({
+      apiKey: "key_123",
+      hasPrivacyConsent: false,
+      privacy: { coppaApplies: true },
+      primaryUserID: "user-1",
+      adContext: { category: "feed" },
+    });
+    jest.clearAllMocks();
+
+    await SimulaAds.initialize({ apiKey: "key_123" });
+
+    expect(native.applyConsent).not.toHaveBeenCalled();
+    expect(native.updatePrimaryUserID).not.toHaveBeenCalled();
+    expect(native.updateContext).not.toHaveBeenCalled();
+  });
+
+  it("clears explicitly supplied mutable fields on duplicate initialization", async () => {
+    await SimulaAds.initialize({ apiKey: "key_123" });
+    jest.clearAllMocks();
+
+    await SimulaAds.initialize({
+      apiKey: "key_123",
+      privacy: null as never,
+      primaryUserID: undefined,
+      adContext: undefined,
+    });
+
+    expect(native.applyConsent).toHaveBeenCalledWith({ hasPrivacyConsent: true });
+    expect(native.updatePrimaryUserID).toHaveBeenCalledWith(null);
+    expect(native.updateContext).toHaveBeenCalledWith({});
+  });
+
   it.each([undefined, null, "", " ", "\t\n"])(
     "maps blank primaryUserID %p to null",
     async (primaryUserID) => {

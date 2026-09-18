@@ -78,23 +78,40 @@ function toNativeConfig(config: SimulaInitConfig): Record<string, unknown> {
   };
 }
 
-function reconcileAcceptedInitialization(config: Record<string, unknown>): void {
+function hasOwn(config: SimulaInitConfig, key: keyof SimulaInitConfig): boolean {
+  return Object.prototype.hasOwnProperty.call(config, key);
+}
+
+function reconcileAcceptedInitialization(
+  requestedConfig: SimulaInitConfig,
+  nativeConfig: Record<string, unknown>,
+): void {
   const privacy =
-    config.privacy && typeof config.privacy === "object" && !Array.isArray(config.privacy)
-      ? (config.privacy as Record<string, unknown>)
+    nativeConfig.privacy &&
+    typeof nativeConfig.privacy === "object" &&
+    !Array.isArray(nativeConfig.privacy)
+      ? (nativeConfig.privacy as Record<string, unknown>)
       : {};
-  NativeAds!.applyConsent({
-    hasPrivacyConsent: config.hasPrivacyConsent !== false,
-    ...privacy,
-  });
-  NativeAds!.updatePrimaryUserID(
-    typeof config.primaryUserID === "string" ? config.primaryUserID : null,
-  );
-  NativeAds!.updateContext(
-    config.adContext && typeof config.adContext === "object" && !Array.isArray(config.adContext)
-      ? (config.adContext as Record<string, unknown>)
-      : {},
-  );
+  if (hasOwn(requestedConfig, "hasPrivacyConsent") || hasOwn(requestedConfig, "privacy")) {
+    NativeAds!.applyConsent({
+      hasPrivacyConsent: nativeConfig.hasPrivacyConsent !== false,
+      ...privacy,
+    });
+  }
+  if (hasOwn(requestedConfig, "primaryUserID")) {
+    NativeAds!.updatePrimaryUserID(
+      typeof nativeConfig.primaryUserID === "string" ? nativeConfig.primaryUserID : null,
+    );
+  }
+  if (hasOwn(requestedConfig, "adContext")) {
+    NativeAds!.updateContext(
+      nativeConfig.adContext &&
+        typeof nativeConfig.adContext === "object" &&
+        !Array.isArray(nativeConfig.adContext)
+        ? (nativeConfig.adContext as Record<string, unknown>)
+        : {},
+    );
+  }
 }
 
 /** Drops undefined keys so absent fields map to native defaults / "unchanged". */
@@ -126,12 +143,13 @@ export const SimulaAds = {
     assertInitializationCompatible(apiKey, apiEnvironment);
     // The IPv4 resolution beacon now lives in the native SDKs (fired after
     // session creation, carrying the server session id) — no JS-side work here.
-    const nativeConfig = toNativeConfig({ ...config, apiKey, apiEnvironment });
+    const requestedConfig = { ...config, apiKey, apiEnvironment };
+    const nativeConfig = toNativeConfig(requestedConfig);
     await NativeAds!.initialize(nativeConfig);
     const acceptedBeforeThisCall = getAcceptedInitialization();
     markInitializationAccepted(apiKey, apiEnvironment);
     if (acceptedBeforeThisCall != null) {
-      reconcileAcceptedInitialization(nativeConfig);
+      reconcileAcceptedInitialization(requestedConfig, nativeConfig);
     }
   },
 
