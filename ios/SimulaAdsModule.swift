@@ -155,6 +155,8 @@ class SimulaAdsModule: RCTEventEmitter {
             return
         }
         let devMode = config["devMode"] as? Bool ?? false
+        let apiEnvironment: SimulaAPIEnvironment =
+            (config["apiEnvironment"] as? String) == "staging" ? .staging : .production
         let primaryUserID = Self.nonBlankString(config["primaryUserID"] as? String)
         let hasPrivacyConsent = config["hasPrivacyConsent"] as? Bool ?? true
         let telemetryEnabled = config["telemetryEnabled"] as? Bool ?? true
@@ -162,6 +164,14 @@ class SimulaAdsModule: RCTEventEmitter {
         let adContext = convertAdContext(config["adContext"])
 
         runOnMain {
+            guard SimulaAds.configureAPIEnvironment(apiEnvironment) else {
+                reject(
+                    "API_ENVIRONMENT_UNAVAILABLE",
+                    "Staging requires a development native SDK and SimulaStagingEnvironmentEnabled=true",
+                    nil
+                )
+                return
+            }
             let didInitialize = SimulaAds.initialize(
                 apiKey: apiKey,
                 devMode: devMode,
@@ -172,7 +182,7 @@ class SimulaAdsModule: RCTEventEmitter {
                 adContext: adContext
             )
             let sharedOwnerMatches = SimulaAds.shared?.apiKey == apiKey
-            if didInitialize || sharedOwnerMatches {
+            if didInitialize || (sharedOwnerMatches && SimulaAds.apiEnvironment == apiEnvironment) {
                 resolve(nil)
             } else {
                 reject(

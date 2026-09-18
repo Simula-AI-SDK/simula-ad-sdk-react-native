@@ -1,10 +1,12 @@
 package com.simulaads.reactnative
 
 import ad.simula.ad.sdk.ads.SimulaAds
+import ad.simula.ad.sdk.ads.SimulaApiEnvironment
 
 internal enum class SimulaInitializationOutcome {
     Accepted,
     Conflict,
+    EnvironmentUnavailable,
     Failed,
 }
 
@@ -12,6 +14,7 @@ internal enum class SimulaInitializationOutcome {
 internal object SimulaInitializationState {
     private val lock = Any()
     private var apiKey: String? = null
+    private var apiEnvironment: SimulaApiEnvironment? = null
 
     fun claim(requestedApiKey: String): SimulaInitializationOutcome = synchronized(lock) {
         val currentApiKey = apiKey
@@ -29,14 +32,18 @@ internal object SimulaInitializationState {
 
     fun initialize(
         requestedApiKey: String,
-        initializeNative: () -> Unit,
+        requestedApiEnvironment: SimulaApiEnvironment,
+        initializeNative: () -> Boolean,
     ): SimulaInitializationOutcome =
         synchronized(lock) {
             val currentApiKey = apiKey
-            if (currentApiKey != null && currentApiKey != requestedApiKey) {
+            val currentApiEnvironment = apiEnvironment
+            if ((currentApiKey != null || currentApiEnvironment != null) &&
+                (currentApiKey != requestedApiKey || currentApiEnvironment != requestedApiEnvironment)
+            ) {
                 return@synchronized SimulaInitializationOutcome.Conflict
             }
-            if (currentApiKey == requestedApiKey && SimulaAds.isInitialized) {
+            if (currentApiKey == requestedApiKey && currentApiEnvironment == requestedApiEnvironment && SimulaAds.isInitialized) {
                 return@synchronized SimulaInitializationOutcome.Accepted
             }
 
@@ -47,11 +54,12 @@ internal object SimulaInitializationState {
 
             runCatching { initializeNative() }.fold(
                 onSuccess = {
-                    if (SimulaAds.isInitialized) {
+                    if (it && SimulaAds.isInitialized && SimulaAds.apiEnvironment == requestedApiEnvironment) {
                         apiKey = requestedApiKey
+                        apiEnvironment = requestedApiEnvironment
                         SimulaInitializationOutcome.Accepted
                     } else {
-                        SimulaInitializationOutcome.Conflict
+                        SimulaInitializationOutcome.EnvironmentUnavailable
                     }
                 },
                 onFailure = { SimulaInitializationOutcome.Failed },

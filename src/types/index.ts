@@ -5,7 +5,7 @@
 import { ReactNode } from "react";
 import { SimulaPrivacyConfig } from "../privacy/types";
 import { SimulaAdContext } from "../ads/context";
-import type { SimulaInitConfig } from "../ads/SimulaAds";
+import type { SimulaAPIEnvironment, SimulaInitConfig } from "../ads/SimulaAds";
 
 /**
  * Message format for conversation context
@@ -23,6 +23,8 @@ export interface SimulaProviderProps {
   /** Process-lifetime SDK key. Changing it after initialization is unsupported. */
   apiKey: string;
   children: ReactNode;
+  /** Dev-artifact API backend. Staging also requires native host opt-in. */
+  apiEnvironment?: SimulaAPIEnvironment;
   hasPrivacyConsent?: boolean;
   devMode?: boolean;
   primaryUserID?: string;
@@ -48,6 +50,7 @@ export interface SimulaProviderProps {
  */
 export interface SimulaContextValue {
   apiKey: string;
+  apiEnvironment: SimulaAPIEnvironment;
   hasPrivacyConsent: boolean;
   devMode: boolean;
   primaryUserID?: string;

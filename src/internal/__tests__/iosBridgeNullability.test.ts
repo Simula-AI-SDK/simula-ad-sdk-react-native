@@ -128,10 +128,10 @@ describe("iOS bridge string nullability contract", () => {
     expect(moduleSource).toContain('"INITIALIZATION_CONFLICT"');
     expect(androidModuleSource).toContain('INITIALIZATION_CONFLICT = "INITIALIZATION_CONFLICT"');
     expect(androidModuleSource).toContain(
-      "SimulaInitializationState.initialize(apiKey)",
+      "SimulaInitializationState.initialize(apiKey, apiEnvironment)",
     );
     expect(androidInitializationSource).toContain("private var apiKey: String? = null");
-    expect(androidInitializationSource).not.toContain("apiEnvironment");
+    expect(androidInitializationSource).toContain("private var apiEnvironment: SimulaApiEnvironment? = null");
     expect(androidInitializationSource).toContain(
       "if (SimulaAds.isInitialized) return@synchronized SimulaInitializationOutcome.Conflict",
     );
@@ -141,15 +141,16 @@ describe("iOS bridge string nullability contract", () => {
     expect(iosMiniGameSource).toContain("shared.apiKey == apiKey else { return nil }");
   });
 
-  it("leaves API environment selection to native host configuration", () => {
-    expect(androidModuleSource).not.toContain("apiEnvironment");
-    expect(androidModuleSource).not.toContain("configureApiEnvironment");
+  it("rejects a refused development environment before native initialization", () => {
+    expect(androidModuleSource).toContain("configureApiEnvironment");
+    expect(androidModuleSource.indexOf("configureApiEnvironment")).toBeLessThan(
+      androidModuleSource.indexOf("SimulaAds.initialize("),
+    );
     expect(androidMiniGameSource.match(/prepareProviderConfiguration\(/g)).toHaveLength(6);
-    expect(androidMiniGameSource).not.toContain("configureApiEnvironment");
-    expect(moduleSource).not.toContain("apiEnvironment");
-    expect(moduleSource).not.toContain("configureAPIEnvironment");
-    expect(iosMiniGameSource).not.toContain("apiEnvironment");
-    expect(iosMiniGameSource).not.toContain("configureAPIEnvironment");
+    expect(moduleSource).toContain("guard SimulaAds.configureAPIEnvironment(apiEnvironment) else");
+    expect(iosMiniGameSource).toContain("guard SimulaAds.configureAPIEnvironment(apiEnvironment) else");
+    expect(moduleSource).toContain('"API_ENVIRONMENT_UNAVAILABLE"');
+    expect(androidModuleSource).toContain('"API_ENVIRONMENT_UNAVAILABLE"');
   });
 
   it("leaves iOS navigation and StoreKit routing with the native SDK", () => {

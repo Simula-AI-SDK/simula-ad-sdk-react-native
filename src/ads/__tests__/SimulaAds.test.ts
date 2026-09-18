@@ -47,6 +47,7 @@ describe("SimulaAds.initialize", () => {
     expect(native.initialize).toHaveBeenCalledTimes(1);
     expect(native.initialize).toHaveBeenCalledWith({
       apiKey: "key_123",
+      apiEnvironment: "production",
       devMode: false,
       primaryUserID: null,
       hasPrivacyConsent: true,
@@ -54,6 +55,13 @@ describe("SimulaAds.initialize", () => {
       privacy: null,
       adContext: null,
     });
+  });
+
+  it("marshals an explicit staging environment independently of devMode", async () => {
+    await SimulaAds.initialize({ apiKey: "key_123", apiEnvironment: "staging", devMode: false });
+    expect(native.initialize).toHaveBeenCalledWith(
+      expect.objectContaining({ apiEnvironment: "staging", devMode: false }),
+    );
   });
 
   it("marshals an enabled devMode through initialization", async () => {

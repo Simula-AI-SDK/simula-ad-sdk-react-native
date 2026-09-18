@@ -496,6 +496,8 @@ class SimulaMiniGameModule: RCTEventEmitter {
             return
         }
         let devMode = props["devMode"] as? Bool ?? false
+        let apiEnvironment: SimulaAPIEnvironment =
+            (props["apiEnvironment"] as? String) == "staging" ? .staging : .production
         let primaryUserID = props["primaryUserID"] as? String
         let hasPrivacyConsent = props["hasPrivacyConsent"] as? Bool ?? true
         let privacy = convertPrivacyConfig(props["privacy"])
@@ -507,6 +509,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
         // imperative + declarative session. SimulaAds is @MainActor; methodQueue is
         // .main, so this is safe.
         let accepted = MainActor.assumeIsolated {
+            guard SimulaAds.configureAPIEnvironment(apiEnvironment) else { return false }
             let didInitialize = SimulaAds.initialize(
                 apiKey: apiKey,
                 devMode: devMode,
@@ -517,7 +520,7 @@ class SimulaMiniGameModule: RCTEventEmitter {
                 adContext: adContext
             )
             let sharedOwnerMatches = SimulaAds.shared?.apiKey == apiKey
-            return didInitialize || sharedOwnerMatches
+            return didInitialize || (sharedOwnerMatches && SimulaAds.apiEnvironment == apiEnvironment)
         }
         guard accepted else {
             reject(

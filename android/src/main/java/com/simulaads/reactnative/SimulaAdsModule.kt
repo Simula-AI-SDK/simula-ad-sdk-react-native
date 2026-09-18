@@ -61,6 +61,7 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
             promise.reject("INVALID_CONFIG", "Missing required config: apiKey")
             return
         }
+        val apiEnvironment = config.toSimulaApiEnvironment()
         val devMode = config.getBooleanOrNull("devMode") ?: false
         val primaryUserID = config.getStringOrNull("primaryUserID")?.takeIf { it.isNotBlank() }
         val hasPrivacyConsent = config.getBooleanOrNull("hasPrivacyConsent") ?: true
@@ -70,23 +71,31 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
         val adContext = if (config.hasKey("adContext") && !config.isNull("adContext"))
             config.getMap("adContext").toSimulaAdContext() else null
 
-        val outcome = SimulaInitializationState.initialize(apiKey) {
-            SimulaAds.initialize(
-                context = reactApplicationContext,
-                apiKey = apiKey,
-                devMode = devMode,
-                primaryUserID = primaryUserID,
-                hasPrivacyConsent = hasPrivacyConsent,
-                privacy = privacy,
-                telemetryEnabled = telemetryEnabled,
-                adContext = adContext,
-            )
+        val outcome = SimulaInitializationState.initialize(apiKey, apiEnvironment) {
+            val environmentAccepted = SimulaAds.configureApiEnvironment(reactApplicationContext, apiEnvironment)
+            if (environmentAccepted) {
+                SimulaAds.initialize(
+                    context = reactApplicationContext,
+                    apiKey = apiKey,
+                    devMode = devMode,
+                    primaryUserID = primaryUserID,
+                    hasPrivacyConsent = hasPrivacyConsent,
+                    privacy = privacy,
+                    telemetryEnabled = telemetryEnabled,
+                    adContext = adContext,
+                )
+            }
+            environmentAccepted
         }
 
         when (outcome) {
             SimulaInitializationOutcome.Conflict -> promise.reject(
                 INITIALIZATION_CONFLICT,
                 "The process is already owned by a different Simula SDK configuration",
+            )
+            SimulaInitializationOutcome.EnvironmentUnavailable -> promise.reject(
+                "API_ENVIRONMENT_UNAVAILABLE",
+                "Staging requires a development native SDK and SimulaStagingEnvironmentEnabled=true",
             )
             SimulaInitializationOutcome.Failed -> promise.reject(
                 INITIALIZATION_FAILED,

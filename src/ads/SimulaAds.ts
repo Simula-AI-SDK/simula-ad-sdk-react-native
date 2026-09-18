@@ -27,8 +27,16 @@ import {
   markInitializationAccepted,
 } from "../internal/initializationState";
 
+export type SimulaAPIEnvironment = "production" | "staging";
+
+export function normalizeAPIEnvironment(value: unknown): SimulaAPIEnvironment {
+  return value === "staging" ? "staging" : "production";
+}
+
 export interface SimulaInitConfig {
   apiKey: string;
+  /** Dev-artifact API backend. Staging also requires native host opt-in. */
+  apiEnvironment?: SimulaAPIEnvironment;
   /** Development mode. Default false. */
   devMode?: boolean;
   /** Optional primary user identifier (suppressed without consent / under COPPA). */
@@ -54,6 +62,7 @@ function toNativeConfig(config: SimulaInitConfig): Record<string, unknown> {
       : null;
   return {
     apiKey: config.apiKey,
+    apiEnvironment: normalizeAPIEnvironment(config.apiEnvironment),
     devMode: config.devMode ?? false,
     primaryUserID,
     hasPrivacyConsent: config.hasPrivacyConsent ?? true,
@@ -93,13 +102,14 @@ export const SimulaAds = {
       return;
     }
     const apiKey = requireNonBlankString(config?.apiKey, "apiKey");
-    assertInitializationCompatible(apiKey);
+    const apiEnvironment = normalizeAPIEnvironment(config?.apiEnvironment);
+    assertInitializationCompatible(apiKey, apiEnvironment);
     // The IPv4 resolution beacon now lives in the native SDKs (fired after
     // session creation, carrying the server session id) — no JS-side work here.
     await NativeAds!.initialize(
-      toNativeConfig({ ...config, apiKey }),
+      toNativeConfig({ ...config, apiKey, apiEnvironment }),
     );
-    markInitializationAccepted(apiKey);
+    markInitializationAccepted(apiKey, apiEnvironment);
   },
 
   /** Whether the SDK has been initialized with a valid API key. */
