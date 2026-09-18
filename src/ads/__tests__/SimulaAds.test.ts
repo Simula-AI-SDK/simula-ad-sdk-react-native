@@ -1,5 +1,9 @@
-import { SimulaAds, toNativePrivacy } from "../SimulaAds";
+import {
+  SimulaAds,
+  toNativePrivacy,
+} from "../SimulaAds";
 import { NativeModules } from "../../test/reactNativeMock";
+import { resetAcceptedInitializationForTests } from "../../internal/initializationState";
 
 const native = NativeModules.SimulaAdsModule;
 
@@ -33,6 +37,7 @@ function malformedJsonValues(): unknown[] {
 }
 
 beforeEach(() => {
+  resetAcceptedInitializationForTests();
   jest.clearAllMocks();
 });
 
@@ -42,6 +47,7 @@ describe("SimulaAds.initialize", () => {
     expect(native.initialize).toHaveBeenCalledTimes(1);
     expect(native.initialize).toHaveBeenCalledWith({
       apiKey: "key_123",
+      apiEnvironment: "production",
       devMode: false,
       primaryUserID: null,
       hasPrivacyConsent: true,
@@ -49,6 +55,41 @@ describe("SimulaAds.initialize", () => {
       privacy: null,
       adContext: null,
     });
+  });
+
+  it("marshals an explicit staging environment independently of devMode", async () => {
+    await SimulaAds.initialize({ apiKey: "key_123", apiEnvironment: "staging", devMode: false });
+    expect(native.initialize).toHaveBeenCalledWith(
+      expect.objectContaining({ apiEnvironment: "staging", devMode: false }),
+    );
+  });
+
+  it("marshals an enabled devMode through initialization", async () => {
+    await SimulaAds.initialize({ apiKey: "key_123", devMode: true });
+
+    expect(native.initialize).toHaveBeenCalledWith(
+      expect.objectContaining({ devMode: true }),
+    );
+  });
+
+  it("reconciles mutable native configuration after compatible duplicate initialization", async () => {
+    await SimulaAds.initialize({ apiKey: "key_123" });
+    jest.clearAllMocks();
+
+    await SimulaAds.initialize({
+      apiKey: "key_123",
+      hasPrivacyConsent: false,
+      privacy: { coppaApplies: true },
+      primaryUserID: "user-2",
+      adContext: { category: "profile" },
+    });
+
+    expect(native.applyConsent).toHaveBeenCalledWith({
+      hasPrivacyConsent: false,
+      coppaApplies: true,
+    });
+    expect(native.updatePrimaryUserID).toHaveBeenCalledWith("user-2");
+    expect(native.updateContext).toHaveBeenCalledWith({ category: "profile" });
   });
 
   it.each([undefined, null, "", " ", "\t\n"])(

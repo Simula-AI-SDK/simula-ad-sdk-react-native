@@ -11,6 +11,7 @@ import {
   __reset,
 } from "../../../test/reactNativeMock";
 import { deferred, mount, runInAct } from "../../../test/reactHarness";
+import { resetAcceptedInitializationForTests } from "../../../internal/initializationState";
 
 const native = NativeModules.SimulaMiniGameModule;
 
@@ -88,6 +89,7 @@ function surfaceElement(
 }
 
 beforeEach(() => {
+  resetAcceptedInitializationForTests();
   __reset();
   jest.clearAllMocks();
 });

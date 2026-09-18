@@ -22,10 +22,22 @@ import {
   warnInvalidIdentifier,
 } from "../internal/identifiers";
 import { safeJsonSnapshot } from "../internal/safeJson";
-import { markApiKeyAccepted } from "../internal/initializationState";
+import {
+  assertInitializationCompatible,
+  getAcceptedInitialization,
+  markInitializationAccepted,
+} from "../internal/initializationState";
+
+export type SimulaAPIEnvironment = "production" | "staging";
+
+export function normalizeAPIEnvironment(value: unknown): SimulaAPIEnvironment {
+  return value === "staging" ? "staging" : "production";
+}
 
 export interface SimulaInitConfig {
   apiKey: string;
+  /** Dev-artifact API backend. Staging also requires native host opt-in. */
+  apiEnvironment?: SimulaAPIEnvironment;
   /** Development mode. Default false. */
   devMode?: boolean;
   /** Optional primary user identifier (suppressed without consent / under COPPA). */
@@ -51,6 +63,7 @@ function toNativeConfig(config: SimulaInitConfig): Record<string, unknown> {
       : null;
   return {
     apiKey: config.apiKey,
+    apiEnvironment: normalizeAPIEnvironment(config.apiEnvironment),
     devMode: config.devMode ?? false,
     primaryUserID,
     hasPrivacyConsent: config.hasPrivacyConsent ?? true,
@@ -63,6 +76,25 @@ function toNativeConfig(config: SimulaInitConfig): Record<string, unknown> {
         : null,
     adContext: config.adContext ? toNativeAdContext(config.adContext) : null,
   };
+}
+
+function reconcileAcceptedInitialization(config: Record<string, unknown>): void {
+  const privacy =
+    config.privacy && typeof config.privacy === "object" && !Array.isArray(config.privacy)
+      ? (config.privacy as Record<string, unknown>)
+      : {};
+  NativeAds!.applyConsent({
+    hasPrivacyConsent: config.hasPrivacyConsent !== false,
+    ...privacy,
+  });
+  NativeAds!.updatePrimaryUserID(
+    typeof config.primaryUserID === "string" ? config.primaryUserID : null,
+  );
+  NativeAds!.updateContext(
+    config.adContext && typeof config.adContext === "object" && !Array.isArray(config.adContext)
+      ? (config.adContext as Record<string, unknown>)
+      : {},
+  );
 }
 
 /** Drops undefined keys so absent fields map to native defaults / "unchanged". */
@@ -81,8 +113,8 @@ export function toNativePrivacy(
 export const SimulaAds = {
   /**
    * Initializes the SDK. Resolves once native init returns (session warms in the
-   * background). Rejects with `INITIALIZATION_CONFLICT` if another API key already
-   * owns the process; switching keys requires an app-process restart.
+   * background). Rejects with `INITIALIZATION_CONFLICT` if another API key owns
+   * the process; switching keys requires a process restart.
    */
   async initialize(config: SimulaInitConfig): Promise<void> {
     if (!isAdsModuleAvailable()) {
@@ -90,10 +122,17 @@ export const SimulaAds = {
       return;
     }
     const apiKey = requireNonBlankString(config?.apiKey, "apiKey");
+    const apiEnvironment = normalizeAPIEnvironment(config?.apiEnvironment);
+    assertInitializationCompatible(apiKey, apiEnvironment);
     // The IPv4 resolution beacon now lives in the native SDKs (fired after
     // session creation, carrying the server session id) — no JS-side work here.
-    await NativeAds!.initialize(toNativeConfig({ ...config, apiKey }));
-    markApiKeyAccepted(apiKey);
+    const nativeConfig = toNativeConfig({ ...config, apiKey, apiEnvironment });
+    await NativeAds!.initialize(nativeConfig);
+    const acceptedBeforeThisCall = getAcceptedInitialization();
+    markInitializationAccepted(apiKey, apiEnvironment);
+    if (acceptedBeforeThisCall != null) {
+      reconcileAcceptedInitialization(nativeConfig);
+    }
   },
 
   /** Whether the SDK has been initialized with a valid API key. */

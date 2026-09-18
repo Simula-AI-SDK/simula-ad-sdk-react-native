@@ -197,9 +197,10 @@ class SimulaMiniGameModule: RCTEventEmitter {
 
     /// React Native surfaces share the provider accepted by the imperative initialization path.
     private func reusableProvider(apiKey: String) -> SimulaProvider? {
-        guard let shared = MainActor.assumeIsolated({ SimulaAds.shared }),
-              shared.apiKey == apiKey else { return nil }
-        return shared
+        MainActor.assumeIsolated {
+            guard let shared = SimulaAds.shared, shared.apiKey == apiKey else { return nil }
+            return shared
+        }
     }
 
     // MARK: - MiniGameMenu
@@ -495,6 +496,8 @@ class SimulaMiniGameModule: RCTEventEmitter {
             return
         }
         let devMode = props["devMode"] as? Bool ?? false
+        let apiEnvironment: SimulaAPIEnvironment =
+            (props["apiEnvironment"] as? String) == "staging" ? .staging : .production
         let primaryUserID = props["primaryUserID"] as? String
         let hasPrivacyConsent = props["hasPrivacyConsent"] as? Bool ?? true
         let privacy = convertPrivacyConfig(props["privacy"])
@@ -505,6 +508,29 @@ class SimulaMiniGameModule: RCTEventEmitter {
         // is reused by every declarative surface via reusableProvider — unifying the
         // imperative + declarative session. SimulaAds is @MainActor; methodQueue is
         // .main, so this is safe.
+        let ownershipConflict = MainActor.assumeIsolated {
+            guard let shared = SimulaAds.shared else { return false }
+            return shared.apiKey != apiKey || SimulaAds.apiEnvironment != apiEnvironment
+        }
+        guard !ownershipConflict else {
+            reject(
+                Self.initializationConflictCode,
+                "The process is already owned by a different Simula SDK configuration",
+                nil
+            )
+            return
+        }
+        let environmentAccepted = MainActor.assumeIsolated {
+            SimulaAds.configureAPIEnvironment(apiEnvironment)
+        }
+        guard environmentAccepted else {
+            reject(
+                "API_ENVIRONMENT_UNAVAILABLE",
+                "Staging requires a development native SDK and SimulaStagingEnvironmentEnabled=true",
+                nil
+            )
+            return
+        }
         let accepted = MainActor.assumeIsolated {
             let didInitialize = SimulaAds.initialize(
                 apiKey: apiKey,
@@ -515,7 +541,8 @@ class SimulaMiniGameModule: RCTEventEmitter {
                 telemetryEnabled: telemetryEnabled,
                 adContext: adContext
             )
-            return didInitialize || SimulaAds.shared?.apiKey == apiKey
+            let sharedOwnerMatches = SimulaAds.shared?.apiKey == apiKey
+            return didInitialize || (sharedOwnerMatches && SimulaAds.apiEnvironment == apiEnvironment)
         }
         guard accepted else {
             reject(

@@ -3,6 +3,7 @@ import { SimulaProvider, useSimulaContext } from "../SimulaProvider";
 import { SimulaAds } from "../../ads/SimulaAds";
 import { NativeModules, __reset } from "../../test/reactNativeMock";
 import { mount } from "../../test/reactHarness";
+import { resetAcceptedInitializationForTests } from "../../internal/initializationState";
 
 const native = NativeModules.SimulaAdsModule;
 
@@ -21,6 +22,7 @@ function providerElement(
 }
 
 beforeEach(() => {
+  resetAcceptedInitializationForTests();
   __reset();
   jest.clearAllMocks();
 });
@@ -77,6 +79,29 @@ describe("SimulaProvider lifecycle", () => {
     expect(native.updateContext).toHaveBeenCalledTimes(1);
     expect(native.updatePrimaryUserID).toHaveBeenCalledWith("user-2");
     await tree.unmount();
+  });
+
+  it("reconciles privacy, context, and PPID when a compatible Provider remounts", async () => {
+    const first = await mount(providerElement());
+    await first.unmount();
+    jest.clearAllMocks();
+
+    const second = await mount(
+      providerElement({
+        hasPrivacyConsent: false,
+        privacy: { coppaApplies: true },
+        adContext: { category: "profile" },
+        primaryUserID: "user-2",
+      }),
+    );
+
+    expect(native.applyConsent).toHaveBeenCalledWith({
+      hasPrivacyConsent: false,
+      coppaApplies: true,
+    });
+    expect(native.updateContext).toHaveBeenCalledWith({ category: "profile" });
+    expect(native.updatePrimaryUserID).toHaveBeenCalledWith("user-2");
+    await second.unmount();
   });
 
   it("does not apply runtime state from a rejected process key", async () => {
