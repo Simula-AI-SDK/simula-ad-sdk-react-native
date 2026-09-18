@@ -84,8 +84,10 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
                     telemetryEnabled = telemetryEnabled,
                     adContext = adContext,
                 )
+                SimulaNativeInitializationAttempt.Attempted
+            } else {
+                SimulaNativeInitializationAttempt.EnvironmentUnavailable
             }
-            environmentAccepted
         }
 
         when (outcome) {

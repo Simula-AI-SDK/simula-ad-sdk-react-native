@@ -472,8 +472,10 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
                     telemetryEnabled = telemetryEnabled,
                     adContext = adContext,
                 )
+                SimulaNativeInitializationAttempt.Attempted
+            } else {
+                SimulaNativeInitializationAttempt.EnvironmentUnavailable
             }
-            environmentAccepted
         }) {
             SimulaInitializationOutcome.Accepted -> promise.resolve(null)
             SimulaInitializationOutcome.Conflict -> promise.reject(

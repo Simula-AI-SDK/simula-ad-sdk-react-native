@@ -164,6 +164,15 @@ class SimulaAdsModule: RCTEventEmitter {
         let adContext = convertAdContext(config["adContext"])
 
         runOnMain {
+            if let shared = SimulaAds.shared,
+               shared.apiKey != apiKey || SimulaAds.apiEnvironment != apiEnvironment {
+                reject(
+                    Self.initializationConflictCode,
+                    "The process is already owned by a different Simula SDK configuration",
+                    nil
+                )
+                return
+            }
             guard SimulaAds.configureAPIEnvironment(apiEnvironment) else {
                 reject(
                     "API_ENVIRONMENT_UNAVAILABLE",

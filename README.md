@@ -55,7 +55,7 @@ await SimulaAds.initialize({
 
 ### Staging opt-in
 
-The `apiEnvironment` initialization option is intended for development wrapper/native artifacts. A staging request is accepted only with an exact `X.Y.Z-dev.N` native SDK and explicit host-app capability. Wrapper `1.4.1-dev.4` pins Kotlin and Swift SDK `1.2.1-dev.3`. Add `SimulaStagingEnvironmentEnabled=true` to hosts allowed to request staging:
+The `apiEnvironment` initialization option is intended for development wrapper/native artifacts. A staging request is accepted only with an exact `X.Y.Z-dev.N` native SDK and explicit host-app capability. Wrapper `1.4.2-dev.1` pins Kotlin SDK `1.2.1-dev.3` and Swift SDK `1.2.2-dev.1`. Add `SimulaStagingEnvironmentEnabled=true` to hosts allowed to request staging:
 
 Android application manifest:
 

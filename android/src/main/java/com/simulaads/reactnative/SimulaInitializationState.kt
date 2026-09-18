@@ -10,6 +10,11 @@ internal enum class SimulaInitializationOutcome {
     Failed,
 }
 
+internal enum class SimulaNativeInitializationAttempt {
+    EnvironmentUnavailable,
+    Attempted,
+}
+
 /** Tracks React Native's process configuration because the SDK exposes no effective-key getter. */
 internal object SimulaInitializationState {
     private val lock = Any()
@@ -33,7 +38,7 @@ internal object SimulaInitializationState {
     fun initialize(
         requestedApiKey: String,
         requestedApiEnvironment: SimulaApiEnvironment,
-        initializeNative: () -> Boolean,
+        initializeNative: () -> SimulaNativeInitializationAttempt,
     ): SimulaInitializationOutcome =
         synchronized(lock) {
             val currentApiKey = apiKey
@@ -54,13 +59,19 @@ internal object SimulaInitializationState {
             if (SimulaAds.isInitialized) return@synchronized SimulaInitializationOutcome.Conflict
 
             runCatching { initializeNative() }.fold(
-                onSuccess = {
-                    if (it && SimulaAds.isInitialized && SimulaAds.apiEnvironment == requestedApiEnvironment) {
-                        apiKey = requestedApiKey
-                        apiEnvironment = requestedApiEnvironment
-                        SimulaInitializationOutcome.Accepted
-                    } else {
-                        SimulaInitializationOutcome.EnvironmentUnavailable
+                onSuccess = { nativeAttempt ->
+                    when (nativeAttempt) {
+                        SimulaNativeInitializationAttempt.EnvironmentUnavailable ->
+                            SimulaInitializationOutcome.EnvironmentUnavailable
+                        SimulaNativeInitializationAttempt.Attempted -> {
+                            if (SimulaAds.isInitialized && SimulaAds.apiEnvironment == requestedApiEnvironment) {
+                                apiKey = requestedApiKey
+                                apiEnvironment = requestedApiEnvironment
+                                SimulaInitializationOutcome.Accepted
+                            } else {
+                                SimulaInitializationOutcome.Failed
+                            }
+                        }
                     }
                 },
                 onFailure = { SimulaInitializationOutcome.Failed },

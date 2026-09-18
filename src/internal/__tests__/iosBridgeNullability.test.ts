@@ -132,6 +132,8 @@ describe("iOS bridge string nullability contract", () => {
     );
     expect(androidInitializationSource).toContain("private var apiKey: String? = null");
     expect(androidInitializationSource).toContain("private var apiEnvironment: SimulaApiEnvironment? = null");
+    expect(androidInitializationSource).toContain("SimulaNativeInitializationAttempt.EnvironmentUnavailable");
+    expect(androidInitializationSource).toContain("SimulaNativeInitializationAttempt.Attempted");
     expect(androidInitializationSource).toContain(
       "if (currentApiKey != null && currentApiKey != requestedApiKey)",
     );
@@ -164,6 +166,9 @@ describe("iOS bridge string nullability contract", () => {
     expect(iosMiniGameSource).toContain("SimulaAds.configureAPIEnvironment(apiEnvironment)");
     expect(moduleSource).toContain('"API_ENVIRONMENT_UNAVAILABLE"');
     expect(androidModuleSource).toContain('"API_ENVIRONMENT_UNAVAILABLE"');
+    expect(androidInitializationSource).toMatch(
+      /SimulaNativeInitializationAttempt\.Attempted[\s\S]*?SimulaInitializationOutcome\.Failed/,
+    );
     const preloadPath = iosMiniGameSource.slice(
       iosMiniGameSource.indexOf("func preload(_ props:"),
       iosMiniGameSource.indexOf("// MARK: - CharacterSelector"),
@@ -171,6 +176,12 @@ describe("iOS bridge string nullability contract", () => {
     expect(preloadPath).toContain('"API_ENVIRONMENT_UNAVAILABLE"');
     expect(preloadPath.indexOf("API_ENVIRONMENT_UNAVAILABLE")).toBeLessThan(
       preloadPath.indexOf("let accepted = MainActor.assumeIsolated"),
+    );
+    expect(moduleSource.indexOf("SimulaAds.shared")).toBeLessThan(
+      moduleSource.indexOf("guard SimulaAds.configureAPIEnvironment(apiEnvironment)"),
+    );
+    expect(preloadPath.indexOf("ownershipConflict")).toBeLessThan(
+      preloadPath.indexOf("SimulaAds.configureAPIEnvironment(apiEnvironment)"),
     );
   });
 

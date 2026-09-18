@@ -508,6 +508,18 @@ class SimulaMiniGameModule: RCTEventEmitter {
         // is reused by every declarative surface via reusableProvider — unifying the
         // imperative + declarative session. SimulaAds is @MainActor; methodQueue is
         // .main, so this is safe.
+        let ownershipConflict = MainActor.assumeIsolated {
+            guard let shared = SimulaAds.shared else { return false }
+            return shared.apiKey != apiKey || SimulaAds.apiEnvironment != apiEnvironment
+        }
+        guard !ownershipConflict else {
+            reject(
+                Self.initializationConflictCode,
+                "The process is already owned by a different Simula SDK configuration",
+                nil
+            )
+            return
+        }
         let environmentAccepted = MainActor.assumeIsolated {
             SimulaAds.configureAPIEnvironment(apiEnvironment)
         }
