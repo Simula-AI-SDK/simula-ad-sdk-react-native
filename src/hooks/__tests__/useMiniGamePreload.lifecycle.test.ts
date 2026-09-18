@@ -3,6 +3,7 @@ import { useMiniGamePreload } from "../useMiniGamePreload";
 import { SimulaProvider } from "../../context/SimulaProvider";
 import { NativeModules, __reset } from "../../test/reactNativeMock";
 import { mount, runInAct } from "../../test/reactHarness";
+import { resetAcceptedInitializationForTests } from "../../internal/initializationState";
 
 const native = NativeModules.SimulaAdsModule;
 const miniGameNative = NativeModules.SimulaMiniGameModule;
@@ -27,6 +28,7 @@ function preloadProbe(
 }
 
 beforeEach(() => {
+  resetAcceptedInitializationForTests();
   __reset();
   jest.clearAllMocks();
 });
@@ -69,12 +71,15 @@ describe("useMiniGamePreload lifecycle", () => {
       }),
     );
 
-    await tree.update(preloadProbe("second-key", capture));
+    await tree.update(
+      preloadProbe("first-key", capture, "user-2", {
+      }),
+    );
     await runInAct(async () => {
       await preload?.();
     });
     expect(native.initialize).toHaveBeenLastCalledWith(
-      expect.objectContaining({ apiKey: "second-key", primaryUserID: null }),
+      expect.objectContaining({ apiKey: "first-key", primaryUserID: "user-2" }),
     );
     await tree.unmount();
   });

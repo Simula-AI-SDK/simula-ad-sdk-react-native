@@ -33,7 +33,48 @@ Full integration guides, API references, and examples are available at:
 
 ## Initialization
 
-The first valid API key owns the native SDK for the lifetime of the app process. Repeated initialization with the same key is safe and idempotent. Attempting to switch to another key rejects with `INITIALIZATION_CONFLICT`; restart the app process to use a different key. Initialize through this React Native package rather than racing it with direct Kotlin or Swift initialization.
+The first valid API key and API environment own the native SDK for the lifetime of the app process. Repeated initialization with the same configuration is safe and idempotent. Attempting to switch either value rejects with `INITIALIZATION_CONFLICT`; perform a cold app-process restart to use a different configuration.
+
+`devMode` is independent of backend selection:
+
+```tsx
+<SimulaProvider
+  apiKey="YOUR_API_KEY"
+  apiEnvironment="production"
+  devMode={false}
+>
+  <App />
+</SimulaProvider>
+
+await SimulaAds.initialize({
+  apiKey: "YOUR_API_KEY",
+  apiEnvironment: "staging",
+  devMode: true,
+});
+```
+
+### Staging opt-in
+
+The `apiEnvironment` initialization option is intended for development wrapper/native artifacts. A staging request is accepted only with an exact `X.Y.Z-dev.N` native SDK and explicit host-app capability. Wrapper `1.4.2-dev.1` pins Kotlin SDK `1.2.1-dev.3` and Swift SDK `1.2.2-dev.1`. Add `SimulaStagingEnvironmentEnabled=true` to hosts allowed to request staging:
+
+Android application manifest:
+
+```xml
+<application>
+  <meta-data
+    android:name="SimulaStagingEnvironmentEnabled"
+    android:value="true" />
+</application>
+```
+
+iOS application `Info.plist`:
+
+```xml
+<key>SimulaStagingEnvironmentEnabled</key>
+<true/>
+```
+
+Stable native SDK artifacts refuse staging initialization even when the host key is present; RN rejects with `API_ENVIRONMENT_UNAVAILABLE` instead of silently using production. Unknown runtime values normalize to production, arbitrary URLs are never accepted, and `devMode` remains independent. Changing environments requires a cold process restart.
 
 ## Click Lifecycle
 

@@ -22,10 +22,22 @@ import {
   warnInvalidIdentifier,
 } from "../internal/identifiers";
 import { safeJsonSnapshot } from "../internal/safeJson";
-import { markApiKeyAccepted } from "../internal/initializationState";
+import {
+  assertInitializationCompatible,
+  getAcceptedInitialization,
+  markInitializationAccepted,
+} from "../internal/initializationState";
+
+export type SimulaAPIEnvironment = "production" | "staging";
+
+export function normalizeAPIEnvironment(value: unknown): SimulaAPIEnvironment {
+  return value === "staging" ? "staging" : "production";
+}
 
 export interface SimulaInitConfig {
   apiKey: string;
+  /** Dev-artifact API backend. Staging also requires native host opt-in. */
+  apiEnvironment?: SimulaAPIEnvironment;
   /** Development mode. Default false. */
   devMode?: boolean;
   /** Optional primary user identifier (suppressed without consent / under COPPA). */
@@ -51,6 +63,7 @@ function toNativeConfig(config: SimulaInitConfig): Record<string, unknown> {
       : null;
   return {
     apiKey: config.apiKey,
+    apiEnvironment: normalizeAPIEnvironment(config.apiEnvironment),
     devMode: config.devMode ?? false,
     primaryUserID,
     hasPrivacyConsent: config.hasPrivacyConsent ?? true,
@@ -63,6 +76,42 @@ function toNativeConfig(config: SimulaInitConfig): Record<string, unknown> {
         : null,
     adContext: config.adContext ? toNativeAdContext(config.adContext) : null,
   };
+}
+
+function hasOwn(config: SimulaInitConfig, key: keyof SimulaInitConfig): boolean {
+  return Object.prototype.hasOwnProperty.call(config, key);
+}
+
+function reconcileAcceptedInitialization(
+  requestedConfig: SimulaInitConfig,
+  nativeConfig: Record<string, unknown>,
+): void {
+  const privacy =
+    nativeConfig.privacy &&
+    typeof nativeConfig.privacy === "object" &&
+    !Array.isArray(nativeConfig.privacy)
+      ? (nativeConfig.privacy as Record<string, unknown>)
+      : {};
+  if (hasOwn(requestedConfig, "hasPrivacyConsent") || hasOwn(requestedConfig, "privacy")) {
+    NativeAds!.applyConsent({
+      hasPrivacyConsent: nativeConfig.hasPrivacyConsent !== false,
+      ...privacy,
+    });
+  }
+  if (hasOwn(requestedConfig, "primaryUserID")) {
+    NativeAds!.updatePrimaryUserID(
+      typeof nativeConfig.primaryUserID === "string" ? nativeConfig.primaryUserID : null,
+    );
+  }
+  if (hasOwn(requestedConfig, "adContext")) {
+    NativeAds!.updateContext(
+      nativeConfig.adContext &&
+        typeof nativeConfig.adContext === "object" &&
+        !Array.isArray(nativeConfig.adContext)
+        ? (nativeConfig.adContext as Record<string, unknown>)
+        : {},
+    );
+  }
 }
 
 /** Drops undefined keys so absent fields map to native defaults / "unchanged". */
@@ -81,8 +130,8 @@ export function toNativePrivacy(
 export const SimulaAds = {
   /**
    * Initializes the SDK. Resolves once native init returns (session warms in the
-   * background). Rejects with `INITIALIZATION_CONFLICT` if another API key already
-   * owns the process; switching keys requires an app-process restart.
+   * background). Rejects with `INITIALIZATION_CONFLICT` if another API key owns
+   * the process; switching keys requires a process restart.
    */
   async initialize(config: SimulaInitConfig): Promise<void> {
     if (!isAdsModuleAvailable()) {
@@ -90,10 +139,18 @@ export const SimulaAds = {
       return;
     }
     const apiKey = requireNonBlankString(config?.apiKey, "apiKey");
+    const apiEnvironment = normalizeAPIEnvironment(config?.apiEnvironment);
+    assertInitializationCompatible(apiKey, apiEnvironment);
     // The IPv4 resolution beacon now lives in the native SDKs (fired after
     // session creation, carrying the server session id) — no JS-side work here.
-    await NativeAds!.initialize(toNativeConfig({ ...config, apiKey }));
-    markApiKeyAccepted(apiKey);
+    const requestedConfig = { ...config, apiKey, apiEnvironment };
+    const nativeConfig = toNativeConfig(requestedConfig);
+    await NativeAds!.initialize(nativeConfig);
+    const acceptedBeforeThisCall = getAcceptedInitialization();
+    markInitializationAccepted(apiKey, apiEnvironment);
+    if (acceptedBeforeThisCall != null) {
+      reconcileAcceptedInitialization(requestedConfig, nativeConfig);
+    }
   },
 
   /** Whether the SDK has been initialized with a valid API key. */

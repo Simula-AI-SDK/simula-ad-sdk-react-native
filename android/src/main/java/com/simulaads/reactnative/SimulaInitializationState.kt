@@ -1,27 +1,68 @@
 package com.simulaads.reactnative
 
 import ad.simula.ad.sdk.ads.SimulaAds
+import ad.simula.ad.sdk.ads.SimulaApiEnvironment
 
 internal enum class SimulaInitializationOutcome {
     Accepted,
     Conflict,
+    EnvironmentUnavailable,
     Failed,
 }
 
-/** Tracks React Native's process-key claim because the Android SDK exposes no effective-key getter. */
+internal enum class SimulaNativeInitializationAttempt {
+    EnvironmentUnavailable,
+    Attempted,
+}
+
+/** Tracks React Native's process configuration because the SDK exposes no effective-key getter. */
 internal object SimulaInitializationState {
     private val lock = Any()
     private var apiKey: String? = null
+    private var apiEnvironment: SimulaApiEnvironment? = null
 
-    fun initialize(requestedApiKey: String, initializeNative: () -> Unit): SimulaInitializationOutcome =
+    fun claim(requestedApiKey: String): SimulaInitializationOutcome = synchronized(lock) {
+        val currentApiKey = apiKey
+        if (currentApiKey != null) {
+            return@synchronized if (currentApiKey == requestedApiKey) {
+                SimulaInitializationOutcome.Accepted
+            } else {
+                SimulaInitializationOutcome.Conflict
+            }
+        }
+        if (SimulaAds.isInitialized) return@synchronized SimulaInitializationOutcome.Conflict
+        apiKey = requestedApiKey
+        SimulaInitializationOutcome.Accepted
+    }
+
+    fun initialize(
+        requestedApiKey: String,
+        requestedApiEnvironment: SimulaApiEnvironment,
+        initializeNative: () -> SimulaNativeInitializationAttempt,
+    ): SimulaInitializationOutcome =
         synchronized(lock) {
             val currentApiKey = apiKey
-            if (currentApiKey != null) {
-                return@synchronized if (currentApiKey == requestedApiKey) {
+            val currentApiEnvironment = apiEnvironment
+            if (currentApiKey != null && currentApiKey != requestedApiKey) {
+                return@synchronized SimulaInitializationOutcome.Conflict
+            }
+            if (currentApiEnvironment != null && currentApiEnvironment != requestedApiEnvironment) {
+                return@synchronized SimulaInitializationOutcome.Conflict
+            }
+            if (
+                currentApiKey == requestedApiKey &&
+                currentApiEnvironment == null &&
+                SimulaAds.isInitialized
+            ) {
+                return@synchronized if (SimulaAds.apiEnvironment == requestedApiEnvironment) {
+                    apiEnvironment = requestedApiEnvironment
                     SimulaInitializationOutcome.Accepted
                 } else {
                     SimulaInitializationOutcome.Conflict
                 }
+            }
+            if (currentApiKey == requestedApiKey && currentApiEnvironment == requestedApiEnvironment && SimulaAds.isInitialized) {
+                return@synchronized SimulaInitializationOutcome.Accepted
             }
 
             // An imperative owner created outside this package cannot be verified because the
@@ -30,12 +71,19 @@ internal object SimulaInitializationState {
             if (SimulaAds.isInitialized) return@synchronized SimulaInitializationOutcome.Conflict
 
             runCatching { initializeNative() }.fold(
-                onSuccess = {
-                    if (SimulaAds.isInitialized) {
-                        apiKey = requestedApiKey
-                        SimulaInitializationOutcome.Accepted
-                    } else {
-                        SimulaInitializationOutcome.Conflict
+                onSuccess = { nativeAttempt ->
+                    when (nativeAttempt) {
+                        SimulaNativeInitializationAttempt.EnvironmentUnavailable ->
+                            SimulaInitializationOutcome.EnvironmentUnavailable
+                        SimulaNativeInitializationAttempt.Attempted -> {
+                            if (SimulaAds.isInitialized && SimulaAds.apiEnvironment == requestedApiEnvironment) {
+                                apiKey = requestedApiKey
+                                apiEnvironment = requestedApiEnvironment
+                                SimulaInitializationOutcome.Accepted
+                            } else {
+                                SimulaInitializationOutcome.Failed
+                            }
+                        }
                     }
                 },
                 onFailure = { SimulaInitializationOutcome.Failed },

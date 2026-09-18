@@ -46,7 +46,6 @@ const androidInitializationSource = readFileSync(
   ),
   "utf8",
 );
-
 describe("iOS bridge string nullability contract", () => {
   it("accepts nullable host-controlled identifiers at the Objective-C boundary", () => {
     expect(bridge).toContain(
@@ -128,12 +127,65 @@ describe("iOS bridge string nullability contract", () => {
     expect(moduleSource).toContain("SimulaAds.shared?.apiKey == apiKey");
     expect(moduleSource).toContain('"INITIALIZATION_CONFLICT"');
     expect(androidModuleSource).toContain('INITIALIZATION_CONFLICT = "INITIALIZATION_CONFLICT"');
-    expect(androidModuleSource).toContain("SimulaInitializationState.initialize(apiKey)");
+    expect(androidModuleSource).toContain(
+      "SimulaInitializationState.initialize(apiKey, apiEnvironment)",
+    );
     expect(androidInitializationSource).toContain("private var apiKey: String? = null");
+    expect(androidInitializationSource).toContain("private var apiEnvironment: SimulaApiEnvironment? = null");
+    expect(androidInitializationSource).toContain("SimulaNativeInitializationAttempt.EnvironmentUnavailable");
+    expect(androidInitializationSource).toContain("SimulaNativeInitializationAttempt.Attempted");
+    expect(androidInitializationSource).toContain(
+      "if (currentApiKey != null && currentApiKey != requestedApiKey)",
+    );
+    expect(androidInitializationSource).toContain(
+      "if (currentApiEnvironment != null && currentApiEnvironment != requestedApiEnvironment)",
+    );
+    expect(androidInitializationSource).toMatch(
+      /currentApiEnvironment == null[\s\S]*?SimulaAds\.isInitialized[\s\S]*?SimulaAds\.apiEnvironment == requestedApiEnvironment[\s\S]*?apiEnvironment = requestedApiEnvironment/,
+    );
     expect(androidInitializationSource).toContain(
       "if (SimulaAds.isInitialized) return@synchronized SimulaInitializationOutcome.Conflict",
     );
+    expect(androidInitializationSource).toMatch(
+      /fun claim[\s\S]*?apiKey = requestedApiKey[\s\S]*?SimulaInitializationOutcome\.Accepted/,
+    );
     expect(iosMiniGameSource).toContain("shared.apiKey == apiKey else { return nil }");
+  });
+
+  it("rejects a refused development environment before native initialization", () => {
+    expect(androidModuleSource).toContain("configureApiEnvironment");
+    expect(androidModuleSource.indexOf("configureApiEnvironment")).toBeLessThan(
+      androidModuleSource.indexOf("SimulaAds.initialize("),
+    );
+    expect(androidMiniGameSource.match(/prepareProviderConfiguration\(/g)).toHaveLength(6);
+    const androidPreloadPath = androidMiniGameSource.slice(
+      androidMiniGameSource.indexOf("fun preload(props:"),
+      androidMiniGameSource.indexOf("private fun removeComposeView"),
+    );
+    expect(androidPreloadPath.indexOf("val apiEnvironment = props.toSimulaApiEnvironment()")).toBeLessThan(
+      androidPreloadPath.indexOf("SimulaInitializationState.initialize(apiKey, apiEnvironment)"),
+    );
+    expect(moduleSource).toContain("guard SimulaAds.configureAPIEnvironment(apiEnvironment) else");
+    expect(iosMiniGameSource).toContain("SimulaAds.configureAPIEnvironment(apiEnvironment)");
+    expect(moduleSource).toContain('"API_ENVIRONMENT_UNAVAILABLE"');
+    expect(androidModuleSource).toContain('"API_ENVIRONMENT_UNAVAILABLE"');
+    expect(androidInitializationSource).toMatch(
+      /SimulaNativeInitializationAttempt\.Attempted[\s\S]*?SimulaInitializationOutcome\.Failed/,
+    );
+    const preloadPath = iosMiniGameSource.slice(
+      iosMiniGameSource.indexOf("func preload(_ props:"),
+      iosMiniGameSource.indexOf("// MARK: - CharacterSelector"),
+    );
+    expect(preloadPath).toContain('"API_ENVIRONMENT_UNAVAILABLE"');
+    expect(preloadPath.indexOf("API_ENVIRONMENT_UNAVAILABLE")).toBeLessThan(
+      preloadPath.indexOf("let accepted = MainActor.assumeIsolated"),
+    );
+    expect(moduleSource.indexOf("SimulaAds.shared")).toBeLessThan(
+      moduleSource.indexOf("guard SimulaAds.configureAPIEnvironment(apiEnvironment)"),
+    );
+    expect(preloadPath.indexOf("ownershipConflict")).toBeLessThan(
+      preloadPath.indexOf("SimulaAds.configureAPIEnvironment(apiEnvironment)"),
+    );
   });
 
   it("leaves iOS navigation and StoreKit routing with the native SDK", () => {

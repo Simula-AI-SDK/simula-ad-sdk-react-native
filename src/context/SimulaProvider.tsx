@@ -17,14 +17,14 @@ import React, {
   useState,
 } from "react";
 import { SimulaProviderProps, SimulaContextValue } from "../types";
-import { SimulaAds } from "../ads/SimulaAds";
+import { normalizeAPIEnvironment, SimulaAds } from "../ads/SimulaAds";
 import { SimulaPrivacy } from "../privacy/SimulaPrivacy";
 import { toNativeAdContext } from "../ads/context";
 import { isNonBlankString } from "../internal/identifiers";
 import { safeJsonSnapshot } from "../internal/safeJson";
 import {
-  getAcceptedApiKey,
-  subscribeToAcceptedApiKey,
+  getAcceptedInitialization,
+  subscribeToAcceptedInitialization,
 } from "../internal/initializationState";
 
 const SimulaContext = createContext<SimulaContextValue | null>(null);
@@ -40,6 +40,7 @@ export function useSimulaContext(): SimulaContextValue {
 export function SimulaProvider({
   apiKey,
   children,
+  apiEnvironment = "production",
   hasPrivacyConsent = true,
   devMode = false,
   primaryUserID,
@@ -48,9 +49,12 @@ export function SimulaProvider({
   adContext,
   initializeOnMount = true,
 }: SimulaProviderProps): React.JSX.Element {
-  const [initializedApiKey, setInitializedApiKey] = useState(getAcceptedApiKey);
+  const safeAPIEnvironment = normalizeAPIEnvironment(apiEnvironment);
+  const [acceptedInitialization, setAcceptedInitialization] = useState(
+    getAcceptedInitialization,
+  );
   useEffect(
-    () => subscribeToAcceptedApiKey(setInitializedApiKey),
+    () => subscribeToAcceptedInitialization(setAcceptedInitialization),
     [],
   );
   // Snapshot host objects so malformed values cannot crash render or cross the bridge.
@@ -72,6 +76,7 @@ export function SimulaProvider({
   const initializationConfig = useMemo(
     () => ({
       apiKey,
+      apiEnvironment: safeAPIEnvironment,
       devMode,
       primaryUserID,
       hasPrivacyConsent,
@@ -81,6 +86,7 @@ export function SimulaProvider({
     }),
     [
       apiKey,
+      safeAPIEnvironment,
       devMode,
       primaryUserID,
       hasPrivacyConsent,
@@ -92,20 +98,35 @@ export function SimulaProvider({
   const contextValue = useMemo<SimulaContextValue>(
     () => ({
       apiKey,
+      apiEnvironment: safeAPIEnvironment,
       hasPrivacyConsent,
       devMode,
       primaryUserID,
       initializationConfig,
     }),
-    [apiKey, hasPrivacyConsent, devMode, primaryUserID, initializationConfig],
+    [
+      apiKey,
+      safeAPIEnvironment,
+      hasPrivacyConsent,
+      devMode,
+      primaryUserID,
+      initializationConfig,
+    ],
   );
+  const initializationIdentityRef = useRef<string | null>(null);
 
   // Eager init: warms the native session off the first ad's critical path, and on
   // Android is the only path that enables telemetry. Same-key native init is
   // idempotent; changing apiKey cannot replace the process owner and is reported.
   useEffect(() => {
     if (!initializeOnMount || !isNonBlankString(apiKey)) return;
+    const initializationIdentity = `${apiKey}\u0000${safeAPIEnvironment}`;
+    if (initializationIdentityRef.current === initializationIdentity) return;
+    initializationIdentityRef.current = initializationIdentity;
     SimulaAds.initialize(initializationConfig).catch((error: unknown) => {
+      if (initializationIdentityRef.current === initializationIdentity) {
+        initializationIdentityRef.current = null;
+      }
       console.error("[Simula] initialize failed:", error);
     });
     // privacyKey / adContextKey stand in for the (deep) privacy / adContext objects.
@@ -113,6 +134,7 @@ export function SimulaProvider({
   }, [
     initializeOnMount,
     apiKey,
+    safeAPIEnvironment,
     devMode,
     primaryUserID,
     hasPrivacyConsent,
@@ -123,7 +145,9 @@ export function SimulaProvider({
 
   // A rejected key must not push its identity or targeting state into the process owner.
   // Explicit SimulaAds.initialize calls update the same accepted-key state.
-  const canApplyRuntimeUpdates = initializedApiKey === apiKey;
+  const canApplyRuntimeUpdates =
+    acceptedInitialization?.apiKey === apiKey &&
+    acceptedInitialization.apiEnvironment === safeAPIEnvironment;
 
   // Runtime consent changes after mount → push to the native store (which debounces
   // and re-syncs the session). Skipped on the first run since initialize already
