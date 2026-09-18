@@ -38,9 +38,10 @@ internal object SimulaInitializationState {
         synchronized(lock) {
             val currentApiKey = apiKey
             val currentApiEnvironment = apiEnvironment
-            if ((currentApiKey != null || currentApiEnvironment != null) &&
-                (currentApiKey != requestedApiKey || currentApiEnvironment != requestedApiEnvironment)
-            ) {
+            if (currentApiKey != null && currentApiKey != requestedApiKey) {
+                return@synchronized SimulaInitializationOutcome.Conflict
+            }
+            if (currentApiEnvironment != null && currentApiEnvironment != requestedApiEnvironment) {
                 return@synchronized SimulaInitializationOutcome.Conflict
             }
             if (currentApiKey == requestedApiKey && currentApiEnvironment == requestedApiEnvironment && SimulaAds.isInitialized) {

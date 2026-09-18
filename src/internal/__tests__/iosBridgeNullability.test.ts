@@ -133,6 +133,12 @@ describe("iOS bridge string nullability contract", () => {
     expect(androidInitializationSource).toContain("private var apiKey: String? = null");
     expect(androidInitializationSource).toContain("private var apiEnvironment: SimulaApiEnvironment? = null");
     expect(androidInitializationSource).toContain(
+      "if (currentApiKey != null && currentApiKey != requestedApiKey)",
+    );
+    expect(androidInitializationSource).toContain(
+      "if (currentApiEnvironment != null && currentApiEnvironment != requestedApiEnvironment)",
+    );
+    expect(androidInitializationSource).toContain(
       "if (SimulaAds.isInitialized) return@synchronized SimulaInitializationOutcome.Conflict",
     );
     expect(androidInitializationSource).toMatch(
@@ -148,9 +154,17 @@ describe("iOS bridge string nullability contract", () => {
     );
     expect(androidMiniGameSource.match(/prepareProviderConfiguration\(/g)).toHaveLength(6);
     expect(moduleSource).toContain("guard SimulaAds.configureAPIEnvironment(apiEnvironment) else");
-    expect(iosMiniGameSource).toContain("guard SimulaAds.configureAPIEnvironment(apiEnvironment) else");
+    expect(iosMiniGameSource).toContain("SimulaAds.configureAPIEnvironment(apiEnvironment)");
     expect(moduleSource).toContain('"API_ENVIRONMENT_UNAVAILABLE"');
     expect(androidModuleSource).toContain('"API_ENVIRONMENT_UNAVAILABLE"');
+    const preloadPath = iosMiniGameSource.slice(
+      iosMiniGameSource.indexOf("func preload(_ props:"),
+      iosMiniGameSource.indexOf("// MARK: - CharacterSelector"),
+    );
+    expect(preloadPath).toContain('"API_ENVIRONMENT_UNAVAILABLE"');
+    expect(preloadPath.indexOf("API_ENVIRONMENT_UNAVAILABLE")).toBeLessThan(
+      preloadPath.indexOf("let accepted = MainActor.assumeIsolated"),
+    );
   });
 
   it("leaves iOS navigation and StoreKit routing with the native SDK", () => {

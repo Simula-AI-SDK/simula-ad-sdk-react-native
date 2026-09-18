@@ -508,8 +508,18 @@ class SimulaMiniGameModule: RCTEventEmitter {
         // is reused by every declarative surface via reusableProvider — unifying the
         // imperative + declarative session. SimulaAds is @MainActor; methodQueue is
         // .main, so this is safe.
+        let environmentAccepted = MainActor.assumeIsolated {
+            SimulaAds.configureAPIEnvironment(apiEnvironment)
+        }
+        guard environmentAccepted else {
+            reject(
+                "API_ENVIRONMENT_UNAVAILABLE",
+                "Staging requires a development native SDK and SimulaStagingEnvironmentEnabled=true",
+                nil
+            )
+            return
+        }
         let accepted = MainActor.assumeIsolated {
-            guard SimulaAds.configureAPIEnvironment(apiEnvironment) else { return false }
             let didInitialize = SimulaAds.initialize(
                 apiKey: apiKey,
                 devMode: devMode,
