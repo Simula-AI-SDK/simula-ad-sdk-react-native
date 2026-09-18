@@ -49,6 +49,18 @@ internal object SimulaInitializationState {
             if (currentApiEnvironment != null && currentApiEnvironment != requestedApiEnvironment) {
                 return@synchronized SimulaInitializationOutcome.Conflict
             }
+            if (
+                currentApiKey == requestedApiKey &&
+                currentApiEnvironment == null &&
+                SimulaAds.isInitialized
+            ) {
+                return@synchronized if (SimulaAds.apiEnvironment == requestedApiEnvironment) {
+                    apiEnvironment = requestedApiEnvironment
+                    SimulaInitializationOutcome.Accepted
+                } else {
+                    SimulaInitializationOutcome.Conflict
+                }
+            }
             if (currentApiKey == requestedApiKey && currentApiEnvironment == requestedApiEnvironment && SimulaAds.isInitialized) {
                 return@synchronized SimulaInitializationOutcome.Accepted
             }

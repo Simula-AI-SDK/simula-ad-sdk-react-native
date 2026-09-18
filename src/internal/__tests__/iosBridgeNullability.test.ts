@@ -140,6 +140,9 @@ describe("iOS bridge string nullability contract", () => {
     expect(androidInitializationSource).toContain(
       "if (currentApiEnvironment != null && currentApiEnvironment != requestedApiEnvironment)",
     );
+    expect(androidInitializationSource).toMatch(
+      /currentApiEnvironment == null[\s\S]*?SimulaAds\.isInitialized[\s\S]*?SimulaAds\.apiEnvironment == requestedApiEnvironment[\s\S]*?apiEnvironment = requestedApiEnvironment/,
+    );
     expect(androidInitializationSource).toContain(
       "if (SimulaAds.isInitialized) return@synchronized SimulaInitializationOutcome.Conflict",
     );
