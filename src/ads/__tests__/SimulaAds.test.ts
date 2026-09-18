@@ -72,6 +72,26 @@ describe("SimulaAds.initialize", () => {
     );
   });
 
+  it("reconciles mutable native configuration after compatible duplicate initialization", async () => {
+    await SimulaAds.initialize({ apiKey: "key_123" });
+    jest.clearAllMocks();
+
+    await SimulaAds.initialize({
+      apiKey: "key_123",
+      hasPrivacyConsent: false,
+      privacy: { coppaApplies: true },
+      primaryUserID: "user-2",
+      adContext: { category: "profile" },
+    });
+
+    expect(native.applyConsent).toHaveBeenCalledWith({
+      hasPrivacyConsent: false,
+      coppaApplies: true,
+    });
+    expect(native.updatePrimaryUserID).toHaveBeenCalledWith("user-2");
+    expect(native.updateContext).toHaveBeenCalledWith({ category: "profile" });
+  });
+
   it.each([undefined, null, "", " ", "\t\n"])(
     "maps blank primaryUserID %p to null",
     async (primaryUserID) => {

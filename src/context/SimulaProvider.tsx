@@ -113,13 +113,20 @@ export function SimulaProvider({
       initializationConfig,
     ],
   );
+  const initializationIdentityRef = useRef<string | null>(null);
 
   // Eager init: warms the native session off the first ad's critical path, and on
   // Android is the only path that enables telemetry. Same-key native init is
   // idempotent; changing apiKey cannot replace the process owner and is reported.
   useEffect(() => {
     if (!initializeOnMount || !isNonBlankString(apiKey)) return;
+    const initializationIdentity = `${apiKey}\u0000${safeAPIEnvironment}`;
+    if (initializationIdentityRef.current === initializationIdentity) return;
+    initializationIdentityRef.current = initializationIdentity;
     SimulaAds.initialize(initializationConfig).catch((error: unknown) => {
+      if (initializationIdentityRef.current === initializationIdentity) {
+        initializationIdentityRef.current = null;
+      }
       console.error("[Simula] initialize failed:", error);
     });
     // privacyKey / adContextKey stand in for the (deep) privacy / adContext objects.

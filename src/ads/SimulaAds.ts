@@ -24,6 +24,7 @@ import {
 import { safeJsonSnapshot } from "../internal/safeJson";
 import {
   assertInitializationCompatible,
+  getAcceptedInitialization,
   markInitializationAccepted,
 } from "../internal/initializationState";
 
@@ -77,6 +78,25 @@ function toNativeConfig(config: SimulaInitConfig): Record<string, unknown> {
   };
 }
 
+function reconcileAcceptedInitialization(config: Record<string, unknown>): void {
+  const privacy =
+    config.privacy && typeof config.privacy === "object" && !Array.isArray(config.privacy)
+      ? (config.privacy as Record<string, unknown>)
+      : {};
+  NativeAds!.applyConsent({
+    hasPrivacyConsent: config.hasPrivacyConsent !== false,
+    ...privacy,
+  });
+  NativeAds!.updatePrimaryUserID(
+    typeof config.primaryUserID === "string" ? config.primaryUserID : null,
+  );
+  NativeAds!.updateContext(
+    config.adContext && typeof config.adContext === "object" && !Array.isArray(config.adContext)
+      ? (config.adContext as Record<string, unknown>)
+      : {},
+  );
+}
+
 /** Drops undefined keys so absent fields map to native defaults / "unchanged". */
 export function toNativePrivacy(
   privacy: SimulaPrivacyConfig,
@@ -106,10 +126,13 @@ export const SimulaAds = {
     assertInitializationCompatible(apiKey, apiEnvironment);
     // The IPv4 resolution beacon now lives in the native SDKs (fired after
     // session creation, carrying the server session id) — no JS-side work here.
-    await NativeAds!.initialize(
-      toNativeConfig({ ...config, apiKey, apiEnvironment }),
-    );
+    const nativeConfig = toNativeConfig({ ...config, apiKey, apiEnvironment });
+    await NativeAds!.initialize(nativeConfig);
+    const acceptedBeforeThisCall = getAcceptedInitialization();
     markInitializationAccepted(apiKey, apiEnvironment);
+    if (acceptedBeforeThisCall != null) {
+      reconcileAcceptedInitialization(nativeConfig);
+    }
   },
 
   /** Whether the SDK has been initialized with a valid API key. */

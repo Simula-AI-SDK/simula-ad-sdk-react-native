@@ -81,6 +81,29 @@ describe("SimulaProvider lifecycle", () => {
     await tree.unmount();
   });
 
+  it("reconciles privacy, context, and PPID when a compatible Provider remounts", async () => {
+    const first = await mount(providerElement());
+    await first.unmount();
+    jest.clearAllMocks();
+
+    const second = await mount(
+      providerElement({
+        hasPrivacyConsent: false,
+        privacy: { coppaApplies: true },
+        adContext: { category: "profile" },
+        primaryUserID: "user-2",
+      }),
+    );
+
+    expect(native.applyConsent).toHaveBeenCalledWith({
+      hasPrivacyConsent: false,
+      coppaApplies: true,
+    });
+    expect(native.updateContext).toHaveBeenCalledWith({ category: "profile" });
+    expect(native.updatePrimaryUserID).toHaveBeenCalledWith("user-2");
+    await second.unmount();
+  });
+
   it("does not apply runtime state from a rejected process key", async () => {
     const error = jest.spyOn(console, "error").mockImplementation(() => undefined);
     const tree = await mount(providerElement());
