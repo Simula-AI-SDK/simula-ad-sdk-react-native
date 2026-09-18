@@ -53,7 +53,6 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
         wasOpenRef.current = true;
         await SimulaMiniGameModule.showCharacterSelector({
           apiKey,
-          apiEnvironment: initializationConfig.apiEnvironment,
           hasPrivacyConsent,
           devMode,
           primaryUserID: primaryUserID ?? null,

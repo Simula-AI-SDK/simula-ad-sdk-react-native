@@ -33,14 +33,13 @@ Full integration guides, API references, and examples are available at:
 
 ## Initialization
 
-The first valid API key and API environment own the native SDK for the lifetime of the app process. Repeated initialization with the same configuration is safe and idempotent. Attempting to switch the key or environment rejects with `INITIALIZATION_CONFLICT`; perform a cold app-process restart to use a different configuration. Initialize through this React Native package rather than racing it with direct Kotlin or Swift initialization.
+The first valid API key owns the native SDK for the lifetime of the app process. Repeated initialization with the same key is safe and idempotent. Attempting to switch the key rejects with `INITIALIZATION_CONFLICT`; perform a cold app-process restart to use a different configuration. Initialize through this React Native package rather than racing it with direct Kotlin or Swift initialization.
 
-Production is the default and `devMode` is independent of backend selection:
+`devMode` is independent of backend selection:
 
 ```tsx
 <SimulaProvider
   apiKey="YOUR_API_KEY"
-  apiEnvironment="production"
   devMode={false}
 >
   <App />
@@ -48,16 +47,13 @@ Production is the default and `devMode` is independent of backend selection:
 
 await SimulaAds.initialize({
   apiKey: "YOUR_API_KEY",
-  apiEnvironment: "staging",
   devMode: true,
 });
 ```
 
-`apiEnvironment` accepts only `"production"` or `"staging"`. Unknown runtime values, including URL strings, fail closed to production and are never used as arbitrary endpoints.
-
 ### Staging opt-in
 
-Staging is available only with a staging-capable development native SDK and an explicit host-app capability. Wrapper `1.4.1-dev.4` pins Kotlin and Swift SDK `1.2.1-dev.3`; stable native SDK releases do not enable staging. Add `SimulaStagingEnvironmentEnabled=true` to each host platform that should be allowed to use staging:
+Staging is selected only with a staging-capable development native SDK and an explicit host-app capability. Wrapper `1.4.1-dev.4` pins Kotlin and Swift SDK `1.2.1-dev.3`; stable native SDK releases do not enable staging. Add `SimulaStagingEnvironmentEnabled=true` to each host platform that should use staging:
 
 Android application manifest:
 
@@ -76,7 +72,7 @@ iOS application `Info.plist`:
 <true/>
 ```
 
-Rebuild the native app and cold-restart its process after changing the capability or environment. Stable native SDK artifacts do not expose staging: a staging request fails closed to production even when the host key is present.
+The native SDK reads this setting during initialization; there is no React Native `apiEnvironment` field. Rebuild the native app and cold-restart its process after changing the setting. Stable native SDK artifacts fail closed to production even when the host key is present.
 
 ## Click Lifecycle
 

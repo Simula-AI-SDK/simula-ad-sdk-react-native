@@ -46,7 +46,6 @@ describe("useMiniGamePreload lifecycle", () => {
     const tree = await mount(
       preloadProbe("first-key", capture, "user-1", {
         privacy: { enableAdvertisingId: true, coppaApplies: false },
-        apiEnvironment: "staging",
         telemetryEnabled: false,
         adContext: { category: "games" },
       }),
@@ -57,7 +56,6 @@ describe("useMiniGamePreload lifecycle", () => {
     expect(native.initialize).toHaveBeenLastCalledWith(
       expect.objectContaining({
         apiKey: "first-key",
-        apiEnvironment: "staging",
         primaryUserID: "user-1",
         privacy: expect.objectContaining({ enableAdvertisingId: true }),
         telemetryEnabled: false,
@@ -67,7 +65,6 @@ describe("useMiniGamePreload lifecycle", () => {
     expect(miniGameNative.preload).toHaveBeenLastCalledWith(
       expect.objectContaining({
         apiKey: "first-key",
-        apiEnvironment: "staging",
         privacy: expect.objectContaining({ enableAdvertisingId: true }),
         telemetryEnabled: false,
         adContext: expect.objectContaining({ category: "games" }),
@@ -76,7 +73,6 @@ describe("useMiniGamePreload lifecycle", () => {
 
     await tree.update(
       preloadProbe("first-key", capture, "user-2", {
-        apiEnvironment: "staging",
       }),
     );
     await runInAct(async () => {

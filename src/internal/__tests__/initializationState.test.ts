@@ -9,26 +9,25 @@ describe("accepted initialization key", () => {
   beforeEach(resetAcceptedInitializationForTests);
 
   it("replays an acceptance that happened before subscription", () => {
-    markInitializationAccepted("accepted-before-mount", "staging");
+    markInitializationAccepted("accepted-before-mount");
     const listener = jest.fn();
 
     const unsubscribe = subscribeToAcceptedInitialization(listener);
 
     expect(listener).toHaveBeenCalledWith({
       apiKey: "accepted-before-mount",
-      apiEnvironment: "staging",
     });
     unsubscribe();
   });
 
-  it("treats the environment as part of process ownership", () => {
-    markInitializationAccepted("same-key", "production");
+  it("treats the API key as process ownership", () => {
+    markInitializationAccepted("same-key");
 
     expect(() =>
-      assertInitializationCompatible("same-key", "staging"),
+      assertInitializationCompatible("different-key"),
     ).toThrow(/different Simula SDK configuration/);
     expect(() =>
-      assertInitializationCompatible("same-key", "production"),
+      assertInitializationCompatible("same-key"),
     ).not.toThrow();
   });
 });

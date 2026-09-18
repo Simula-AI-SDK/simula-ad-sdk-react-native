@@ -1,7 +1,6 @@
 package com.simulaads.reactnative
 
 import ad.simula.ad.sdk.ads.SimulaAds
-import ad.simula.ad.sdk.ads.SimulaApiEnvironment
 
 internal enum class SimulaInitializationOutcome {
     Accepted,
@@ -13,18 +12,11 @@ internal enum class SimulaInitializationOutcome {
 internal object SimulaInitializationState {
     private val lock = Any()
     private var apiKey: String? = null
-    private var apiEnvironment: SimulaApiEnvironment? = null
 
-    fun claim(
-        requestedApiKey: String,
-        requestedApiEnvironment: SimulaApiEnvironment,
-    ): SimulaInitializationOutcome = synchronized(lock) {
+    fun claim(requestedApiKey: String): SimulaInitializationOutcome = synchronized(lock) {
         val currentApiKey = apiKey
-        val currentApiEnvironment = apiEnvironment
-        if (currentApiKey != null || currentApiEnvironment != null) {
-            return@synchronized if (
-                currentApiKey == requestedApiKey && currentApiEnvironment == requestedApiEnvironment
-            ) {
+        if (currentApiKey != null) {
+            return@synchronized if (currentApiKey == requestedApiKey) {
                 SimulaInitializationOutcome.Accepted
             } else {
                 SimulaInitializationOutcome.Conflict
@@ -32,22 +24,16 @@ internal object SimulaInitializationState {
         }
         if (SimulaAds.isInitialized) return@synchronized SimulaInitializationOutcome.Conflict
         apiKey = requestedApiKey
-        apiEnvironment = requestedApiEnvironment
         SimulaInitializationOutcome.Accepted
     }
 
     fun initialize(
         requestedApiKey: String,
-        requestedApiEnvironment: SimulaApiEnvironment,
         initializeNative: () -> Unit,
     ): SimulaInitializationOutcome =
         synchronized(lock) {
             val currentApiKey = apiKey
-            val currentApiEnvironment = apiEnvironment
-            if (
-                (currentApiKey != null || currentApiEnvironment != null) &&
-                (currentApiKey != requestedApiKey || currentApiEnvironment != requestedApiEnvironment)
-            ) {
+            if (currentApiKey != null && currentApiKey != requestedApiKey) {
                 return@synchronized SimulaInitializationOutcome.Conflict
             }
             if (currentApiKey == requestedApiKey && SimulaAds.isInitialized) {
@@ -63,7 +49,6 @@ internal object SimulaInitializationState {
                 onSuccess = {
                     if (SimulaAds.isInitialized) {
                         apiKey = requestedApiKey
-                        apiEnvironment = requestedApiEnvironment
                         SimulaInitializationOutcome.Accepted
                     } else {
                         SimulaInitializationOutcome.Conflict

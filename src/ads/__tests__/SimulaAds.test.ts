@@ -1,5 +1,4 @@
 import {
-  normalizeAPIEnvironment,
   SimulaAds,
   toNativePrivacy,
 } from "../SimulaAds";
@@ -48,7 +47,6 @@ describe("SimulaAds.initialize", () => {
     expect(native.initialize).toHaveBeenCalledTimes(1);
     expect(native.initialize).toHaveBeenCalledWith({
       apiKey: "key_123",
-      apiEnvironment: "production",
       devMode: false,
       primaryUserID: null,
       hasPrivacyConsent: true,
@@ -64,35 +62,6 @@ describe("SimulaAds.initialize", () => {
     expect(native.initialize).toHaveBeenCalledWith(
       expect.objectContaining({ devMode: true }),
     );
-  });
-
-  it("marshals staging independently of devMode", async () => {
-    await SimulaAds.initialize({
-      apiKey: "key_123",
-      apiEnvironment: "staging",
-      devMode: false,
-    });
-
-    expect(native.initialize).toHaveBeenCalledWith(
-      expect.objectContaining({ apiEnvironment: "staging", devMode: false }),
-    );
-  });
-
-  it.each([null, "preview", "https://example.com", 1, true, {}])(
-    "fails closed to production for unknown runtime environment %p",
-    async (apiEnvironment) => {
-      await SimulaAds.initialize({ apiKey: "key_123", apiEnvironment } as never);
-      expect(native.initialize.mock.calls[0][0].apiEnvironment).toBe("production");
-    },
-  );
-
-  it("rejects the same key with a different process environment", async () => {
-    await SimulaAds.initialize({ apiKey: "key_123" });
-
-    await expect(
-      SimulaAds.initialize({ apiKey: "key_123", apiEnvironment: "staging" }),
-    ).rejects.toMatchObject({ code: "INITIALIZATION_CONFLICT" });
-    expect(native.initialize).toHaveBeenCalledTimes(1);
   });
 
   it.each([undefined, null, "", " ", "\t\n"])(
@@ -187,15 +156,6 @@ describe("SimulaAds.initialize", () => {
     await expect(SimulaAds.initialize({ apiKey: "second-key" })).rejects.toMatchObject({
       code: "INITIALIZATION_CONFLICT",
     });
-  });
-});
-
-describe("normalizeAPIEnvironment", () => {
-  it("only accepts the exact staging token", () => {
-    expect(normalizeAPIEnvironment("staging")).toBe("staging");
-    expect(normalizeAPIEnvironment("production")).toBe("production");
-    expect(normalizeAPIEnvironment("STAGING")).toBe("production");
-    expect(normalizeAPIEnvironment("https://example.com")).toBe("production");
   });
 });
 

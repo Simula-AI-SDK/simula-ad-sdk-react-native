@@ -47,21 +47,6 @@ describe("SimulaProvider lifecycle", () => {
     await tree.unmount();
   });
 
-  it("defaults to production and propagates an explicit staging environment", async () => {
-    const production = await mount(providerElement());
-    expect(native.initialize).toHaveBeenLastCalledWith(
-      expect.objectContaining({ apiEnvironment: "production" }),
-    );
-    await production.unmount();
-
-    resetAcceptedInitializationForTests();
-    const staging = await mount(providerElement({ apiEnvironment: "staging" }));
-    expect(native.initialize).toHaveBeenLastCalledWith(
-      expect.objectContaining({ apiEnvironment: "staging" }),
-    );
-    await staging.unmount();
-  });
-
   it("does not initialize for a blank key or when disabled", async () => {
     const blank = await mount(providerElement({ apiKey: " " }));
     const disabled = await mount(providerElement({ initializeOnMount: false }));

@@ -1,26 +1,8 @@
 package com.simulaads.reactnative
 
 import ad.simula.ad.sdk.model.SimulaAdContext
-import ad.simula.ad.sdk.ads.SimulaApiEnvironment
 import ad.simula.ad.sdk.privacy.SimulaPrivacyConfig
 import com.facebook.react.bridge.ReadableMap
-import com.facebook.react.bridge.ReadableType
-
-/** Exact allowlist mapping: malformed or unknown bridge values always select production. */
-internal fun ReadableMap?.toSimulaApiEnvironment(): SimulaApiEnvironment = runCatching {
-    val map = this
-    if (
-        map != null &&
-        map.hasKey("apiEnvironment") &&
-        !map.isNull("apiEnvironment") &&
-        map.getType("apiEnvironment") == ReadableType.String &&
-        map.getString("apiEnvironment") == "staging"
-    ) {
-        SimulaApiEnvironment.Staging
-    } else {
-        SimulaApiEnvironment.Production
-    }
-}.getOrDefault(SimulaApiEnvironment.Production)
 
 internal fun ReadableMap?.toSimulaPrivacyConfig(): SimulaPrivacyConfig? {
     val map = this ?: return null

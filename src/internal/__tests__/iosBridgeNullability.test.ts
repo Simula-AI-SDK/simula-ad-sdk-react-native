@@ -46,18 +46,6 @@ const androidInitializationSource = readFileSync(
   ),
   "utf8",
 );
-const androidBridgeConfigSource = readFileSync(
-  resolve(
-    repositoryRoot,
-    "android/src/main/java/com/simulaads/reactnative/SimulaBridgeConfig.kt",
-  ),
-  "utf8",
-);
-const iosEnvironmentSource = readFileSync(
-  resolve(repositoryRoot, "ios/SimulaBridgeAPIEnvironment.swift"),
-  "utf8",
-);
-
 describe("iOS bridge string nullability contract", () => {
   it("accepts nullable host-controlled identifiers at the Objective-C boundary", () => {
     expect(bridge).toContain(
@@ -140,96 +128,28 @@ describe("iOS bridge string nullability contract", () => {
     expect(moduleSource).toContain('"INITIALIZATION_CONFLICT"');
     expect(androidModuleSource).toContain('INITIALIZATION_CONFLICT = "INITIALIZATION_CONFLICT"');
     expect(androidModuleSource).toContain(
-      "SimulaInitializationState.initialize(apiKey, apiEnvironment)",
+      "SimulaInitializationState.initialize(apiKey)",
     );
     expect(androidInitializationSource).toContain("private var apiKey: String? = null");
-    expect(androidInitializationSource).toContain(
-      "private var apiEnvironment: SimulaApiEnvironment? = null",
-    );
+    expect(androidInitializationSource).not.toContain("apiEnvironment");
     expect(androidInitializationSource).toContain(
       "if (SimulaAds.isInitialized) return@synchronized SimulaInitializationOutcome.Conflict",
+    );
+    expect(androidInitializationSource).toMatch(
+      /fun claim[\s\S]*?apiKey = requestedApiKey[\s\S]*?SimulaInitializationOutcome\.Accepted/,
     );
     expect(iosMiniGameSource).toContain("shared.apiKey == apiKey else { return nil }");
   });
 
-  it("maps API environments through exact native allowlists before SDK entry", () => {
-    expect(androidBridgeConfigSource).toContain(
-      'map.getString("apiEnvironment") == "staging"',
-    );
-    expect(androidBridgeConfigSource).toContain(
-      ".getOrDefault(SimulaApiEnvironment.Production)",
-    );
-    expect(androidModuleSource.indexOf("SimulaAds.configureApiEnvironment(")).toBeLessThan(
-      androidModuleSource.indexOf("SimulaAds.initialize("),
-    );
+  it("leaves API environment selection to native host configuration", () => {
+    expect(androidModuleSource).not.toContain("apiEnvironment");
+    expect(androidModuleSource).not.toContain("configureApiEnvironment");
     expect(androidMiniGameSource.match(/prepareProviderConfiguration\(/g)).toHaveLength(6);
-    expect(androidMiniGameSource).toContain(
-      "SimulaAds.configureApiEnvironment(reactApplicationContext, apiEnvironment)",
-    );
-
-    expect(iosEnvironmentSource).toContain(
-      '(rawEnvironment as? String) == "staging" ? "staging" : "production"',
-    );
-    expect(moduleSource).toContain(
-      "SimulaAds.configureAPIEnvironment(environmentRequest.environment)",
-    );
-    expect(moduleSource.indexOf("SimulaBridgeAPIEnvironmentState.requestIfCompatible(")).toBeLessThan(
-      moduleSource.indexOf("let didInitialize = SimulaAds.initialize("),
-    );
-    expect(iosMiniGameSource.match(/rawEnvironment: props\["apiEnvironment"\]/g)).toHaveLength(7);
-  });
-
-  it("commits iOS bridge ownership only after native initialization or provider acceptance", () => {
-    const compatibilityCheck = iosEnvironmentSource.slice(
-      iosEnvironmentSource.indexOf("static func requestIfCompatible("),
-      iosEnvironmentSource.indexOf("static func owns("),
-    );
-    expect(compatibilityCheck).not.toContain("apiKey = requestedApiKey");
-    expect(compatibilityCheck).not.toContain("environmentName = requestedName");
-    expect(iosEnvironmentSource).toMatch(
-      /static func commit[\s\S]*?apiKey = request\.apiKey[\s\S]*?environmentName = request\.environmentName/,
-    );
-
-    const initializePath = moduleSource.slice(
-      moduleSource.indexOf("func initialize(_ config:"),
-      moduleSource.indexOf("/// Replace the native-ad targeting context"),
-    );
-    const initializeCheck = initializePath.indexOf("requestIfCompatible(");
-    const initializeConfigure = initializePath.indexOf("SimulaAds.configureAPIEnvironment(");
-    const initializeNative = initializePath.indexOf("let didInitialize = SimulaAds.initialize(");
-    const initializeAccepted = initializePath.indexOf(
-      "if didInitialize || (sharedOwnerMatches && (alreadyOwned || environmentAccepted))",
-    );
-    const initializeCommit = initializePath.indexOf(
-      "SimulaBridgeAPIEnvironmentState.commit(environmentRequest)",
-    );
-    expect(initializeCheck).toBeGreaterThan(-1);
-    expect(initializeConfigure).toBeGreaterThan(initializeCheck);
-    expect(initializeNative).toBeGreaterThan(initializeConfigure);
-    expect(initializeAccepted).toBeGreaterThan(initializeNative);
-    expect(initializeCommit).toBeGreaterThan(initializeAccepted);
-
-    const reusableProvider = iosMiniGameSource.slice(
-      iosMiniGameSource.indexOf("private func reusableProvider("),
-      iosMiniGameSource.indexOf("// MARK: - MiniGameMenu"),
-    );
-    expect(reusableProvider.indexOf("requestIfCompatible(")).toBeLessThan(
-      reusableProvider.indexOf("SimulaAds.configureAPIEnvironment("),
-    );
-    expect(reusableProvider.indexOf("shared.apiKey == apiKey")).toBeLessThan(
-      reusableProvider.indexOf("SimulaBridgeAPIEnvironmentState.commit("),
-    );
-
-    const preloadPath = iosMiniGameSource.slice(
-      iosMiniGameSource.indexOf("func preload(_ props:"),
-      iosMiniGameSource.indexOf("// MARK: - CharacterSelector"),
-    );
-    expect(preloadPath.indexOf("let didInitialize = SimulaAds.initialize(")).toBeLessThan(
-      preloadPath.indexOf("SimulaBridgeAPIEnvironmentState.commit("),
-    );
-    expect(preloadPath.indexOf("let sharedOwnerMatches =")).toBeLessThan(
-      preloadPath.indexOf("SimulaBridgeAPIEnvironmentState.commit("),
-    );
+    expect(androidMiniGameSource).not.toContain("configureApiEnvironment");
+    expect(moduleSource).not.toContain("apiEnvironment");
+    expect(moduleSource).not.toContain("configureAPIEnvironment");
+    expect(iosMiniGameSource).not.toContain("apiEnvironment");
+    expect(iosMiniGameSource).not.toContain("configureAPIEnvironment");
   });
 
   it("leaves iOS navigation and StoreKit routing with the native SDK", () => {

@@ -105,7 +105,6 @@ describe.each(surfaces)("$name surface lifecycle", (surface) => {
     const tree = await mount(
       surfaceElement(surface, true, "api-key", jest.fn(), jest.fn(), {
         privacy: { enableAdvertisingId: true, coppaApplies: false },
-        apiEnvironment: "staging",
         telemetryEnabled: false,
         adContext: { category: "games" },
       }),
@@ -114,7 +113,6 @@ describe.each(surfaces)("$name surface lifecycle", (surface) => {
     expect(ads.initialize).toHaveBeenCalledWith(
       expect.objectContaining({
         apiKey: "api-key",
-        apiEnvironment: "staging",
         privacy: expect.objectContaining({ enableAdvertisingId: true }),
         telemetryEnabled: false,
         adContext: expect.objectContaining({ category: "games" }),
@@ -125,7 +123,6 @@ describe.each(surfaces)("$name surface lifecycle", (surface) => {
     );
     expect(show).toHaveBeenCalledWith(
       expect.objectContaining({
-        apiEnvironment: "staging",
         privacy: expect.objectContaining({ enableAdvertisingId: true }),
         telemetryEnabled: false,
         adContext: expect.objectContaining({ category: "games" }),
