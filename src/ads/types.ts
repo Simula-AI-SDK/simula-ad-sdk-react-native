@@ -32,7 +32,7 @@ export enum SimulaAdEventType {
 
 /** Additional events emitted only by rewarded ads. */
 export enum SimulaRewardedAdEventType {
-  /** The user played long enough to earn the reward (before server verification). */
+  /** The native reward condition was met (contract 2: unit end; before server verification). */
   EARNED_REWARD = "EARNED_REWARD",
   /** The server verified the play and fired the SSV postback. */
   REWARD_VERIFIED = "REWARD_VERIFIED",
