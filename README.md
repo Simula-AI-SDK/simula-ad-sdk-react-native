@@ -55,7 +55,7 @@ await SimulaAds.initialize({
 
 ### Staging opt-in
 
-The `apiEnvironment` initialization option is intended for development wrapper/native artifacts. A staging request is accepted only with an exact `X.Y.Z-dev.N` native SDK and explicit host-app capability. Wrapper `1.4.2-dev.1` pins Kotlin SDK `1.2.1-dev.3` and Swift SDK `1.2.2-dev.1`. Add `SimulaStagingEnvironmentEnabled=true` to hosts allowed to request staging:
+The `apiEnvironment` initialization option is intended for development wrapper/native artifacts. A staging request is accepted only with an exact `X.Y.Z-dev.N` native SDK and explicit host-app capability. Wrapper `1.4.2-dev.2` pins Kotlin SDK `1.2.1-dev.4` and Swift SDK `1.2.2-dev.2`. Add `SimulaStagingEnvironmentEnabled=true` to hosts allowed to request staging:
 
 Android application manifest:
 
@@ -75,6 +75,14 @@ iOS application `Info.plist`:
 ```
 
 Stable native SDK artifacts refuse staging initialization even when the host key is present; RN rejects with `API_ENVIRONMENT_UNAVAILABLE` instead of silently using production. Unknown runtime values normalize to production, arbitrary URLs are never accepted, and `devMode` remains independent. Changing environments requires a cold process restart.
+
+## Video and end-screen behavior
+
+The pinned native SDKs handle video contract 2, video caching, end screens, click attribution, and store dwell tracking. Existing interstitial/rewarded methods and event payloads remain unchanged; no JavaScript video flag or extra tracking call is required. For video creatives, native loading includes the download before `LOADED` is emitted.
+
+For contract 2 rewarded units, `EARNED_REWARD` follows the native unit-end rule, including the final end-screen gate after an admitted primary video fails. `REWARD_VERIFIED` remains the server verification result; do not infer a reward from `CLICKED` or `CLOSED`.
+
+Videos start unmuted and fall back to muted playback when audio focus/session activation is unavailable. On iOS the native SDK may activate the app's shared audio session and does not deactivate it; hosts that manage audio should retain their own session lifecycle.
 
 ## Click Lifecycle
 
