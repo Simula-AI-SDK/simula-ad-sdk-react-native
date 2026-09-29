@@ -1,3 +1,4 @@
+import type { ArtifactInitOptions } from "../internal/artifactOptions";
 /**
  * Type definitions for Simula Ad SDK React Native
  */
@@ -19,7 +20,7 @@ export interface Message {
 /**
  * Props for SimulaProvider
  */
-export interface SimulaProviderProps {
+export interface SimulaProviderProps extends ArtifactInitOptions {
   /** Process-lifetime SDK key. Changing it after initialization is unsupported. */
   apiKey: string;
   children: ReactNode;

@@ -71,6 +71,11 @@ class SimulaAdsModule(reactContext: ReactApplicationContext) :
         val adContext = if (config.hasKey("adContext") && !config.isNull("adContext"))
             config.getMap("adContext").toSimulaAdContext() else null
 
+        if (!configureArtifactOptions(config)) {
+            promise.reject("INITIALIZATION_CONFLICT", "Developer options are frozen; restart the app to change them")
+            return
+        }
+
         val outcome = SimulaInitializationState.initialize(apiKey, apiEnvironment) {
             val environmentAccepted = SimulaAds.configureApiEnvironment(reactApplicationContext, apiEnvironment)
             if (environmentAccepted) {

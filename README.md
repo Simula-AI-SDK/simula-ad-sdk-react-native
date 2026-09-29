@@ -55,7 +55,7 @@ await SimulaAds.initialize({
 
 ### Staging opt-in
 
-The `apiEnvironment` initialization option is intended for development wrapper/native artifacts. A staging request is accepted only with an exact `X.Y.Z-dev.N` native SDK and explicit host-app capability. Wrapper `1.4.2-dev.2` pins Kotlin SDK `1.2.1-dev.4` and Swift SDK `1.2.2-dev.2`. Add `SimulaStagingEnvironmentEnabled=true` to hosts allowed to request staging:
+The `apiEnvironment` initialization option is intended for development wrapper/native artifacts. A staging request is accepted only with an exact `X.Y.Z-dev.N` native SDK and explicit host-app capability. Wrapper `1.4.2-dev.3` pins Kotlin SDK `1.2.1-dev.5` and Swift SDK `1.2.2-dev.3`. Add `SimulaStagingEnvironmentEnabled=true` to hosts allowed to request staging:
 
 Android application manifest:
 
@@ -147,3 +147,16 @@ Create and manage ad units, view analytics, and configure server-side verificati
 ## License
 
 MIT
+
+### Development-only playable companion preview
+
+Development artifacts accept `hidePlayableCompanion: true` on `SimulaAds.initialize`
+or `<SimulaProvider hidePlayableCompanion>`. Set it before any SDK surface initializes.
+It applies to menu, interstitial, and rewarded playables and requires a process restart
+to change. It is independent of session `devMode`; the preview API accepts it only on
+local/staging servers with `ENABLE_DEV_PLAYABLE_OVERRIDES=true`.
+
+`npm run build` generates the artifact-specific TypeScript and native bridge helpers.
+Stable versions omit this option from the shipped source/types and ignore injected
+values. `npm pack` verifies the selected implementation and requires matching native
+artifact channels. Release Kotlin and Swift dependencies before releasing the wrapper.

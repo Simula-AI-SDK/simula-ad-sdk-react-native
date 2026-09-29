@@ -8,6 +8,7 @@
  * and all other logic internally.
  */
 
+import { normalizeArtifactOptions } from "../internal/artifactOptions";
 import React, {
   createContext,
   useContext,
@@ -48,8 +49,10 @@ export function SimulaProvider({
   telemetryEnabled = true,
   adContext,
   initializeOnMount = true,
+  ...artifactOptions
 }: SimulaProviderProps): React.JSX.Element {
   const safeAPIEnvironment = normalizeAPIEnvironment(apiEnvironment);
+  const artifactOptionsKey = JSON.stringify(normalizeArtifactOptions(artifactOptions));
   const [acceptedInitialization, setAcceptedInitialization] = useState(
     getAcceptedInitialization,
   );
@@ -75,6 +78,7 @@ export function SimulaProvider({
   const safeAdContext = adContextSnapshot?.value;
   const initializationConfig = useMemo(
     () => ({
+      ...normalizeArtifactOptions(artifactOptions),
       apiKey,
       apiEnvironment: safeAPIEnvironment,
       devMode,
@@ -87,6 +91,7 @@ export function SimulaProvider({
     [
       apiKey,
       safeAPIEnvironment,
+      artifactOptionsKey,
       devMode,
       primaryUserID,
       hasPrivacyConsent,
@@ -120,7 +125,7 @@ export function SimulaProvider({
   // idempotent; changing apiKey cannot replace the process owner and is reported.
   useEffect(() => {
     if (!initializeOnMount || !isNonBlankString(apiKey)) return;
-    const initializationIdentity = `${apiKey}\u0000${safeAPIEnvironment}`;
+    const initializationIdentity = `${apiKey}\u0000${safeAPIEnvironment}\u0000${artifactOptionsKey}`;
     if (initializationIdentityRef.current === initializationIdentity) return;
     initializationIdentityRef.current = initializationIdentity;
     SimulaAds.initialize(initializationConfig).catch((error: unknown) => {
@@ -135,6 +140,7 @@ export function SimulaProvider({
     initializeOnMount,
     apiKey,
     safeAPIEnvironment,
+    artifactOptionsKey,
     devMode,
     primaryUserID,
     hasPrivacyConsent,
@@ -147,7 +153,8 @@ export function SimulaProvider({
   // Explicit SimulaAds.initialize calls update the same accepted-key state.
   const canApplyRuntimeUpdates =
     acceptedInitialization?.apiKey === apiKey &&
-    acceptedInitialization.apiEnvironment === safeAPIEnvironment;
+    acceptedInitialization.apiEnvironment === safeAPIEnvironment &&
+    (acceptedInitialization.artifactOptionsKey ?? "{}") === artifactOptionsKey;
 
   // Runtime consent changes after mount → push to the native store (which debounces
   // and re-syncs the session). Skipped on the first run since initialize already

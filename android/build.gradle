@@ -34,6 +34,12 @@ apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 apply plugin: 'org.jetbrains.kotlin.plugin.compose'
 
+def artifactPackage = new groovy.json.JsonSlurper().parse(file("../package.json"))
+def artifactChannel = artifactPackage.version ==~ /\d+\.\d+\.\d+-dev\.\d+/ ? "development" : "stable"
+if (!file("src/main/java/com/simulaads/reactnative/ArtifactOptions.kt").text.contains("Artifact channel: " + artifactChannel)) {
+    throw new GradleException("Run npm run build to regenerate artifact options before building this version")
+}
+
 android {
     namespace 'com.simulaads.reactnative'
     compileSdk 34
@@ -96,7 +102,7 @@ dependencies {
     implementation 'com.facebook.react:react-android:+'
 
     // Simula Ad SDK (native Kotlin SDK from Maven Central).
-    implementation 'ad.simula:ad-sdk:1.2.1-dev.4'
+    implementation 'ad.simula:ad-sdk:1.2.1-dev.5'
 
     // Jetpack Compose (needed to host MiniGameMenu composable)
     implementation platform('androidx.compose:compose-bom:2024.02.00')
