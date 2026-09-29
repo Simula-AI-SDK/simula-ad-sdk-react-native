@@ -459,6 +459,11 @@ class SimulaMiniGameModule(reactContext: ReactApplicationContext) :
             props.getBoolean("telemetryEnabled") else true
         val adContext = props.getMapOrNull("adContext").toSimulaAdContext()
 
+        if (!configureArtifactOptions(props)) {
+            promise.reject("INITIALIZATION_CONFLICT", "Developer options are frozen; restart the app to change them")
+            return
+        }
+
         when (SimulaInitializationState.initialize(apiKey, apiEnvironment) {
             val environmentAccepted = SimulaAds.configureApiEnvironment(reactApplicationContext, apiEnvironment)
             if (environmentAccepted) {

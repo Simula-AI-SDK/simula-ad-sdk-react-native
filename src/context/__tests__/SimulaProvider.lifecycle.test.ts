@@ -32,6 +32,12 @@ afterEach(() => {
 });
 
 describe("SimulaProvider lifecycle", () => {
+  it("passes development options through provider initialization", async () => {
+    const tree = await mount(providerElement({ hidePlayableCompanion: true }));
+    expect(native.initialize).toHaveBeenCalledWith(expect.objectContaining({ hidePlayableCompanion: true }));
+    await tree.unmount();
+  });
+
   it("initializes with one complete snapshot", async () => {
     const tree = await mount(providerElement());
     expect(native.initialize).toHaveBeenCalledTimes(1);

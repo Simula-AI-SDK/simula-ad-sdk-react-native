@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name         = "simula-ads-react-native"
-  s.version      = "1.4.2-dev.2"
+  s.version      = "1.4.2-dev.3"
   s.summary      = "Simula Ad SDK for React Native"
   s.description  = "React Native bridge for Simula's native iOS Ad SDK with mini-game support."
   s.homepage     = "https://github.com/Simula-AI-SDK/simula-ad-sdk-react-native"
@@ -10,6 +10,11 @@ Pod::Spec.new do |s|
 
   s.platform     = :ios, "15.0"
   s.swift_version = "5.9"
+
+  artifact_channel = s.version.to_s.match?(/\A\d+\.\d+\.\d+-dev\.\d+\z/) ? "development" : "stable"
+  unless File.read(File.join(__dir__, "ios/ArtifactOptions.swift")).include?("Artifact channel: #{artifact_channel}")
+    raise "Run npm run build to regenerate artifact options before building this version"
+  end
 
   s.source_files = "ios/**/*.{h,m,swift}"
 
@@ -25,7 +30,7 @@ Pod::Spec.new do |s|
   # 1.1.8+ routes NativeAd metadata to /load or /seen based on preload consumption.
   # 1.2.0 adds interaction-aware CTA routing, attributed StoreKit prewarming,
   # and interruption-safe fullscreen gate timing.
-  s.dependency "SimulaAdSDK", "1.2.2-dev.2"
+  s.dependency "SimulaAdSDK", "1.2.2-dev.3"
 
   s.frameworks = "StoreKit", "SafariServices"
 end

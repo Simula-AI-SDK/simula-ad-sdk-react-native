@@ -7,6 +7,7 @@
  * only way to enable telemetry. The first valid API key owns the native SDK for
  * the process lifetime; same-key calls are idempotent and a different key rejects.
  */
+import { ArtifactInitOptions, normalizeArtifactOptions } from "../internal/artifactOptions";
 import {
   NativeAds,
   isAdsModuleAvailable,
@@ -34,7 +35,7 @@ export function normalizeAPIEnvironment(value: unknown): SimulaAPIEnvironment {
   return value === "staging" ? "staging" : "production";
 }
 
-export interface SimulaInitConfig {
+export interface SimulaInitConfig extends ArtifactInitOptions {
   apiKey: string;
   /** Dev-artifact API backend. Staging also requires native host opt-in. */
   apiEnvironment?: SimulaAPIEnvironment;
@@ -62,6 +63,7 @@ function toNativeConfig(config: SimulaInitConfig): Record<string, unknown> {
       ? config.primaryUserID
       : null;
   return {
+    ...normalizeArtifactOptions(config),
     apiKey: config.apiKey,
     apiEnvironment: normalizeAPIEnvironment(config.apiEnvironment),
     devMode: config.devMode ?? false,
@@ -140,14 +142,14 @@ export const SimulaAds = {
     }
     const apiKey = requireNonBlankString(config?.apiKey, "apiKey");
     const apiEnvironment = normalizeAPIEnvironment(config?.apiEnvironment);
-    assertInitializationCompatible(apiKey, apiEnvironment);
+    assertInitializationCompatible(apiKey, apiEnvironment, JSON.stringify(normalizeArtifactOptions(config)));
     // The IPv4 resolution beacon now lives in the native SDKs (fired after
     // session creation, carrying the server session id) — no JS-side work here.
     const requestedConfig = { ...config, apiKey, apiEnvironment };
     const nativeConfig = toNativeConfig(requestedConfig);
     await NativeAds!.initialize(nativeConfig);
     const acceptedBeforeThisCall = getAcceptedInitialization();
-    markInitializationAccepted(apiKey, apiEnvironment);
+    markInitializationAccepted(apiKey, apiEnvironment, JSON.stringify(normalizeArtifactOptions(config)));
     if (acceptedBeforeThisCall != null) {
       reconcileAcceptedInitialization(requestedConfig, nativeConfig);
     }

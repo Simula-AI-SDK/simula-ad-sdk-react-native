@@ -173,6 +173,10 @@ class SimulaAdsModule: RCTEventEmitter {
                 )
                 return
             }
+            guard configureArtifactOptions(config) else {
+                reject(Self.initializationConflictCode, "Developer options are frozen; restart the app to change them", nil)
+                return
+            }
             guard SimulaAds.configureAPIEnvironment(apiEnvironment) else {
                 reject(
                     "API_ENVIRONMENT_UNAVAILABLE",
