@@ -15,10 +15,9 @@
     }
   },
   "scripts": {
-    "build": "node scripts/generate-artifact-options.cjs && tsc",
+    "build": "tsc",
     "prepare": "npm run build",
-    "test": "jest",
-    "prepack": "npm run build && node scripts/verify-artifact-options.cjs"
+    "test": "jest"
   },
   "keywords": [
     "react-native",

@@ -55,7 +55,7 @@ await SimulaAds.initialize({
 
 ### Staging opt-in
 
-The `apiEnvironment` initialization option is intended for development wrapper/native artifacts. A staging request is accepted only with an exact `X.Y.Z-dev.N` native SDK and explicit host-app capability. Wrapper `1.4.2-dev.4` pins Kotlin SDK `1.2.1-dev.6` and Swift SDK `1.2.2-dev.4`. Add `SimulaStagingEnvironmentEnabled=true` to hosts allowed to request staging:
+The `apiEnvironment` initialization option is intended for development wrapper/native artifacts. A staging request is accepted only with an exact `X.Y.Z-dev.N` native SDK and explicit host-app capability. Wrapper `1.4.2-dev.2` pins Kotlin SDK `1.2.1-dev.4` and Swift SDK `1.2.2-dev.2`. Add `SimulaStagingEnvironmentEnabled=true` to hosts allowed to request staging:
 
 Android application manifest:
 
@@ -148,19 +148,6 @@ Create and manage ad units, view analytics, and configure server-side verificati
 
 MIT
 
-### Development-only playable companion preview
-
-Development artifacts accept `hidePlayableCompanion: true` on `SimulaAds.initialize`
-or `<SimulaProvider hidePlayableCompanion>`. Set it before any SDK surface initializes.
-It applies to menu, interstitial, and rewarded playables and requires a process restart
-to change. It is independent of session `devMode`; the preview API accepts it only on
-local/staging servers with `ENABLE_DEV_PLAYABLE_OVERRIDES=true`.
-
-`npm run build` generates the artifact-specific TypeScript and native bridge helpers.
-Stable versions omit this option from the shipped source/types and ignore injected
-values. `npm pack` verifies the selected implementation and requires matching native
-artifact channels. Release Kotlin and Swift dependencies before releasing the wrapper.
-
 ### App-owned game catalogs
 
 `SimulaGameCatalog.fetch({ apiKey, apiEnvironment, primaryUserID })` returns
@@ -175,6 +162,8 @@ when the native player closes. `dismiss()` also cancels a pending launch.
 The caller owns catalog freshness and filtering: retain `__exp` IDs on Staging,
 refresh after 30 minutes, and retry `HTTP_410` once with a new matching menu.
 Other launch failures are not automatically retried. Staging requires a development
-native artifact and the host opt-in. The optional `companionEnabled` option uses the existing local/staging preview
-header. Omit it to preserve backend policy. Production ignores manual companion
-preview headers with the current backend.
+native artifact and the host opt-in. The optional `companionEnabled` option is scoped
+to one launch. Omit it to preserve backend policy. Local/staging previews require
+the existing server gate; production removal requires a verified CAI test-publisher
+session and the backend support in API PR #444. Production does not force-enable
+the companion. There is no process-wide companion preference.

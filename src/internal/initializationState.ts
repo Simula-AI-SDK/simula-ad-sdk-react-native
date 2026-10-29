@@ -3,7 +3,6 @@ import type { SimulaAPIEnvironment } from "../ads/SimulaAds";
 export interface AcceptedInitialization {
   apiKey: string;
   apiEnvironment: SimulaAPIEnvironment;
-  artifactOptionsKey?: string;
 }
 
 let acceptedInitialization: AcceptedInitialization | null = null;
@@ -18,15 +17,9 @@ export function getAcceptedInitialization(): AcceptedInitialization | null {
 export function assertInitializationCompatible(
   apiKey: string,
   apiEnvironment: SimulaAPIEnvironment,
-  artifactOptionsKey: string = "{}",
 ): void {
   const accepted = acceptedInitialization;
-  if (
-    accepted == null ||
-    (accepted.apiKey === apiKey &&
-      accepted.apiEnvironment === apiEnvironment &&
-      (accepted.artifactOptionsKey ?? "{}") === artifactOptionsKey)
-  ) {
+  if (accepted == null || (accepted.apiKey === apiKey && accepted.apiEnvironment === apiEnvironment)) {
     return;
   }
   throw Object.assign(
@@ -38,15 +31,10 @@ export function assertInitializationCompatible(
 export function markInitializationAccepted(
   apiKey: string,
   apiEnvironment: SimulaAPIEnvironment,
-  artifactOptionsKey: string = "{}",
 ): void {
-  assertInitializationCompatible(apiKey, apiEnvironment, artifactOptionsKey);
+  assertInitializationCompatible(apiKey, apiEnvironment);
   if (acceptedInitialization != null) return;
-  acceptedInitialization = {
-    apiKey,
-    apiEnvironment,
-    ...(artifactOptionsKey === "{}" ? {} : { artifactOptionsKey }),
-  };
+  acceptedInitialization = { apiKey, apiEnvironment };
   listeners.forEach((listener) => listener(acceptedInitialization));
 }
 

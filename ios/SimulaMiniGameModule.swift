@@ -520,10 +520,6 @@ class SimulaMiniGameModule: RCTEventEmitter {
             )
             return
         }
-        guard configureArtifactOptions(props) else {
-            reject(Self.initializationConflictCode, "Developer options are frozen; restart the app to change them", nil)
-            return
-        }
         let environmentAccepted = MainActor.assumeIsolated {
             SimulaAds.configureAPIEnvironment(apiEnvironment)
         }

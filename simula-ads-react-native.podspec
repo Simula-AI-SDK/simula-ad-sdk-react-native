@@ -11,11 +11,6 @@ Pod::Spec.new do |s|
   s.platform     = :ios, "15.0"
   s.swift_version = "5.9"
 
-  artifact_channel = s.version.to_s.match?(/\A\d+\.\d+\.\d+-dev\.\d+\z/) ? "development" : "stable"
-  unless File.read(File.join(__dir__, "ios/ArtifactOptions.swift")).include?("Artifact channel: #{artifact_channel}")
-    raise "Run npm run build to regenerate artifact options before building this version"
-  end
-
   s.source_files = "ios/**/*.{h,m,swift}"
 
   s.dependency "React-Core"

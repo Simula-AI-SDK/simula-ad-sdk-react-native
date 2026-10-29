@@ -51,6 +51,3 @@ CLAUDE.md
 .aider*
 .windsurf/
 .github/copilot-instructions.md
-
-# Artifact generators contain dev templates; only their selected output ships.
-scripts/

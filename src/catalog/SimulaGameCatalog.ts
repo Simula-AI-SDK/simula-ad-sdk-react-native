@@ -12,7 +12,7 @@ export type GameCatalog = { menuId: string; games: CatalogGame[] };
 export type CatalogPlayOptions = CatalogConfiguration & {
   menuId: string;
   gameId: string;
-  /** Optional local/staging preview. Omit to retain the backend policy. */
+  /** Per-launch preview, subject to backend publisher/environment policy. Omit to retain defaults. */
   companionEnabled?: boolean;
   charId: string;
   charName: string;
