@@ -11,6 +11,7 @@ class SimulaMiniGamePackage : ReactPackage {
         return listOf(
             SimulaMiniGameModule(reactContext),
             SimulaAdsModule(reactContext),
+            SimulaGameCatalogModule(reactContext),
         )
     }
 

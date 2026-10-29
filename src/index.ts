@@ -81,3 +81,6 @@ export type {
   SimulaClearConsentFlags,
   TrackingAuthorizationStatus,
 } from "./privacy/types";
+
+export { SimulaGameCatalog } from "./catalog/SimulaGameCatalog";
+export type { CatalogConfiguration, CatalogGame, GameCatalog, CatalogPlayOptions } from "./catalog/SimulaGameCatalog";

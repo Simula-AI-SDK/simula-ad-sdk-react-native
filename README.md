@@ -55,7 +55,7 @@ await SimulaAds.initialize({
 
 ### Staging opt-in
 
-The `apiEnvironment` initialization option is intended for development wrapper/native artifacts. A staging request is accepted only with an exact `X.Y.Z-dev.N` native SDK and explicit host-app capability. Wrapper `1.4.2-dev.3` pins Kotlin SDK `1.2.1-dev.5` and Swift SDK `1.2.2-dev.3`. Add `SimulaStagingEnvironmentEnabled=true` to hosts allowed to request staging:
+The `apiEnvironment` initialization option is intended for development wrapper/native artifacts. A staging request is accepted only with an exact `X.Y.Z-dev.N` native SDK and explicit host-app capability. Wrapper `1.4.2-dev.4` pins Kotlin SDK `1.2.1-dev.6` and Swift SDK `1.2.2-dev.4`. Add `SimulaStagingEnvironmentEnabled=true` to hosts allowed to request staging:
 
 Android application manifest:
 
@@ -160,3 +160,21 @@ local/staging servers with `ENABLE_DEV_PLAYABLE_OVERRIDES=true`.
 Stable versions omit this option from the shipped source/types and ignore injected
 values. `npm pack` verifies the selected implementation and requires matching native
 artifact channels. Release Kotlin and Swift dependencies before releasing the wrapper.
+
+### App-owned game catalogs
+
+`SimulaGameCatalog.fetch({ apiKey, apiEnvironment, primaryUserID })` returns
+`{ menuId, games: [{ id, name }] }`. The environment is scoped to that catalog;
+it does not change the process-wide ad SDK configuration.
+
+After normal `SimulaAds.initialize(...)`, call `SimulaGameCatalog.play` with the
+same catalog configuration, `menuId`, `gameId`, and character
+fields (`charId`, `charName`, `charImage`, optional `charDesc`). The promise resolves
+when the native player closes. `dismiss()` also cancels a pending launch.
+
+The caller owns catalog freshness and filtering: retain `__exp` IDs on Staging,
+refresh after 30 minutes, and retry `HTTP_410` once with a new matching menu.
+Other launch failures are not automatically retried. Staging requires a development
+native artifact and the host opt-in. The optional `companionEnabled` option uses the existing local/staging preview
+header. Omit it to preserve backend policy. Production ignores manual companion
+preview headers with the current backend.
