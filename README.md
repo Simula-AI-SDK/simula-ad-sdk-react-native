@@ -147,3 +147,23 @@ Create and manage ad units, view analytics, and configure server-side verificati
 ## License
 
 MIT
+
+### App-owned game catalogs
+
+`SimulaGameCatalog.fetch({ apiKey, apiEnvironment, primaryUserID })` returns
+`{ menuId, games: [{ id, name }] }`. The environment is scoped to that catalog;
+it does not change the process-wide ad SDK configuration.
+
+After normal `SimulaAds.initialize(...)`, call `SimulaGameCatalog.play` with the
+same catalog configuration, `menuId`, `gameId`, and character
+fields (`charId`, `charName`, `charImage`, optional `charDesc`). The promise resolves
+when the native player closes. `dismiss()` also cancels a pending launch.
+
+The caller owns catalog freshness and filtering: retain `__exp` IDs on Staging,
+refresh after 30 minutes, and retry `HTTP_410` once with a new matching menu.
+Other launch failures are not automatically retried. Staging requires a development
+native artifact and the host opt-in. The optional `companionEnabled` option is scoped
+to one launch. Omit it to preserve backend policy. Local/staging previews require
+the existing server gate; production removal requires a verified CAI test-publisher
+session and the backend support in API PR #444. Production does not force-enable
+the companion. There is no process-wide companion preference.
