@@ -14,6 +14,13 @@ buildscript {
 }
 
 project(":simula-ads-react-native") {
+    // Match the Maven artifact to the React Native sources that Gradle uses for codegen.
+    def reactNativePackage = rootProject.file("../../node_modules/react-native/package.json")
+    def reactNativeVersion = new groovy.json.JsonSlurper().parse(reactNativePackage).version
+    configurations.configureEach {
+        resolutionStrategy.force("com.facebook.react:react-android:${reactNativeVersion}")
+    }
+
     plugins.withId("com.facebook.react") {
         def reactExtension = extensions.getByName("react")
         reactExtension.root.set(rootProject.file("../.."))
