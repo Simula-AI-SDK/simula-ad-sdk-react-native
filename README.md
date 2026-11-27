@@ -31,6 +31,18 @@ Full integration guides, API references, and examples are available at:
 - [Rewarded Ad](https://docs.simula.ad/react-native-sdk/rewarded-ad) -- rewarded ad with server-side verification
 - [Character Selector](https://docs.simula.ad/react-native-sdk/character-selector) -- character discovery component
 
+### iOS setup
+
+Run `pod install` with the standard React Native `react_native_post_install` hook
+in your Podfile and open the generated `.xcworkspace`. The Simula bridge resolves
+its native iOS SDK through Swift Package Manager.
+
+Add `https://github.com/Simula-AI-SDK/simula-ad-sdk-swift.git` as a Swift package
+in Xcode and add the `SimulaAdSDK` product to your application target so Xcode
+embeds the framework. Select the exact version pinned in your installed
+`simula-ads-react-native.podspec`. For React Native SDK `1.4.2-dev.6`, use exact
+version `1.2.2-dev.6`.
+
 ## Initialization
 
 The first valid API key and API environment own the native SDK for the lifetime of the app process. Repeated initialization with the same configuration is safe and idempotent. Attempting to switch either value rejects with `INITIALIZATION_CONFLICT`; perform a cold app-process restart to use a different configuration.
