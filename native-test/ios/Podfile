@@ -11,4 +11,8 @@ target "NativeCompile" do
     :app_path => File.expand_path("../..", __dir__),
   )
   pod "simula-ads-react-native", :path => "../.."
+
+  post_install do |installer|
+    SPM.apply_on_post_install(installer)
+  end
 end

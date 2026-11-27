@@ -65,7 +65,7 @@ jobs:
           RCT_USE_RN_DEP: 1
       - run: >-
           xcodebuild build
-          -project native-test/ios/Pods/Pods.xcodeproj
+          -workspace native-test/ios/NativeCompile.xcworkspace
           -scheme simula-ads-react-native
           -configuration Release
           -destination "generic/platform=iOS Simulator"

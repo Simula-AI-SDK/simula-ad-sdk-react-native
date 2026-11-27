@@ -77,21 +77,16 @@ jobs:
           console.log(`Release channel: npm tag ${npmTag}, prerelease ${isPrerelease}`);
           NODE
 
-      - name: Verify native SDK versions exist
+      - name: Verify Android SDK version exists
         run: |
           node --input-type=module <<'NODE'
           import fs from "node:fs";
 
           const gradle = fs.readFileSync("android/build.gradle", "utf8");
-          const podspec = fs.readFileSync("simula-ads-react-native.podspec", "utf8");
           const androidVersion = gradle.match(/implementation\s+["']ad\.simula:ad-sdk:([^"']+)["']/)?.[1];
-          const iosVersion = podspec.match(/s\.dependency\s+["']SimulaAdSDK["']\s*,\s*["']([^"']+)["']/)?.[1];
 
           if (!androidVersion) {
             throw new Error("Could not find the Android ad.simula:ad-sdk dependency version");
-          }
-          if (!iosVersion) {
-            throw new Error("Could not find the iOS SimulaAdSDK dependency version");
           }
 
           async function fetchWithRetry(url, options = {}) {
@@ -123,16 +118,7 @@ jobs:
             throw new Error(`Android SDK ${androidVersion} was not found on Maven Central (${mavenResponse.status})`);
           }
 
-          const cocoaPodsResponse = await fetchWithRetry("https://trunk.cocoapods.org/api/v1/pods/SimulaAdSDK");
-          if (!cocoaPodsResponse.ok) {
-            throw new Error(`Could not query CocoaPods for SimulaAdSDK (${cocoaPodsResponse.status})`);
-          }
-          const cocoaPods = await cocoaPodsResponse.json();
-          if (!cocoaPods.versions?.some(({ name }) => name === iosVersion)) {
-            throw new Error(`iOS SDK ${iosVersion} was not found on CocoaPods`);
-          }
-
-          console.log(`Verified Android SDK ${androidVersion} and iOS SDK ${iosVersion}`);
+          console.log(`Verified Android SDK ${androidVersion}`);
           NODE
 
       - name: Verify version has not been released
@@ -256,7 +242,7 @@ jobs:
       - name: Compile native module
         run: >-
           xcodebuild build
-          -project native-test/ios/Pods/Pods.xcodeproj
+          -workspace native-test/ios/NativeCompile.xcworkspace
           -scheme simula-ads-react-native
           -configuration Release
           -destination "generic/platform=iOS Simulator"

@@ -41,9 +41,10 @@ matching the package version and a GitHub release containing the npm tarball.
 
 The requested version must exactly match `package.json`, both version fields in
 `package-lock.json`, and the podspec. The workflow also verifies that the
-Android `ad.simula:ad-sdk` version exists on Maven Central and the iOS
-`SimulaAdSDK` version exists on CocoaPods. It rejects versions that already
-exist on npm or already have a Git tag or GitHub release.
+Android `ad.simula:ad-sdk` version exists on Maven Central. The iOS bridge
+build resolves the exact `SimulaAdSDK` Swift package version from the podspec.
+The workflow rejects versions that already exist on npm or already have a Git
+tag or GitHub release.
 
 The version determines the release channel:
 
